@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════
+# Animus Hub — Docker Compose
+# Compatible with VPS Hub (/opt/vps-hub)
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  animus-hub:
+    build: .
+    image: datano/animus-hub:latest
+    container_name: animus-hub
+    restart: unless-stopped
+    ports:
+      - "${ANIMUS_PORT:-8314}:8314"
+    volumes:
+      - animus-data:/data/animus
+    environment:
+      - ANIMUS_DATA_DIR=/data/animus
+      - ANIMUS_NODE_ROLE=hub
+      - ANIMUS_SERVER_HOST=0.0.0.0
+      - ANIMUS_SERVER_PORT=8314
+      - ANIMUS_SERVER_SECRET=${ANIMUS_SERVER_SECRET:-}
+      - ANIMUS_NODE_NAME=${ANIMUS_NODE_NAME:-animus-hub}
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8314/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - animus-net
+    labels:
+      - "com.datano.project=animus"
+      - "com.datano.role=hub"
+
+  # Optional: Chisel tunnel server (alternative to SSH)
+  chisel:
+    image: jpillora/chisel:latest
+    container_name: animus-chisel
+    restart: unless-stopped
+    command: server --port 8315 --key ${ANIMUS_SERVER_SECRET:-changeme}
+    ports:
+      - "${CHISEL_PORT:-8315}:8315"
+    profiles:
+      - tunnel
+    networks:
+      - animus-net
+    labels:
+      - "com.datano.project=animus"
+      - "com.datano.role=tunnel"
+
+volumes:
+  animus-data:
+    driver: local
+
+networks:
+  animus-net:
+    name: animus-net
+    # Connect to existing VPS Hub network if it exists
+    external: false
