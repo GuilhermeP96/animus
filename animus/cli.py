@@ -321,5 +321,47 @@ def tunnel(
         raise typer.Exit(1)
 
 
+# ═══════════════════════════════════════════════════════════════
+#  MCP Server
+# ═══════════════════════════════════════════════════════════════
+
+@app.command()
+def mcp(verbose: bool = False):
+    """Run the Animus MCP Server (stdio) — for VS Code integration."""
+    import logging as _logging
+
+    _logging.basicConfig(
+        level=_logging.DEBUG if verbose else _logging.INFO,
+        format="%(asctime)s [%(name)s] %(message)s",
+        stream=sys.stderr,
+    )
+    from .mcp import AnimusMCPServer
+
+    server = AnimusMCPServer()
+    server.run()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Context Generation
+# ═══════════════════════════════════════════════════════════════
+
+@app.command()
+def context(
+    workspace: str = typer.Argument(default=".", help="Workspace root path"),
+):
+    """Generate .animus-context.md for a workspace — inject memories into Copilot."""
+    config = AnimusConfig.load()
+    from .mcp.active import ActiveContextInjector
+
+    injector = ActiveContextInjector(config)
+    root = Path(workspace).resolve()
+
+    console.print(f"[bold]⟁ Generating context for:[/] {root.name}\n")
+    ctx_file = injector.write_workspace_context(root)
+    console.print(f"  [green]✓[/] Written: {ctx_file}")
+    console.print(f"  Copilot will auto-include this as workspace context.")
+    injector.close()
+
+
 if __name__ == "__main__":
     app()

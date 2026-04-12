@@ -30,6 +30,7 @@ vector = ["sentence-transformers>=3.0", "numpy"]
 
 [project.scripts]
 animus = "animus.cli:app"
+animus-mcp = "animus.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
