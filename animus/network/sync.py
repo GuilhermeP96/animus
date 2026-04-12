@@ -105,13 +105,18 @@ class SyncProtocol:
             raise ValueError(f"Invalid JSON: {e}") from e
 
     @staticmethod
-    def memories_from_push(data: dict) -> list[Memory]:
-        """Reconstruct Memory objects from a PUSH message."""
+    def memories_from_push(data: dict) -> tuple[list[Memory], int]:
+        """Reconstruct Memory objects from a PUSH message.
+
+        Returns (memories, skipped_count).
+        """
         memories = []
+        skipped = 0
         for raw in data.get("memories", []):
             try:
                 raw["type"] = MemoryType(raw["type"])
                 memories.append(Memory(**raw))
             except (ValueError, KeyError) as e:
+                skipped += 1
                 logger.warning("Skipping malformed memory: %s", e)
-        return memories
+        return memories, skipped

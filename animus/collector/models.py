@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_MAX_CONTENT_SIZE = 512 * 1024  # 512 KB
 
 
 class MemoryType(str, Enum):
@@ -39,6 +41,13 @@ class Memory(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     sequence: int = 0  # Position within a conversation/session
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_size(cls, v: str) -> str:
+        if len(v) > _MAX_CONTENT_SIZE:
+            return v[:_MAX_CONTENT_SIZE]
+        return v
 
     def model_post_init(self, __context: Any) -> None:
         if not self.id and self.content:

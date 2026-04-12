@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..collector.models import Memory, MemoryType
@@ -24,6 +27,11 @@ logger = logging.getLogger("animus.server")
 _config: AnimusConfig | None = None
 _engine: IndexEngine | None = None
 _connected_peers: dict[str, dict] = {}  # node_id -> info
+
+# ── Rate limiter (in-memory) ──
+_RATE_LIMIT_REQUESTS = 60  # max requests
+_RATE_LIMIT_WINDOW = 60    # per window (seconds)
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
 
 
 def get_config() -> AnimusConfig:
@@ -57,12 +65,35 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+def _get_cors_origins() -> list[str]:
+    import os
+    origins = os.environ.get("ANIMUS_CORS_ORIGINS", "")
+    if origins:
+        return [o.strip() for o in origins.split(",") if o.strip()]
+    return ["*"]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_get_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Simple sliding-window rate limiter per client IP."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    bucket = _rate_buckets[client_ip]
+    # Prune expired entries
+    cutoff = now - _RATE_LIMIT_WINDOW
+    _rate_buckets[client_ip] = bucket = [t for t in bucket if t > cutoff]
+    if len(bucket) >= _RATE_LIMIT_REQUESTS:
+        return JSONResponse(status_code=429, content={"detail": "Too many requests"})
+    bucket.append(now)
+    return await call_next(request)
 
 
 # ── Auth Dependency ──
@@ -139,18 +170,19 @@ async def sync_push(req: PushRequest, node_id: str = Depends(verify_peer)):
     """Receive memories from a peer."""
     engine = get_engine()
     data = req.model_dump()
-    memories = SyncProtocol.memories_from_push(data)
+    memories, skipped = SyncProtocol.memories_from_push(data)
     new_count = engine.index_batch(memories)
 
     logger.info(
-        "PUSH from %s (%s): %d memories, %d new",
-        req.node_id, req.node_name, len(memories), new_count,
+        "PUSH from %s (%s): %d memories, %d new, %d skipped",
+        req.node_id, req.node_name, len(memories), new_count, skipped,
     )
 
     return {
         "status": "ok",
         "received": len(memories),
         "new": new_count,
+        "skipped": skipped,
         "total": engine.get_stats()["total_memories"],
     }
 
@@ -228,8 +260,10 @@ async def websocket_sync(ws: WebSocket):
 
         # Verify auth if configured
         if config.server_secret:
-            # For WS, verify via token in handshake
-            pass  # TODO: Add WS auth
+            token = msg.get("token", "")
+            if not token or token != config.server_secret:
+                await ws.close(code=4003, reason="Invalid auth token")
+                return
 
         _connected_peers[peer_node_id] = {
             "node_id": peer_node_id,
@@ -248,7 +282,7 @@ async def websocket_sync(ws: WebSocket):
             msg = SyncProtocol.parse(raw)
 
             if msg["type"] == "PUSH":
-                memories = SyncProtocol.memories_from_push(msg)
+                memories, _skipped = SyncProtocol.memories_from_push(msg)
                 new_count = engine.index_batch(memories)
                 await ws.send_text(SyncProtocol.ack("PUSH", new_count, [m.id for m in memories]))
 

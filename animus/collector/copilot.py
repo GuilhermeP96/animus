@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Generator
 
 from ..config import AnimusConfig
 from .models import Memory, MemoryType
+
+logger = logging.getLogger("animus.collector")
 
 
 class CopilotCollector:
@@ -59,6 +62,7 @@ class CopilotCollector:
                     try:
                         memories.extend(self._parse_debug_log(log_file, ws_dir.name))
                     except Exception:
+                        logger.debug("Failed to parse debug log %s", log_file, exc_info=True)
                         continue
         return memories
 
@@ -121,6 +125,7 @@ class CopilotCollector:
                 try:
                     memories.extend(self._parse_chat_file(chat_file, ws_dir.name))
                 except Exception:
+                    logger.debug("Failed to parse chat file %s", chat_file, exc_info=True)
                     continue
         return memories
 
@@ -199,6 +204,7 @@ class CopilotCollector:
                             if path.exists():
                                 roots.append(path)
                     except (json.JSONDecodeError, OSError):
+                        logger.debug("Failed to parse workspace.json in %s", ws_dir, exc_info=True)
                         continue
         return roots
 

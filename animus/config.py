@@ -105,11 +105,28 @@ class AnimusConfig(BaseSettings):
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "AnimusConfig":
+        from pydantic import ValidationError
+
         cfg = cls()
         file = path or cfg.config_path
         if file.exists():
             data = json.loads(file.read_text(encoding="utf-8"))
-            cfg = cls(**data)
+            try:
+                cfg = cls(**data)
+            except ValidationError as exc:
+                import logging
+                logging.getLogger("animus.config").warning(
+                    "Config validation errors in %s — using defaults for invalid fields:\n%s",
+                    file,
+                    exc,
+                )
+                # Partial load: drop unknown/invalid keys and retry
+                valid_fields = set(cls.model_fields)
+                cleaned = {k: v for k, v in data.items() if k in valid_fields}
+                try:
+                    cfg = cls(**cleaned)
+                except ValidationError:
+                    cfg = cls()  # ultimate fallback
         if not cfg.node_id:
             import uuid
 

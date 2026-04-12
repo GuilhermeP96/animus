@@ -114,7 +114,7 @@ class AnimusPeer:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    memories = SyncProtocol.memories_from_push(data)
+                    memories, _skipped = SyncProtocol.memories_from_push(data)
                     new_count = self.engine.index_batch(memories)
                     logger.info("Pulled %d memories, %d new", len(memories), new_count)
                     return new_count

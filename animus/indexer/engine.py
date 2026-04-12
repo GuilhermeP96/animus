@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -14,18 +15,24 @@ from .parser import extract_searchable_text, extract_tags
 
 logger = logging.getLogger("animus.indexer")
 
+# Maximum time (in seconds) for a single FTS query before interruption.
+_FTS_QUERY_TIMEOUT_SECONDS = 5
+# Progress handler callback interval (SQLite VM instructions between checks).
+_PROGRESS_HANDLER_INTERVAL = 10_000
+
 
 class IndexEngine:
     """SQLite FTS5-based memory index — Eagle Vision."""
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
 
     @property
     def conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(str(self.db_path))
+            self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
@@ -96,30 +103,31 @@ class IndexEngine:
         # Clean content for search
         searchable = extract_searchable_text(memory)
 
-        try:
-            self.conn.execute(
-                """INSERT OR IGNORE INTO memories
-                   (id, type, source_node, source_path, workspace, timestamp,
-                    title, content, metadata, tags, sequence)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    memory.id,
-                    memory.type.value,
-                    memory.source_node,
-                    memory.source_path,
-                    memory.workspace,
-                    memory.timestamp.isoformat(),
-                    memory.title,
-                    searchable,
-                    json.dumps(memory.metadata),
-                    json.dumps(memory.tags),
-                    memory.sequence,
-                ),
-            )
-            self.conn.commit()
-            return self.conn.total_changes > 0
-        except sqlite3.IntegrityError:
-            return False
+        with self._lock:
+            try:
+                cursor = self.conn.execute(
+                    """INSERT OR IGNORE INTO memories
+                       (id, type, source_node, source_path, workspace, timestamp,
+                        title, content, metadata, tags, sequence)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        memory.id,
+                        memory.type.value,
+                        memory.source_node,
+                        memory.source_path,
+                        memory.workspace,
+                        memory.timestamp.isoformat(),
+                        memory.title,
+                        searchable,
+                        json.dumps(memory.metadata),
+                        json.dumps(memory.tags),
+                        memory.sequence,
+                    ),
+                )
+                self.conn.commit()
+                return cursor.rowcount > 0
+            except sqlite3.IntegrityError:
+                return False
 
     def index_batch(self, memories: list[Memory]) -> int:
         """Index a batch of memories. Returns count of new memories."""
@@ -140,6 +148,9 @@ class IndexEngine:
         limit: int = 20,
     ) -> list[dict]:
         """Full-text search across all memories — Eagle Vision."""
+        # Clamp limit to prevent excessive result sets
+        limit = min(max(1, limit), 200)
+
         conditions = []
         params: list = []
 
@@ -170,53 +181,76 @@ class IndexEngine:
         base_sql += " ORDER BY rank LIMIT ?"
         params.append(limit)
 
-        rows = self.conn.execute(base_sql, params).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            # Install a progress handler to enforce a query time limit.
+            # The callback is invoked every _PROGRESS_HANDLER_INTERVAL VM
+            # instructions; returning non-zero aborts the running statement.
+            import time as _time
+            deadline = _time.monotonic() + _FTS_QUERY_TIMEOUT_SECONDS
+
+            def _timeout_handler() -> int:
+                return 1 if _time.monotonic() > deadline else 0
+
+            self.conn.set_progress_handler(_timeout_handler, _PROGRESS_HANDLER_INTERVAL)
+            try:
+                rows = self.conn.execute(base_sql, params).fetchall()
+                return [dict(r) for r in rows]
+            except sqlite3.OperationalError as exc:
+                if "interrupt" in str(exc).lower():
+                    logger.warning("FTS query timed out after %ds: %s", _FTS_QUERY_TIMEOUT_SECONDS, query[:100])
+                    return []
+                raise
+            finally:
+                self.conn.set_progress_handler(None, 0)
 
     def get_unsynced(self, limit: int = 100) -> list[dict]:
         """Get memories not yet synced to hub."""
-        rows = self.conn.execute(
-            "SELECT * FROM memories WHERE synced = 0 ORDER BY timestamp LIMIT ?",
-            (limit,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM memories WHERE synced = 0 ORDER BY timestamp LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def mark_synced(self, memory_ids: list[str]) -> None:
         """Mark memories as synced."""
-        placeholders = ",".join("?" for _ in memory_ids)
-        self.conn.execute(
-            f"UPDATE memories SET synced = 1 WHERE id IN ({placeholders})",
-            memory_ids,
-        )
-        self.conn.commit()
+        with self._lock:
+            placeholders = ",".join("?" for _ in memory_ids)
+            self.conn.execute(
+                f"UPDATE memories SET synced = 1 WHERE id IN ({placeholders})",
+                memory_ids,
+            )
+            self.conn.commit()
 
     def get_stats(self) -> dict:
         """Get index statistics."""
-        row = self.conn.execute(
-            """SELECT
-                COUNT(*) as total,
-                COUNT(DISTINCT source_node) as nodes,
-                COUNT(DISTINCT workspace) as workspaces,
-                SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) as unsynced
-               FROM memories"""
-        ).fetchone()
-        type_counts = self.conn.execute(
-            "SELECT type, COUNT(*) as cnt FROM memories GROUP BY type"
-        ).fetchall()
-        return {
-            "total_memories": row["total"],
-            "unique_nodes": row["nodes"],
-            "unique_workspaces": row["workspaces"],
-            "unsynced": row["unsynced"],
-            "by_type": {r["type"]: r["cnt"] for r in type_counts},
-        }
+        with self._lock:
+            row = self.conn.execute(
+                """SELECT
+                    COUNT(*) as total,
+                    COUNT(DISTINCT source_node) as nodes,
+                    COUNT(DISTINCT workspace) as workspaces,
+                    SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) as unsynced
+                   FROM memories"""
+            ).fetchone()
+            type_counts = self.conn.execute(
+                "SELECT type, COUNT(*) as cnt FROM memories GROUP BY type"
+            ).fetchall()
+            return {
+                "total_memories": row["total"],
+                "unique_nodes": row["nodes"],
+                "unique_workspaces": row["workspaces"],
+                "unsynced": row["unsynced"],
+                "by_type": {r["type"]: r["cnt"] for r in type_counts},
+            }
 
     def get_recent(self, limit: int = 20) -> list[dict]:
         """Get most recent memories."""
-        rows = self.conn.execute(
-            "SELECT * FROM memories ORDER BY timestamp DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM memories ORDER BY timestamp DESC LIMIT ?", (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def close(self) -> None:
         if self._conn:
