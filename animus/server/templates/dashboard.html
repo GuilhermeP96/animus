@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+
+{% block title %}Headquarters{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Headquarters / Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-title">Animus Headquarters</div>
+<div class="page-subtitle">Central command overview — all genetic memory operations</div>
+
+<!-- Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Total Memories</div>
+        <div class="stat-value glow-text">{{ stats.total_memories }}</div>
+        <div class="stat-detail">Genetic sequences indexed</div>
+    </div>
+    <div class="stat-card gold">
+        <div class="stat-label">Unique Nodes</div>
+        <div class="stat-value glow-gold">{{ stats.unique_nodes }}</div>
+        <div class="stat-detail">Subjects connected</div>
+    </div>
+    <div class="stat-card green">
+        <div class="stat-label">Workspaces</div>
+        <div class="stat-value" style="color: var(--animus-green)">{{ stats.unique_workspaces }}</div>
+        <div class="stat-detail">Memory sequences active</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Peers Online</div>
+        <div class="stat-value">{{ peers_online }}</div>
+        <div class="stat-detail">Brotherhood members synced</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <!-- Memory by Type -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🧬 Memory Classification</div>
+        </div>
+        <div class="card-body">
+            {% if stats.by_type %}
+            <table class="animus-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Count</th>
+                        <th>Distribution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for type_name, count in stats.by_type.items() %}
+                    <tr>
+                        <td><span class="tag tag-{{ type_name | replace('_', '-') }}">{{ type_name }}</span></td>
+                        <td>{{ count }}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="flex: 1; height: 4px; background: var(--animus-border); border-radius: 2px;">
+                                    <div style="height: 100%; width: {{ (count / stats.total_memories * 100) | round(1) }}%; background: var(--animus-glow); border-radius: 2px;"></div>
+                                </div>
+                                <span style="font-size: 12px; color: var(--animus-text-dim);">{{ (count / stats.total_memories * 100) | round(1) }}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">🧬</div>
+                <div class="empty-text">No genetic memories indexed yet</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Node Info -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🏛️ Hub Status</div>
+        </div>
+        <div class="card-body">
+            <div class="kv-grid">
+                <span class="kv-key">Node ID</span>
+                <span class="kv-val" style="font-family: monospace;">{{ config.node_id }}</span>
+
+                <span class="kv-key">Node Name</span>
+                <span class="kv-val">{{ config.node_name }}</span>
+
+                <span class="kv-key">Role</span>
+                <span class="kv-val"><span class="tag tag-type">{{ config.node_role }}</span></span>
+
+                <span class="kv-key">Unsynced</span>
+                <span class="kv-val">{{ stats.unsynced or 0 }}</span>
+
+                <span class="kv-key">Status</span>
+                <span class="kv-val" style="color: var(--animus-green);">● Operational</span>
+            </div>
+
+            {% if peers %}
+            <div style="margin-top: 24px;">
+                <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-text-dim); margin-bottom: 12px;">Connected Peers</div>
+                {% for peer in peers %}
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--animus-border);">
+                    <span style="color: var(--animus-green);">●</span>
+                    <span>{{ peer.node_name or peer.node_id }}</span>
+                    <span style="margin-left: auto; font-size: 11px; color: var(--animus-text-dim);">{{ peer.connected_at[:19] }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card" style="margin-top: 16px;">
+    <div class="card-header">
+        <div class="card-title">⚡ Quick Actions</div>
+    </div>
+    <div class="card-body" style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <a href="/admin/memories" class="btn btn-primary">🧬 Browse Memories</a>
+        <a href="/admin/search" class="btn btn-primary">🦅 Eagle Vision Search</a>
+        <a href="/admin/peers" class="btn">⚔️ View Brotherhood</a>
+        <a href="/admin/settings" class="btn">⚙️ Configuration</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% set active_page = "memories" %}
+
+{% block title %}Memory {{ memory.id }}{% endblock %}
+{% block breadcrumb %}<span>⟁</span> <a href="/admin/memories" style="color: var(--animus-text-dim); text-decoration: none;">Memory Archive</a> / {{ memory.id }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+    <div>
+        <div class="page-title">{{ memory.title }}</div>
+        <div class="page-subtitle">Memory sequence {{ memory.id }}</div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="/admin/memories" class="btn">← Back</a>
+        <button onclick="deleteMemory('{{ memory.id }}')" class="btn btn-danger">🗑 Delete</button>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 320px; gap: 16px;">
+    <!-- Content -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🧬 Memory Content</div>
+        </div>
+        <div class="card-body">
+            <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; line-height: 1.7; color: var(--animus-text); background: rgba(0, 0, 0, 0.3); padding: 20px; border-radius: 8px; border: 1px solid var(--animus-border); max-height: 600px; overflow-y: auto;">{{ memory.content }}</pre>
+        </div>
+    </div>
+
+    <!-- Metadata Sidebar -->
+    <div>
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-header">
+                <div class="card-title">📋 Properties</div>
+            </div>
+            <div class="card-body">
+                <div class="kv-grid">
+                    <span class="kv-key">ID</span>
+                    <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ memory.id }}</span>
+
+                    <span class="kv-key">Type</span>
+                    <span class="kv-val"><span class="tag tag-{{ memory.type | replace('_', '-') }}">{{ memory.type }}</span></span>
+
+                    <span class="kv-key">Node</span>
+                    <span class="kv-val">{{ memory.source_node }}</span>
+
+                    <span class="kv-key">Path</span>
+                    <span class="kv-val" style="font-size: 11px; word-break: break-all;">{{ memory.source_path or '—' }}</span>
+
+                    <span class="kv-key">Workspace</span>
+                    <span class="kv-val">{{ memory.workspace or '—' }}</span>
+
+                    <span class="kv-key">Timestamp</span>
+                    <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ memory.timestamp[:19] if memory.timestamp else '—' }}</span>
+
+                    <span class="kv-key">Sequence</span>
+                    <span class="kv-val">{{ memory.sequence or '—' }}</span>
+
+                    <span class="kv-key">Synced</span>
+                    <span class="kv-val">
+                        {% if memory.synced %}
+                        <span style="color: var(--animus-green);">● Yes</span>
+                        {% else %}
+                        <span style="color: var(--animus-gold);">○ Pending</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        {% if memory.tags_parsed %}
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-header">
+                <div class="card-title">🏷️ Tags</div>
+            </div>
+            <div class="card-body" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                {% for tag in memory.tags_parsed %}
+                <span class="tag">{{ tag }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if memory.metadata_parsed %}
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">📊 Metadata</div>
+            </div>
+            <div class="card-body">
+                <div class="kv-grid">
+                    {% for key, value in memory.metadata_parsed.items() %}
+                    <span class="kv-key">{{ key }}</span>
+                    <span class="kv-val" style="font-size: 12px; word-break: break-all;">{{ value }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function deleteMemory(id) {
+    if (!confirm('Desynchronize this memory? This cannot be undone.')) return;
+    const resp = await fetch('/admin/api/memories/' + id, { method: 'DELETE' });
+    if (resp.ok) {
+        window.location.href = '/admin/memories';
+    } else {
+        alert('Failed to delete memory');
+    }
+}
+</script>
+{% endblock %}

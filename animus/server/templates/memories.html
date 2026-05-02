@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% set active_page = "memories" %}
+
+{% block title %}Memory Archive{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Memory Archive / Genetic Memories{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+    <div>
+        <div class="page-title">Memory Archive</div>
+        <div class="page-subtitle">{{ total }} genetic memories indexed across all subjects</div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-body" style="padding: 16px;">
+        <form method="GET" action="/admin/memories" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+            <div style="flex: 1; min-width: 200px;">
+                <label class="form-label">Search</label>
+                <input class="form-input" type="text" name="q" value="{{ search_query or '' }}" placeholder="Search memory content...">
+            </div>
+            <div style="min-width: 160px;">
+                <label class="form-label">Type</label>
+                <select class="form-input" name="type">
+                    <option value="">All Types</option>
+                    {% for t in types %}
+                    <option value="{{ t }}" {% if filter_type == t %}selected{% endif %}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="min-width: 160px;">
+                <label class="form-label">Workspace</label>
+                <select class="form-input" name="workspace">
+                    <option value="">All Workspaces</option>
+                    {% for w in workspaces %}
+                    <option value="{{ w }}" {% if filter_workspace == w %}selected{% endif %}>{{ w }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">🔍 Filter</button>
+            {% if filter_type or filter_workspace or search_query %}
+            <a href="/admin/memories" class="btn">✕ Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- Memories Table -->
+<div class="card">
+    <div class="card-body" style="padding: 0;">
+        {% if memories %}
+        <table class="animus-table">
+            <thead>
+                <tr>
+                    <th style="width: 180px;">Timestamp</th>
+                    <th>Title</th>
+                    <th style="width: 140px;">Type</th>
+                    <th style="width: 120px;">Node</th>
+                    <th style="width: 120px;">Workspace</th>
+                    <th style="width: 60px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for mem in memories %}
+                <tr>
+                    <td>
+                        <span style="font-size: 12px; font-family: monospace; color: var(--animus-text-dim);">
+                            {{ mem.timestamp[:19] if mem.timestamp else '—' }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="/admin/memories/{{ mem.id }}" style="color: var(--animus-text); text-decoration: none;">
+                            {{ mem.title[:80] }}{% if mem.title | length > 80 %}…{% endif %}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="tag tag-{{ mem.type | replace('_', '-') }}">{{ mem.type }}</span>
+                    </td>
+                    <td>
+                        <span style="font-size: 12px;">{{ mem.source_node[:15] }}{% if mem.source_node | length > 15 %}…{% endif %}</span>
+                    </td>
+                    <td>
+                        <span style="font-size: 12px; color: var(--animus-text-dim);">
+                            {{ mem.workspace[:15] if mem.workspace else '—' }}{% if mem.workspace and mem.workspace | length > 15 %}…{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="/admin/memories/{{ mem.id }}" class="btn" style="padding: 4px 10px; font-size: 11px;">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🧬</div>
+            <div class="empty-text">No memories match your criteria</div>
+            <div class="empty-sub">Try adjusting your filters or search query</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}{% if filter_type %}&type={{ filter_type }}{% endif %}{% if filter_workspace %}&workspace={{ filter_workspace }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="page-btn">‹ Prev</a>
+    {% endif %}
+
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+            <span class="page-btn active">{{ p }}</span>
+        {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+            <a href="?page={{ p }}{% if filter_type %}&type={{ filter_type }}{% endif %}{% if filter_workspace %}&workspace={{ filter_workspace }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="page-btn">{{ p }}</a>
+        {% elif p == 4 or p == total_pages - 3 %}
+            <span class="page-btn" style="border: none;">…</span>
+        {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}{% if filter_type %}&type={{ filter_type }}{% endif %}{% if filter_workspace %}&workspace={{ filter_workspace }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="page-btn">Next ›</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

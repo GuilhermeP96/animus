@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="animus">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Animus{% endblock %} — Abstergo Industries</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⟁</text></svg>">
+    <style>
+        /* ═══════════════════════════════════════════════════
+           ANIMUS CORE — Assassin's Creed Admin Interface
+           ═══════════════════════════════════════════════════ */
+        :root {
+            --animus-bg: #0a0e14;
+            --animus-surface: #111820;
+            --animus-surface-2: #1a2332;
+            --animus-border: #1e2d3d;
+            --animus-glow: #00d4ff;
+            --animus-glow-dim: #0088aa;
+            --animus-gold: #c8a84e;
+            --animus-gold-dim: #8a6d2b;
+            --animus-red: #ff3b3b;
+            --animus-green: #00ff88;
+            --animus-text: #c5d0dc;
+            --animus-text-dim: #5a6a7a;
+            --animus-text-bright: #e8f0f8;
+            --animus-white: #ffffff;
+            --animus-assassin: #c8a84e;
+            --animus-templar: #8b0000;
+            --sidebar-width: 260px;
+            --header-height: 56px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @font-face {
+            font-family: 'Animus';
+            src: local('Rajdhani'), local('Orbitron'), local('Share Tech Mono');
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--animus-bg);
+            color: var(--animus-text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Scanline overlay ── */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 212, 255, 0.015) 2px,
+                rgba(0, 212, 255, 0.015) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ── Header ── */
+        .animus-header {
+            position: fixed;
+            top: 0; left: var(--sidebar-width); right: 0;
+            height: var(--header-height);
+            background: var(--animus-surface);
+            border-bottom: 1px solid var(--animus-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-breadcrumb {
+            font-size: 13px;
+            color: var(--animus-text-dim);
+        }
+        .header-breadcrumb span { color: var(--animus-glow); }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--animus-text-dim);
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--animus-green);
+            box-shadow: 0 0 6px var(--animus-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-user {
+            font-size: 13px;
+            color: var(--animus-gold);
+        }
+
+        .btn-logout {
+            background: transparent;
+            border: 1px solid var(--animus-border);
+            color: var(--animus-text-dim);
+            padding: 4px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-logout:hover {
+            border-color: var(--animus-red);
+            color: var(--animus-red);
+        }
+
+        /* ── Sidebar ── */
+        .animus-sidebar {
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            width: var(--sidebar-width);
+            background: var(--animus-surface);
+            border-right: 1px solid var(--animus-border);
+            z-index: 101;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-brand {
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--animus-border);
+            gap: 12px;
+        }
+
+        .brand-icon {
+            font-size: 28px;
+            color: var(--animus-glow);
+            text-shadow: 0 0 20px var(--animus-glow);
+            filter: drop-shadow(0 0 8px var(--animus-glow));
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--animus-white);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .brand-sub {
+            font-size: 9px;
+            color: var(--animus-text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 16px 0;
+            overflow-y: auto;
+        }
+
+        .nav-section {
+            padding: 0 16px;
+            margin-bottom: 8px;
+        }
+
+        .nav-section-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--animus-text-dim);
+            padding: 8px 8px 4px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            margin: 2px 8px;
+            color: var(--animus-text);
+            text-decoration: none;
+            font-size: 14px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: var(--animus-surface-2);
+            color: var(--animus-text-bright);
+        }
+
+        .nav-item.active {
+            background: rgba(0, 212, 255, 0.08);
+            color: var(--animus-glow);
+            border-left-color: var(--animus-glow);
+        }
+
+        .nav-icon {
+            font-size: 16px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .nav-badge {
+            margin-left: auto;
+            background: var(--animus-glow);
+            color: var(--animus-bg);
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .sidebar-footer {
+            padding: 16px;
+            border-top: 1px solid var(--animus-border);
+        }
+
+        .sidebar-footer-text {
+            font-size: 10px;
+            color: var(--animus-text-dim);
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        .sidebar-creed {
+            font-size: 9px;
+            color: var(--animus-gold-dim);
+            text-align: center;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        /* ── Main Content ── */
+        .animus-main {
+            margin-left: var(--sidebar-width);
+            margin-top: var(--header-height);
+            padding: 24px;
+            min-height: calc(100vh - var(--header-height));
+        }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--animus-surface);
+            border: 1px solid var(--animus-border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--animus-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--animus-text-bright);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        /* ── Stat Cards ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--animus-surface);
+            border: 1px solid var(--animus-border);
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--animus-glow), transparent);
+        }
+
+        .stat-card.gold::before {
+            background: linear-gradient(90deg, var(--animus-gold), transparent);
+        }
+
+        .stat-card.red::before {
+            background: linear-gradient(90deg, var(--animus-red), transparent);
+        }
+
+        .stat-card.green::before {
+            background: linear-gradient(90deg, var(--animus-green), transparent);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--animus-text-dim);
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--animus-white);
+        }
+
+        .stat-detail {
+            font-size: 12px;
+            color: var(--animus-text-dim);
+            margin-top: 4px;
+        }
+
+        /* ── Tables ── */
+        .animus-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .animus-table th {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--animus-text-dim);
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--animus-border);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .animus-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(30, 45, 61, 0.5);
+            font-size: 13px;
+            vertical-align: top;
+        }
+
+        .animus-table tr:hover td {
+            background: rgba(0, 212, 255, 0.03);
+        }
+
+        /* ── Tags / Badges ── */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .tag-type {
+            background: rgba(0, 212, 255, 0.15);
+            color: var(--animus-glow);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .tag-copilot-chat { background: rgba(0, 212, 255, 0.1); color: #00d4ff; }
+        .tag-copilot-debug { background: rgba(255, 165, 0, 0.1); color: #ffa500; }
+        .tag-repo-note { background: rgba(200, 168, 78, 0.1); color: var(--animus-gold); }
+        .tag-user-note { background: rgba(0, 255, 136, 0.1); color: var(--animus-green); }
+        .tag-session-note { background: rgba(186, 85, 211, 0.1); color: #ba55d3; }
+        .tag-workspace-memory { background: rgba(255, 255, 255, 0.1); color: #ddd; }
+        .tag-mcp-knowledge { background: rgba(255, 59, 59, 0.1); color: var(--animus-red); }
+        .tag-prompt-file { background: rgba(100, 149, 237, 0.1); color: #6495ed; }
+        .tag-agent-file { background: rgba(255, 215, 0, 0.1); color: #ffd700; }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            border: 1px solid var(--animus-border);
+            background: var(--animus-surface-2);
+            color: var(--animus-text);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn:hover {
+            border-color: var(--animus-glow);
+            color: var(--animus-glow);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+        }
+
+        .btn-primary {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: var(--animus-glow-dim);
+            color: var(--animus-glow);
+        }
+
+        .btn-danger {
+            border-color: rgba(255, 59, 59, 0.3);
+            color: var(--animus-red);
+        }
+        .btn-danger:hover {
+            border-color: var(--animus-red);
+            box-shadow: 0 0 12px rgba(255, 59, 59, 0.2);
+        }
+
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* ── Forms ── */
+        .form-group { margin-bottom: 16px; }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--animus-text-dim);
+            margin-bottom: 6px;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--animus-bg);
+            border: 1px solid var(--animus-border);
+            border-radius: 6px;
+            color: var(--animus-text);
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--animus-glow);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        .form-input::placeholder { color: var(--animus-text-dim); }
+
+        /* ── Pagination ── */
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .pagination a, .pagination span {
+            padding: 6px 12px;
+            font-size: 13px;
+            border: 1px solid var(--animus-border);
+            border-radius: 4px;
+            color: var(--animus-text);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .pagination a:hover { border-color: var(--animus-glow); color: var(--animus-glow); }
+        .pagination .current {
+            background: var(--animus-glow);
+            color: var(--animus-bg);
+            border-color: var(--animus-glow);
+            font-weight: 700;
+        }
+
+        /* ── Content Preview ── */
+        .content-preview {
+            background: var(--animus-bg);
+            border: 1px solid var(--animus-border);
+            border-radius: 6px;
+            padding: 16px;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* ── Page Title ── */
+        .page-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--animus-white);
+            margin-bottom: 4px;
+        }
+
+        .page-subtitle {
+            font-size: 13px;
+            color: var(--animus-text-dim);
+            margin-bottom: 24px;
+        }
+
+        /* ── Empty State ── */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--animus-text-dim);
+        }
+
+        .empty-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-text { font-size: 16px; }
+
+        /* ── Glow effects ── */
+        .glow-text {
+            color: var(--animus-glow);
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+
+        .glow-gold {
+            color: var(--animus-gold);
+            text-shadow: 0 0 10px rgba(200, 168, 78, 0.5);
+        }
+
+        /* ── Filters bar ── */
+        .filters-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .filters-bar .form-input,
+        .filters-bar .form-select {
+            width: auto;
+            min-width: 160px;
+        }
+
+        /* ── Truncate ── */
+        .truncate {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 300px;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .animus-sidebar { display: none; }
+            .animus-header { left: 0; }
+            .animus-main { margin-left: 0; }
+        }
+
+        /* ── Animations ── */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes glitch {
+            0% { text-shadow: 2px 0 #ff0000, -2px 0 #00ff00; }
+            25% { text-shadow: -2px 0 #ff0000, 2px 0 #00ff00; }
+            50% { text-shadow: 0 2px #ff0000, 0 -2px #00ff00; }
+            75% { text-shadow: 2px 2px #ff0000, -2px -2px #00ff00; }
+            100% { text-shadow: 0 0 transparent; }
+        }
+
+        /* ── Metadata / KV display ── */
+        .kv-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 8px 16px;
+            font-size: 13px;
+        }
+
+        .kv-key {
+            color: var(--animus-text-dim);
+            font-weight: 500;
+        }
+
+        .kv-val {
+            color: var(--animus-text);
+            word-break: break-all;
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% block body %}
+    <!-- Sidebar -->
+    <aside class="animus-sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">⟁</span>
+            <div class="brand-text">
+                <span class="brand-name">Animus</span>
+                <span class="brand-sub">Abstergo Industries</span>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-title">Headquarters</div>
+                <a class="nav-item {% if active_page == 'dashboard' %}active{% endif %}" href="/admin">
+                    <span class="nav-icon">🏛️</span> Dashboard
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">Genetic Memory</div>
+                <a class="nav-item {% if active_page == 'memories' %}active{% endif %}" href="/admin/memories">
+                    <span class="nav-icon">🧬</span> Memories
+                    {% if stats and stats.total_memories %}<span class="nav-badge">{{ stats.total_memories }}</span>{% endif %}
+                </a>
+                <a class="nav-item {% if active_page == 'search' %}active{% endif %}" href="/admin/search">
+                    <span class="nav-icon">🦅</span> Eagle Vision
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">Brotherhood</div>
+                <a class="nav-item {% if active_page == 'peers' %}active{% endif %}" href="/admin/peers">
+                    <span class="nav-icon">⚔️</span> Peers
+                </a>
+                <a class="nav-item {% if active_page == 'settings' %}active{% endif %}" href="/admin/settings">
+                    <span class="nav-icon">⚙️</span> Settings
+                </a>
+            </div>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="sidebar-footer-text">ANIMUS v0.1.0</div>
+            <div class="sidebar-creed">"Nothing is true, everything is permitted"</div>
+        </div>
+    </aside>
+
+    <!-- Header -->
+    <header class="animus-header">
+        <div class="header-left">
+            <div class="header-breadcrumb">
+                <span>⟁</span> {% block breadcrumb %}Dashboard{% endblock %}
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="header-status">
+                <span class="status-dot"></span>
+                Hub Online
+            </div>
+            <span class="header-user">{{ session.user }}</span>
+            <a href="/logout" class="btn-logout">Desynchronize</a>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="animus-main fade-in">
+        {% block content %}{% endblock %}
+    </main>
+    {% endblock %}
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

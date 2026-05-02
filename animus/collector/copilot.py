@@ -37,8 +37,10 @@ class CopilotCollector:
             memories.extend(self._collect_debug_logs())
         if self.config.collect_copilot_chat:
             memories.extend(self._collect_chat_history())
+            memories.extend(self._collect_transcripts())
         if self.config.collect_workspace_memories:
             memories.extend(self._collect_workspace_memories())
+            memories.extend(self._collect_memory_tool())
         if self.config.collect_mcp_memory:
             memories.extend(self._collect_mcp_memory())
         return memories
@@ -46,7 +48,7 @@ class CopilotCollector:
     # ── Debug Logs ──
 
     def _collect_debug_logs(self) -> list[Memory]:
-        """Scan Copilot chat debug-logs directories."""
+        """Scan Copilot chat debug-logs directories (including subdirectories)."""
         memories = []
         if not self.workspace_storage.exists():
             return memories
@@ -57,7 +59,8 @@ class CopilotCollector:
             debug_dir = ws_dir / "GitHub.copilot-chat" / "debug-logs"
             if not debug_dir.exists():
                 continue
-            for log_file in debug_dir.glob("*"):
+            # Use rglob to find files inside session subdirectories
+            for log_file in debug_dir.rglob("*"):
                 if log_file.is_file() and log_file.stat().st_size > 0:
                     try:
                         memories.extend(self._parse_debug_log(log_file, ws_dir.name))
@@ -267,6 +270,96 @@ class CopilotCollector:
                         continue
 
     # ── MCP Memory ──
+
+    def _collect_transcripts(self) -> list[Memory]:
+        """Collect Copilot chat transcripts (.jsonl files in transcripts/ dirs)."""
+        memories = []
+        if not self.workspace_storage.exists():
+            return memories
+
+        for ws_dir in self.workspace_storage.iterdir():
+            if not ws_dir.is_dir():
+                continue
+            transcripts_dir = ws_dir / "GitHub.copilot-chat" / "transcripts"
+            if not transcripts_dir.exists():
+                continue
+            for jsonl_file in transcripts_dir.glob("*.jsonl"):
+                if not jsonl_file.is_file() or jsonl_file.stat().st_size == 0:
+                    continue
+                try:
+                    content = jsonl_file.read_text(encoding="utf-8", errors="replace")
+                    for i, line in enumerate(content.splitlines()):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            role = data.get("role", data.get("type", "unknown"))
+                            text = data.get("content", data.get("text", data.get("message", "")))
+                            title_text = (text[:80] if text else data.get("type", f"turn-{i}"))
+                            mem = Memory(
+                                type=MemoryType.COPILOT_CHAT,
+                                source_node=self.config.node_id,
+                                source_path=str(jsonl_file),
+                                workspace=ws_dir.name,
+                                title=f"transcript:{role}:{title_text}",
+                                content=text if text else line[:50000],
+                                metadata={
+                                    "source": "transcript",
+                                    "session": jsonl_file.stem,
+                                    "role": role,
+                                    "turn": i,
+                                },
+                                sequence=i,
+                            )
+                            memories.append(mem)
+                        except json.JSONDecodeError:
+                            continue
+                except Exception:
+                    logger.debug("Failed to parse transcript %s", jsonl_file, exc_info=True)
+        return memories
+
+    def _collect_memory_tool(self) -> list[Memory]:
+        """Collect Copilot memory-tool .md files from all workspace storages."""
+        memories = []
+        if not self.workspace_storage.exists():
+            return memories
+
+        for ws_dir in self.workspace_storage.iterdir():
+            if not ws_dir.is_dir():
+                continue
+            memory_tool_dir = ws_dir / "GitHub.copilot-chat" / "memory-tool"
+            if not memory_tool_dir.exists():
+                continue
+            for md_file in memory_tool_dir.rglob("*.md"):
+                try:
+                    content = md_file.read_text(encoding="utf-8", errors="replace")
+                    rel = md_file.relative_to(memory_tool_dir)
+                    # Classify by path
+                    rel_str = str(rel)
+                    if "/repo/" in rel_str or rel_str.startswith("memories/repo/"):
+                        mt = MemoryType.REPO_NOTE
+                    elif "/session/" in rel_str or rel_str.startswith("memories/session/"):
+                        mt = MemoryType.SESSION_NOTE
+                    else:
+                        mt = MemoryType.USER_NOTE
+                    mem = Memory(
+                        type=mt,
+                        source_node=self.config.node_id,
+                        source_path=str(md_file),
+                        workspace=ws_dir.name,
+                        title=md_file.stem,
+                        content=content,
+                        metadata={
+                            "source": "memory-tool",
+                            "relative": rel_str,
+                            "workspace_id": ws_dir.name,
+                        },
+                    )
+                    memories.append(mem)
+                except OSError:
+                    continue
+        return memories
 
     def _collect_mcp_memory(self) -> list[Memory]:
         """Collect from MCP memory server knowledge graph if available."""

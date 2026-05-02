@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% set active_page = "settings" %}
+
+{% block title %}Configuration{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Settings / Configuration{% endblock %}
+
+{% block content %}
+<div class="page-title">Animus Configuration</div>
+<div class="page-subtitle">Hub configuration and operational parameters</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <!-- Identity -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🆔 Identity</div>
+        </div>
+        <div class="card-body">
+            <div class="kv-grid">
+                <span class="kv-key">Node ID</span>
+                <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ config.node_id }}</span>
+
+                <span class="kv-key">Node Name</span>
+                <span class="kv-val">{{ config.node_name }}</span>
+
+                <span class="kv-key">Role</span>
+                <span class="kv-val"><span class="tag tag-type">{{ config.node_role }}</span></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🖥️ Server</div>
+        </div>
+        <div class="card-body">
+            <div class="kv-grid">
+                <span class="kv-key">Host</span>
+                <span class="kv-val" style="font-family: monospace;">{{ config.server_host }}</span>
+
+                <span class="kv-key">Port</span>
+                <span class="kv-val">{{ config.server_port }}</span>
+
+                <span class="kv-key">Data Dir</span>
+                <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ config.data_dir }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collector -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">📡 Collector</div>
+        </div>
+        <div class="card-body">
+            <div class="kv-grid">
+                <span class="kv-key">VS Code Dir</span>
+                <span class="kv-val" style="font-family: monospace; font-size: 11px; word-break: break-all;">{{ config.vscode_user_dir }}</span>
+
+                <span class="kv-key">Watch Interval</span>
+                <span class="kv-val">{{ config.collector_interval }}s</span>
+
+                <span class="kv-key">Sync Interval</span>
+                <span class="kv-val">{{ config.sync_interval }}s</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hub -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🌐 Hub Connection</div>
+        </div>
+        <div class="card-body">
+            <div class="kv-grid">
+                <span class="kv-key">Hub URL</span>
+                <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ config.hub_url or 'Self (Hub mode)' }}</span>
+
+                <span class="kv-key">Secret</span>
+                <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ config.server_secret }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Environment -->
+<div class="card" style="margin-top: 16px;">
+    <div class="card-header">
+        <div class="card-title">📋 Environment Overview</div>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+            <div style="padding: 12px 16px; background: rgba(0, 212, 255, 0.05); border: 1px solid var(--animus-border); border-radius: 8px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-text-dim); margin-bottom: 4px;">Platform</div>
+                <div style="font-size: 14px; color: var(--animus-text);">Docker Container</div>
+            </div>
+            <div style="padding: 12px 16px; background: rgba(0, 212, 255, 0.05); border: 1px solid var(--animus-border); border-radius: 8px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-text-dim); margin-bottom: 4px;">Network</div>
+                <div style="font-size: 14px; color: var(--animus-text);">vps-hub-network</div>
+            </div>
+            <div style="padding: 12px 16px; background: rgba(0, 212, 255, 0.05); border: 1px solid var(--animus-border); border-radius: 8px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-text-dim); margin-bottom: 4px;">Domain</div>
+                <div style="font-size: 14px; color: var(--animus-text);">animus.datano.com.br</div>
+            </div>
+            <div style="padding: 12px 16px; background: rgba(0, 212, 255, 0.05); border: 1px solid var(--animus-border); border-radius: 8px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-text-dim); margin-bottom: 4px;">SSL</div>
+                <div style="font-size: 14px; color: var(--animus-green);">● Let's Encrypt</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Warning -->
+<div style="margin-top: 16px; padding: 16px 20px; background: rgba(200, 168, 78, 0.08); border: 1px solid rgba(200, 168, 78, 0.2); border-radius: 8px; font-size: 13px; color: var(--animus-gold);">
+    ⚠ Configuration is read-only in the admin panel. Modify settings via environment variables and redeploy the container.
+</div>
+{% endblock %}

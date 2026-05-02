@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set active_page = "peers" %}
+
+{% block title %}Brotherhood{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Brotherhood / Connected Peers{% endblock %}
+
+{% block content %}
+<div class="page-title">The Brotherhood</div>
+<div class="page-subtitle">{{ peers_online }} peer(s) currently synchronized with the Animus network</div>
+
+<!-- Connected Peers -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <div class="card-title">⚔️ Active Members</div>
+        <div style="font-size: 12px; color: var(--animus-text-dim);">Real-time WebSocket connections</div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        {% if peer_stats %}
+        <table class="animus-table">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Node ID</th>
+                    <th>Node Name</th>
+                    <th>Connected Since</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for peer in peer_stats %}
+                <tr>
+                    <td>
+                        <span style="color: var(--animus-green); font-size: 16px;" title="Online">●</span>
+                    </td>
+                    <td>
+                        <span style="font-family: monospace; font-size: 12px;">{{ peer.node_id }}</span>
+                    </td>
+                    <td>{{ peer.node_name or '—' }}</td>
+                    <td>
+                        <span style="font-family: monospace; font-size: 12px;">{{ peer.connected_at[:19] if peer.connected_at else '—' }}</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">⚔️</div>
+            <div class="empty-text">No peers connected</div>
+            <div class="empty-sub">The Brotherhood awaits — no Assassins are currently synchronized</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Historical Peer Stats -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <div class="card-title">📊 Historical Node Activity</div>
+        <div style="font-size: 12px; color: var(--animus-text-dim);">All nodes that have contributed memories</div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        {% if historical_peers %}
+        <table class="animus-table">
+            <thead>
+                <tr>
+                    <th>Node</th>
+                    <th>Memories</th>
+                    <th>Workspaces</th>
+                    <th>Types</th>
+                    <th>Last Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for peer in historical_peers %}
+                <tr>
+                    <td><span style="font-family: monospace; font-size: 12px;">{{ peer.source_node }}</span></td>
+                    <td><strong style="color: var(--animus-glow);">{{ peer.mem_count }}</strong></td>
+                    <td>{{ peer.workspaces }}</td>
+                    <td>{{ peer.types }}</td>
+                    <td><span style="font-family: monospace; font-size: 12px;">{{ peer.last_activity[:19] if peer.last_activity else '—' }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📊</div>
+            <div class="empty-text">No historical data yet</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Network Info -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🌐 Network Protocol</div>
+    </div>
+    <div class="card-body">
+        <div class="kv-grid">
+            <span class="kv-key">Auth Method</span>
+            <span class="kv-val">HMAC-SHA256 Peer Keys</span>
+
+            <span class="kv-key">Sync Protocol</span>
+            <span class="kv-val">WebSocket + HTTP REST</span>
+
+            <span class="kv-key">Signature Window</span>
+            <span class="kv-val">300 seconds</span>
+
+            <span class="kv-key">Max Batch Size</span>
+            <span class="kv-val">200 memories</span>
+
+            <span class="kv-key">Endpoint</span>
+            <span class="kv-val" style="font-family: monospace; font-size: 12px;">wss://animus.datano.com.br/ws/sync</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
