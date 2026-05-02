@@ -229,6 +229,7 @@ async def peers_page(
     session: AdminSession = Depends(require_admin),
 ):
     engine = get_engine()
+    config = get_config()
     # Get peer stats from memories
     peer_stats = engine.conn.execute("""
         SELECT source_node, COUNT(*) as mem_count,
@@ -244,12 +245,26 @@ async def peers_page(
     connected = list(_connected_peers.values())
     historical = [dict(r) for r in peer_stats]
 
+    # Public hub URL preferred (falls back to request host)
+    hub_url = config.hub_url or f"https://{request.url.netloc}"
+    repo_url = "https://github.com/GuilhermeP96/animus"
+
     return templates.TemplateResponse(request, "peers.html", {
         "session": session,
         "peers_online": len(_connected_peers),
         "peer_stats": connected,
         "historical_peers": historical,
+        "hub_url": hub_url,
+        "repo_url": repo_url,
     })
+
+
+@router.post("/admin/api/peers/secret", name="admin_reveal_secret")
+async def reveal_secret(session: AdminSession = Depends(require_admin)):
+    """Return the shared HMAC secret. Admin-only; intended to be shown
+    once in the UI after an explicit click."""
+    config = get_config()
+    return {"secret": config.server_secret or ""}
 
 
 # ── Settings ──

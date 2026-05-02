@@ -8,6 +8,172 @@
 <div class="page-title">The Brotherhood</div>
 <div class="page-subtitle">{{ peers_online }} peer(s) currently synchronized with the Animus network</div>
 
+<!-- Recruit a New Assassin -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <div class="card-title">🗡️ Recruit a New Assassin</div>
+        <div style="font-size: 12px; color: var(--animus-text-dim);">Onboard a new peer (Linux, macOS, Windows)</div>
+    </div>
+    <div class="card-body">
+        <p style="margin-top: 0; color: var(--animus-text-dim); font-size: 13px;">
+            Auth uses a single shared HMAC secret. Reveal it below, copy, then run the
+            installer on the new machine — it will prompt for the secret, register the
+            node and start the daemon automatically.
+        </p>
+
+        <!-- Step 1: secret -->
+        <div style="margin: 18px 0;">
+            <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-glow); margin-bottom: 6px;">
+                ① Shared Secret
+            </div>
+            <div style="display: flex; gap: 8px; align-items: stretch;">
+                <input id="recruit-secret" type="password" readonly
+                       value="••••••••••••••••••••••••••••••••"
+                       style="flex: 1; padding: 8px 10px; background: #0d1117; border: 1px solid #30363d;
+                              color: var(--animus-text-dim); font-family: monospace; font-size: 13px; border-radius: 4px;" />
+                <button class="btn" onclick="revealSecret()">👁  Reveal</button>
+                <button class="btn" onclick="copyValue('recruit-secret')">📋 Copy</button>
+            </div>
+            <div id="recruit-secret-msg" style="font-size: 11px; color: var(--animus-text-dim); margin-top: 4px; min-height: 14px;"></div>
+        </div>
+
+        <!-- Step 2: hub URL -->
+        <div style="margin: 18px 0;">
+            <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-glow); margin-bottom: 6px;">
+                ② Hub URL
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <input id="recruit-hub" type="text" readonly
+                       value="{{ hub_url }}"
+                       style="flex: 1; padding: 8px 10px; background: #0d1117; border: 1px solid #30363d;
+                              color: var(--animus-text); font-family: monospace; font-size: 13px; border-radius: 4px;" />
+                <button class="btn" onclick="copyValue('recruit-hub')">📋 Copy</button>
+            </div>
+        </div>
+
+        <!-- Step 3: install command -->
+        <div style="margin: 18px 0 6px 0;">
+            <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-glow); margin-bottom: 6px;">
+                ③ Run on the Peer
+            </div>
+            <div class="recruit-tabs" style="display: flex; gap: 4px; border-bottom: 1px solid #30363d; margin-bottom: 0;">
+                <button class="recruit-tab active" data-tab="linux"   onclick="showRecruitTab('linux')">🐧 Linux / macOS</button>
+                <button class="recruit-tab"        data-tab="windows" onclick="showRecruitTab('windows')">🪟 Windows (PowerShell)</button>
+                <button class="recruit-tab"        data-tab="zip"     onclick="showRecruitTab('zip')">📦 Windows (ZIP + .bat)</button>
+            </div>
+
+            <div class="recruit-pane active" data-pane="linux">
+<pre id="recruit-cmd-linux">curl -fsSL {{ repo_url }}/raw/master/scripts/install-peer.sh | bash</pre>
+                <button class="btn btn-sm" onclick="copyText(document.getElementById('recruit-cmd-linux').innerText)">📋 Copy</button>
+                <span style="font-size: 11px; color: var(--animus-text-dim); margin-left: 8px;">
+                    Installs Python 3.11+/git, clones the repo, registers a systemd unit.
+                </span>
+            </div>
+
+            <div class="recruit-pane" data-pane="windows" style="display:none;">
+<pre id="recruit-cmd-windows">irm {{ repo_url }}/raw/master/scripts/install-peer.ps1 | iex</pre>
+                <button class="btn btn-sm" onclick="copyText(document.getElementById('recruit-cmd-windows').innerText)">📋 Copy</button>
+                <span style="font-size: 11px; color: var(--animus-text-dim); margin-left: 8px;">
+                    Run in PowerShell. Installs Python via winget if missing, registers a Scheduled Task at logon.
+                </span>
+            </div>
+
+            <div class="recruit-pane" data-pane="zip" style="display:none;">
+                <p style="margin-top: 12px; font-size: 13px; color: var(--animus-text-dim);">
+                    For machines where running an `irm | iex` one-liner is restricted, download the
+                    self-contained ZIP and double-click <code>install-peer.bat</code>:
+                </p>
+                <ol style="font-size: 13px; line-height: 1.8;">
+                    <li>Download:
+                        <a href="{{ repo_url }}/archive/refs/heads/master.zip" target="_blank" rel="noopener"
+                           style="color: var(--animus-glow);">animus-master.zip</a>
+                    </li>
+                    <li>Extract anywhere</li>
+                    <li>Open <code>scripts\</code> and double-click
+                        <code>install-peer.bat</code> (it elevates and runs the .ps1 with execution policy bypass)</li>
+                    <li>Enter the secret revealed above when prompted</li>
+                </ol>
+            </div>
+        </div>
+
+        <div style="margin-top: 14px; padding: 10px 12px; background: rgba(0, 212, 255, 0.05);
+                    border-left: 3px solid var(--animus-glow); border-radius: 4px;
+                    font-size: 12px; color: var(--animus-text-dim);">
+            ⚠️  The secret is the <strong>only</strong> credential — anyone holding it can push memories
+            to the hub. Treat it like a password. To rotate, change <code>ANIMUS_SERVER_SECRET</code> in
+            <code>.env</code>, restart the container, and re-run the installer on each peer.
+        </div>
+    </div>
+</div>
+
+<style>
+  .recruit-tab {
+    background: transparent; border: 0; color: var(--animus-text-dim);
+    padding: 8px 14px; font-size: 12px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: inherit;
+  }
+  .recruit-tab:hover { color: var(--animus-text); }
+  .recruit-tab.active {
+    color: var(--animus-glow); border-bottom-color: var(--animus-glow);
+  }
+  .recruit-pane pre {
+    background: #0d1117; border: 1px solid #30363d; border-top: 0;
+    margin: 0 0 8px 0; padding: 12px; border-radius: 0 0 4px 4px;
+    font-family: monospace; font-size: 12px; color: var(--animus-text);
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+</style>
+
+<script>
+async function revealSecret() {
+    const input = document.getElementById('recruit-secret');
+    const msg   = document.getElementById('recruit-secret-msg');
+    if (input.type === 'text' && input.value && !input.value.startsWith('•')) {
+        input.type = 'password';
+        msg.textContent = '';
+        return;
+    }
+    msg.textContent = 'Loading…';
+    try {
+        const res = await fetch('/admin/api/peers/secret', {method: 'POST', credentials: 'same-origin'});
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data.secret) {
+            msg.textContent = '⚠ Hub has no ANIMUS_SERVER_SECRET set — auth is open.';
+            return;
+        }
+        input.type  = 'text';
+        input.value = data.secret;
+        input.style.color = 'var(--animus-text)';
+        msg.textContent = 'Revealed — click Reveal again to hide.';
+    } catch (e) {
+        msg.textContent = '✗ Failed to fetch secret: ' + e.message;
+    }
+}
+function copyValue(id) {
+    const el = document.getElementById(id);
+    const realValue = (el.type === 'password') ? '' : el.value;
+    if (!realValue) {
+        document.getElementById('recruit-secret-msg').textContent =
+            '⚠ Reveal the secret before copying.';
+        return;
+    }
+    copyText(realValue);
+}
+function copyText(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const msg = document.getElementById('recruit-secret-msg');
+        if (msg) { msg.textContent = '✓ Copied to clipboard'; setTimeout(() => msg.textContent = '', 2000); }
+    });
+}
+function showRecruitTab(name) {
+    document.querySelectorAll('.recruit-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.recruit-pane').forEach(p => p.style.display = (p.dataset.pane === name) ? 'block' : 'none');
+}
+</script>
+
 <!-- Connected Peers -->
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header">
