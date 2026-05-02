@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set active_page = "search" %}
+
+{% block title %}Eagle Vision{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Eagle Vision / Full-Text Search{% endblock %}
+
+{% block content %}
+<div class="page-title">Eagle Vision</div>
+<div class="page-subtitle">Full-text search across all genetic memory sequences</div>
+
+<!-- Search Form -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-body" style="padding: 24px;">
+        <form method="GET" action="/admin/search" style="display: flex; gap: 12px;">
+            <div style="flex: 1; position: relative;">
+                <input class="form-input" type="text" name="q" value="{{ query or '' }}"
+                       placeholder="Search for any pattern in the genetic memory..."
+                       autofocus style="padding-left: 40px; font-size: 15px;">
+                <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.4;">🦅</span>
+            </div>
+            <button type="submit" class="btn btn-primary" style="padding: 12px 24px;">Activate Eagle Vision</button>
+        </form>
+    </div>
+</div>
+
+{% if query %}
+<!-- Results -->
+<div style="margin-bottom: 12px; font-size: 13px; color: var(--animus-text-dim);">
+    Found <strong style="color: var(--animus-glow);">{{ results | length }}</strong> memory sequences matching "<em>{{ query }}</em>"
+</div>
+
+{% if results %}
+<div class="results-list">
+    {% for r in results %}
+    <div class="card" style="margin-bottom: 12px;">
+        <div class="card-body" style="padding: 16px 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                <a href="/admin/memories/{{ r.id }}" style="color: var(--animus-text); text-decoration: none; font-size: 15px; font-weight: 500;">
+                    {{ r.title }}
+                </a>
+                <span class="tag tag-{{ r.type | replace('_', '-') }}" style="flex-shrink: 0; margin-left: 12px;">{{ r.type }}</span>
+            </div>
+            <div style="font-size: 13px; color: var(--animus-text-dim); line-height: 1.6; margin-bottom: 8px;">
+                {{ r.content[:300] }}{% if r.content | length > 300 %}…{% endif %}
+            </div>
+            <div style="display: flex; gap: 16px; font-size: 11px; color: var(--animus-text-dim);">
+                <span>📍 {{ r.source_node }}</span>
+                {% if r.workspace %}
+                <span>📁 {{ r.workspace }}</span>
+                {% endif %}
+                <span>🕐 {{ r.timestamp[:19] if r.timestamp else '—' }}</span>
+                {% if r.rank is defined %}
+                <span style="margin-left: auto; color: var(--animus-gold);">Relevance: {{ "%.2f" | format(r.rank) }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="empty-state">
+            <div class="empty-icon">🦅</div>
+            <div class="empty-text">No memories found</div>
+            <div class="empty-sub">Eagle Vision found no matching sequences. Try different terms.</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Initial State -->
+<div class="card">
+    <div class="card-body">
+        <div class="empty-state">
+            <div class="empty-icon">🦅</div>
+            <div class="empty-text">Eagle Vision Ready</div>
+            <div class="empty-sub">Enter a search query to scan all genetic memories using full-text search</div>
+            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                <a href="?q=error" class="btn" style="font-size: 12px;">error</a>
+                <a href="?q=config" class="btn" style="font-size: 12px;">config</a>
+                <a href="?q=docker" class="btn" style="font-size: 12px;">docker</a>
+                <a href="?q=deploy" class="btn" style="font-size: 12px;">deploy</a>
+                <a href="?q=fix" class="btn" style="font-size: 12px;">fix</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -8,11 +8,13 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..collector.models import Memory, MemoryType
@@ -80,6 +82,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Admin Panel ──
+from .admin_routes import router as admin_router  # noqa: E402
+
+app.include_router(admin_router)
+
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
@@ -125,6 +132,7 @@ class PullRequest(BaseModel):
     node_id: str
     since: str | None = None
     limit: int = 100
+    include_self: bool = False  # If True, also return memories from the requesting node
 
 
 class SearchRequest(BaseModel):
@@ -189,16 +197,27 @@ async def sync_push(req: PushRequest, node_id: str = Depends(verify_peer)):
 
 @app.post("/api/sync/pull")
 async def sync_pull(req: PullRequest, node_id: str = Depends(verify_peer)):
-    """Send memories to a peer (memories from OTHER nodes)."""
+    """Send memories to a peer.
+
+    By default returns memories from OTHER nodes only. Set ``include_self=True``
+    to also receive memories the peer originally pushed (useful when the peer's
+    local DB was lost / rebuilt and needs to re-hydrate from the hub).
+    """
     engine = get_engine()
 
-    # Get memories not from the requesting node
-    query = "SELECT * FROM memories WHERE source_node != ? ORDER BY timestamp DESC LIMIT ?"
-    params = [req.node_id, req.limit]
+    conditions: list[str] = []
+    params: list[Any] = []
 
+    if not req.include_self:
+        conditions.append("source_node != ?")
+        params.append(req.node_id)
     if req.since:
-        query = "SELECT * FROM memories WHERE source_node != ? AND timestamp > ? ORDER BY timestamp DESC LIMIT ?"
-        params = [req.node_id, req.since, req.limit]
+        conditions.append("timestamp > ?")
+        params.append(req.since)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(req.limit)
+    query = f"SELECT * FROM memories {where} ORDER BY timestamp DESC LIMIT ?"
 
     rows = engine.conn.execute(query, params).fetchall()
     memories_data = [dict(r) for r in rows]
@@ -287,10 +306,16 @@ async def websocket_sync(ws: WebSocket):
                 await ws.send_text(SyncProtocol.ack("PUSH", new_count, [m.id for m in memories]))
 
             elif msg["type"] == "PULL":
-                rows = engine.conn.execute(
-                    "SELECT * FROM memories WHERE source_node != ? ORDER BY timestamp DESC LIMIT ?",
-                    (peer_node_id, msg.get("limit", 100)),
-                ).fetchall()
+                if msg.get("include_self", False):
+                    rows = engine.conn.execute(
+                        "SELECT * FROM memories ORDER BY timestamp DESC LIMIT ?",
+                        (msg.get("limit", 100),),
+                    ).fetchall()
+                else:
+                    rows = engine.conn.execute(
+                        "SELECT * FROM memories WHERE source_node != ? ORDER BY timestamp DESC LIMIT ?",
+                        (peer_node_id, msg.get("limit", 100)),
+                    ).fetchall()
                 await ws.send_text(SyncProtocol.result([dict(r) for r in rows]))
 
             elif msg["type"] == "QUERY":
