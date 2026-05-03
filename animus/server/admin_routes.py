@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
+import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -265,6 +268,96 @@ async def reveal_secret(session: AdminSession = Depends(require_admin)):
     once in the UI after an explicit click."""
     config = get_config()
     return {"secret": config.server_secret or ""}
+
+
+# ── Peer installer kit (self-contained ZIP) ──
+
+_INSTALLER_KIT_DIR = Path(__file__).parent / "installer_kit"
+# Files copied into the ZIP. Each goes through {{PLACEHOLDER}} substitution.
+_INSTALLER_KIT_FILES = (
+    "peer.env",
+    "install.sh",
+    "install.ps1",
+    "install.bat",
+    "COPILOT.md",
+    "README.md",
+)
+# Files that should be marked executable in the ZIP (POSIX mode 0o755).
+_INSTALLER_KIT_EXEC = {"install.sh"}
+
+
+@router.get("/admin/api/peers/installer.zip", name="admin_installer_zip")
+async def installer_zip(
+    request: Request,
+    node_name: str | None = None,
+    node_id: str | None = None,
+    session: AdminSession = Depends(require_admin),
+):
+    """Build a customized peer installer ZIP with pre-baked hub URL, HMAC
+    secret, node id and node name. Admin-only."""
+    config = get_config()
+    secret = config.server_secret or ""
+    if not secret:
+        raise HTTPException(
+            status_code=409,
+            detail="Hub has no ANIMUS_SERVER_SECRET configured — set it in .env first.",
+        )
+
+    if not _INSTALLER_KIT_DIR.is_dir():
+        raise HTTPException(
+            status_code=500,
+            detail=f"installer_kit templates missing at {_INSTALLER_KIT_DIR}",
+        )
+
+    hub_url = config.hub_url or f"https://{request.url.netloc}"
+    repo_url = "https://github.com/GuilhermeP96/animus.git"
+    branch = "master"
+    nid = (node_id or str(uuid.uuid4())[:12]).strip()
+    nname = (node_name or f"peer-{nid}").strip()
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    substitutions = {
+        "{{HUB_URL}}": hub_url,
+        "{{SECRET}}": secret,
+        "{{NODE_ID}}": nid,
+        "{{NODE_NAME}}": nname,
+        "{{REPO_URL}}": repo_url,
+        "{{BRANCH}}": branch,
+        "{{GENERATED_AT}}": generated_at,
+    }
+
+    def render(text: str) -> str:
+        for key, val in substitutions.items():
+            text = text.replace(key, val)
+        return text
+
+    buf = io.BytesIO()
+    folder = f"animus-peer-{nid}"
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fname in _INSTALLER_KIT_FILES:
+            src = _INSTALLER_KIT_DIR / fname
+            if not src.is_file():
+                logger.warning("installer_kit: missing %s", src)
+                continue
+            content = render(src.read_text(encoding="utf-8"))
+            arcname = f"{folder}/{fname}"
+            info = zipfile.ZipInfo(arcname)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            now = datetime.now(timezone.utc).timetuple()
+            info.date_time = (now.tm_year, now.tm_mon, now.tm_mday,
+                              now.tm_hour, now.tm_min, now.tm_sec)
+            # POSIX file mode in upper 16 bits of external_attr.
+            mode = 0o755 if fname in _INSTALLER_KIT_EXEC else 0o644
+            info.external_attr = (mode & 0xFFFF) << 16
+            zf.writestr(info, content)
+
+    buf.seek(0)
+    filename = f"animus-peer-{nid}.zip"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
+    }
+    return StreamingResponse(buf, media_type="application/zip", headers=headers)
 
 
 # ── Settings ──

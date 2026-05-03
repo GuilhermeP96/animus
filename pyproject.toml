@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animus"
-version = "0.3.0"
+version = "0.4.0"
 description = "Animus — Copilot Memory Synchronization Network"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,6 +38,13 @@ animus-mcp = "animus.mcp:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["animus*"]
+
+[tool.setuptools.package-data]
+"animus.server" = [
+    "templates/*.html",
+    "static/**/*",
+    "installer_kit/*",
+]
 
 [tool.ruff]
 target-version = "py310"
