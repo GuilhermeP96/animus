@@ -109,6 +109,30 @@ animus search "como configurar deploy docker"
 animus stats
 ```
 
+#### Após a instalação — comandos úteis
+
+```bash
+# Status do daemon
+systemctl status animus-peer            # root install
+systemctl --user status animus-peer     # user install
+Get-ScheduledTask AnimusPeerDaemon      # Windows
+
+# Ver / trocar a URL do hub (use sempre a URL pública HTTPS,
+# nunca um IP interno do bridge Docker — ele muda a cada restart)
+animus config-show
+animus config-set hub_url https://animus.datano.com.br
+
+# Sync manual
+animus sync
+animus stats
+```
+
+> ⚠️ **`hub_url` precisa ser alcançável de onde o peer roda.** Se o peer
+> está no host (ou em outra máquina), aponte para a URL pública (HTTPS via
+> Nginx). IPs `172.x` / `10.x` do bridge Docker só funcionam para peers
+> que rodam **dentro** da mesma rede do compose — e mesmo assim, prefira
+> o nome do serviço (`http://animus:8314`) em vez de IP fixo.
+
 ### Hub (VPS)
 
 ```bash
