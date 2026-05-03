@@ -8,6 +8,16 @@ import logging
 import sys
 from pathlib import Path
 
+# Ensure UTF-8 stdout/stderr on Windows so emoji/box-drawing glyphs in the
+# Rich output don't crash the CLI on the default cp1252 console codepage
+# (e.g. ``UnicodeEncodeError: 'charmap' codec can't encode '\U0001f985'``).
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
 import typer
 from rich.console import Console
 from rich.table import Table
