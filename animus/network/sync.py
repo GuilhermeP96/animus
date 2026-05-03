@@ -106,7 +106,13 @@ class SyncProtocol:
 
     @staticmethod
     def memories_from_push(data: dict) -> tuple[list[Memory], int]:
-        """Reconstruct Memory objects from a PUSH message.
+        """Reconstruct Memory objects from a PUSH/PULL response message.
+
+        Hub-side rows store ``metadata`` and ``tags`` as JSON-encoded strings
+        (SQLite has no native dict/list type) — pull responses keep that
+        on-the-wire shape, so this method transparently deserializes them
+        before constructing :class:`Memory` to avoid pydantic ``dict_type`` /
+        ``list_type`` validation errors on every pulled record.
 
         Returns (memories, skipped_count).
         """
@@ -115,8 +121,24 @@ class SyncProtocol:
         for raw in data.get("memories", []):
             try:
                 raw["type"] = MemoryType(raw["type"])
+                meta = raw.get("metadata")
+                if isinstance(meta, str):
+                    try:
+                        raw["metadata"] = json.loads(meta) if meta else {}
+                    except json.JSONDecodeError:
+                        raw["metadata"] = {}
+                elif meta is None:
+                    raw["metadata"] = {}
+                tags = raw.get("tags")
+                if isinstance(tags, str):
+                    try:
+                        raw["tags"] = json.loads(tags) if tags else []
+                    except json.JSONDecodeError:
+                        raw["tags"] = []
+                elif tags is None:
+                    raw["tags"] = []
                 memories.append(Memory(**raw))
-            except (ValueError, KeyError) as e:
+            except (ValueError, KeyError, TypeError) as e:
                 skipped += 1
                 logger.warning("Skipping malformed memory: %s", e)
         return memories, skipped

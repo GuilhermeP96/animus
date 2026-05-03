@@ -140,3 +140,62 @@ class TestMemoriesFromPush:
         memories, skipped = SyncProtocol.memories_from_push({})
         assert memories == []
         assert skipped == 0
+
+    def test_metadata_and_tags_decoded_from_json_strings(self):
+        """Hub reads SQLite rows where metadata/tags are TEXT — pull responses
+        keep them as JSON strings. memories_from_push must transparently decode
+        them so Memory(...) doesn't raise validation errors."""
+        data = {
+            "memories": [
+                {
+                    "id": "abc123",
+                    "type": "copilot_chat",
+                    "source_node": "n1",
+                    "content": "hello",
+                    "metadata": '{"source": "transcript", "turn": 7}',
+                    "tags": '["chat", "copilot"]',
+                }
+            ]
+        }
+        memories, skipped = SyncProtocol.memories_from_push(data)
+        assert skipped == 0
+        assert len(memories) == 1
+        m = memories[0]
+        assert m.metadata == {"source": "transcript", "turn": 7}
+        assert m.tags == ["chat", "copilot"]
+
+    def test_empty_string_metadata_tags_become_defaults(self):
+        data = {
+            "memories": [
+                {
+                    "id": "d1",
+                    "type": "copilot_chat",
+                    "source_node": "n1",
+                    "content": "x",
+                    "metadata": "",
+                    "tags": "",
+                }
+            ]
+        }
+        memories, skipped = SyncProtocol.memories_from_push(data)
+        assert skipped == 0
+        assert memories[0].metadata == {}
+        assert memories[0].tags == []
+
+    def test_null_metadata_tags_become_defaults(self):
+        data = {
+            "memories": [
+                {
+                    "id": "d2",
+                    "type": "copilot_chat",
+                    "source_node": "n1",
+                    "content": "x",
+                    "metadata": None,
+                    "tags": None,
+                }
+            ]
+        }
+        memories, skipped = SyncProtocol.memories_from_push(data)
+        assert skipped == 0
+        assert memories[0].metadata == {}
+        assert memories[0].tags == []
