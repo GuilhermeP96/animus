@@ -177,6 +177,15 @@ class AnimusMCPServer:
                         "description": "Maximum results (default: 20)",
                         "default": 20,
                     },
+                    "by_indexed": {
+                        "type": "boolean",
+                        "description": (
+                            "Filter by local indexing time (when the memory was added "
+                            "to this peer) instead of the original Copilot timestamp. "
+                            "Useful right after a fresh `animus_collect` of old logs."
+                        ),
+                        "default": False,
+                    },
                 },
                 "required": [],
             },
@@ -442,31 +451,50 @@ class AnimusMCPServer:
         hours = args.get("hours", 24)
         workspace = args.get("workspace", "")
         limit = args.get("limit", 20)
+        # When True, look at indexing time (when the memory landed locally)
+        # instead of the original chat timestamp. Useful right after a
+        # ``collect`` of older Copilot logs.
+        by_indexed = bool(args.get("by_indexed", False))
 
-        # Query by time
         from datetime import timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         cutoff_str = cutoff.isoformat()
 
-        query = "SELECT * FROM memories WHERE timestamp > ? "
-        params: list[Any] = [cutoff_str]
+        def _query(time_col: str) -> list[Any]:
+            sql = f"SELECT * FROM memories WHERE {time_col} > ? "
+            sql_params: list[Any] = [cutoff_str if time_col == "timestamp"
+                                     else cutoff.strftime("%Y-%m-%d %H:%M:%S")]
+            if workspace:
+                sql += "AND workspace = ? "
+                sql_params.append(workspace)
+            sql += f"ORDER BY {time_col} DESC LIMIT ?"
+            sql_params.append(limit)
+            return self.engine.conn.execute(sql, sql_params).fetchall()
 
-        if workspace:
-            query += "AND workspace = ? "
-            params.append(workspace)
-
-        query += "ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
-
-        rows = self.engine.conn.execute(query, params).fetchall()
+        primary_col = "created_at" if by_indexed else "timestamp"
+        rows = _query(primary_col)
+        fallback_used = False
+        if not rows and not by_indexed:
+            # Heuristic fallback: maybe Copilot timestamps were old but the
+            # rows were indexed recently — try created_at before giving up.
+            rows = _query("created_at")
+            fallback_used = bool(rows)
 
         if not rows:
             return f"No memories in the last {hours} hours."
 
-        output = [f"⟁ Timeline — last {hours}h ({len(rows)} memories):\n"]
+        header = f"⟁ Timeline — last {hours}h ({len(rows)} memories"
+        if fallback_used:
+            header += ", by indexed time"
+        elif by_indexed:
+            header += ", by indexed time"
+        header += "):\n"
+        output = [header]
         for r in rows:
             row = dict(r)
-            ts = row.get("timestamp", "")[:16]
+            ts = (row.get("created_at") if (by_indexed or fallback_used)
+                  else row.get("timestamp", ""))
+            ts = (ts or "")[:16]
             output.append(
                 f"  {ts} | {row.get('type', '?'):16s} | "
                 f"{row.get('workspace', '?'):12s} | {row.get('title', '')[:40]}"

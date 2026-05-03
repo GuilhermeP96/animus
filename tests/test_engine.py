@@ -101,6 +101,47 @@ class TestIndexEngine:
         # Should not raise, even with special chars
         assert isinstance(results, list)
 
+    def test_fts_query_builder_strips_metachars(self):
+        """Phrase quotes / hyphens / asterisks must be stripped before MATCH."""
+        expr = IndexEngine._build_fts_query('"docker-compose" -prod (test)*')
+        # Result must not contain raw FTS metacharacters
+        for ch in '"^()-':
+            assert ch not in expr
+        assert "docker" in expr or "compose" in expr
+
+    def test_fts_query_builder_single_token_uses_prefix(self):
+        assert IndexEngine._build_fts_query("django") == "django*"
+
+    def test_fts_query_builder_multi_token_or_join(self):
+        expr = IndexEngine._build_fts_query("animus peer installer kit")
+        # OR-joined so any term matches; previous behaviour quoted the whole
+        # thing as a phrase and returned zero hits.
+        assert " OR " in expr
+        assert all(t in expr for t in ("animus", "peer", "installer", "kit"))
+
+    def test_fts_query_builder_drops_stopwords(self):
+        expr = IndexEngine._build_fts_query("the quick fix for docker")
+        assert "the" not in expr.split()
+        assert "for" not in expr.split()
+        assert "docker" in expr
+        assert "quick" in expr
+
+    def test_fts_query_builder_empty_returns_empty(self):
+        assert IndexEngine._build_fts_query("") == ""
+        assert IndexEngine._build_fts_query("   ") == ""
+        # Only stopwords/short tokens → empty
+        assert IndexEngine._build_fts_query("a is the") == ""
+
+    def test_search_multi_word_natural_language(self, populated_engine):
+        """Regression: multi-word queries used to phrase-match and miss everything."""
+        results = populated_engine.search("docker compose deploy")
+        # Should match memories containing any of these terms
+        assert isinstance(results, list)
+
+    def test_search_empty_query_returns_empty_list(self, populated_engine):
+        assert populated_engine.search("") == []
+        assert populated_engine.search("   ") == []
+
     def test_get_stats_empty_db(self, engine):
         stats = engine.get_stats()
         assert stats["total_memories"] == 0
