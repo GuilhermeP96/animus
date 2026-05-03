@@ -137,6 +137,67 @@ class IndexEngine:
                 new_count += 1
         return new_count
 
+    @staticmethod
+    def _build_fts_query(query: str) -> str:
+        """Convert a natural-language query into a safe FTS5 MATCH expression.
+
+        FTS5 has a small DSL where ``"`` introduces a phrase, ``-`` is NOT,
+        ``*`` is a prefix, and unquoted tokens are AND'd together. Naively
+        wrapping the user input in quotes (the previous behaviour) forced
+        contiguous-phrase matching, so multi-word queries like
+        ``"animus peer installer kit"`` returned zero hits even when each
+        word existed in the index — which broke RAG recall completely.
+
+        This helper:
+        * strips FTS metacharacters,
+        * tokenizes on whitespace and keeps tokens >=2 chars,
+        * for a single token: returns it as a prefix (``token*``),
+        * for multiple tokens: joins them with ``OR`` so any term matches
+          (FTS5 ranking still surfaces the rows that match the most).
+
+        If the cleaned query has no usable tokens, returns an empty string
+        — callers should fall back to a non-FTS path.
+        """
+        import re as _re
+
+        if not query or not query.strip():
+            return ""
+
+        # Remove characters that have meaning in the FTS5 query syntax.
+        cleaned = _re.sub(r'[\"\*\^\(\)\-\:\+]', " ", query)
+        # Tokenize and keep only alphanumeric/underscore characters per token —
+        # FTS5 unicode61 tokenizer ignores other punctuation but the MATCH
+        # parser itself rejects bare apostrophes/commas/etc.
+        raw_tokens = cleaned.split()
+        tokens = []
+        for t in raw_tokens:
+            tok = _re.sub(r"[^\w]", "", t, flags=_re.UNICODE)
+            if len(tok) >= 2:
+                tokens.append(tok)
+        # Drop very common English/Portuguese stopwords that flood results
+        stopwords = {
+            "the", "and", "for", "with", "from", "this", "that", "are",
+            "was", "were", "have", "has", "had", "but", "not", "can",
+            "is", "of", "in", "on", "at", "to", "by", "be", "or", "an",
+            "as", "it", "if", "do", "so", "we", "you", "your",
+            "como", "para", "com", "uma", "que", "dos", "das", "por",
+            "ele", "ela", "isso", "isto", "nao", "tem",
+        }
+        tokens = [t for t in tokens if t.lower() not in stopwords]
+
+        if not tokens:
+            return ""
+
+        # Cap tokens to keep MATCH expression compact
+        tokens = tokens[:16]
+
+        if len(tokens) == 1:
+            return f"{tokens[0]}*"
+
+        # OR-of-terms — broader than the previous phrase match while still
+        # letting FTS5's BM25 ranker prioritize records matching more terms.
+        return " OR ".join(tokens)
+
     def search(
         self,
         query: str,
@@ -151,6 +212,10 @@ class IndexEngine:
         # Clamp limit to prevent excessive result sets
         limit = min(max(1, limit), 200)
 
+        match_expr = self._build_fts_query(query)
+        if not match_expr:
+            return []
+
         conditions = []
         params: list = []
 
@@ -161,9 +226,7 @@ class IndexEngine:
             JOIN memories m ON m.rowid = fts.rowid
             WHERE memories_fts MATCH ?
         """
-        # Escape FTS special chars
-        safe_query = query.replace('"', '""')
-        params.append(f'"{safe_query}"')
+        params.append(match_expr)
 
         if mem_type:
             conditions.append("m.type = ?")

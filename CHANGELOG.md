@@ -4,6 +4,40 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-05-03
+
+### Fixed
+- **`animus_recall` returned "No relevant memories found" even with hundreds
+  of indexed memories.** `IndexEngine.search` used to wrap the user's query
+  in double quotes and feed it to FTS5 as a phrase match, which required
+  every word to appear contiguously and in order. RAG-decomposed contexts
+  (multi-word strings like *"animus peer installer kit"*) therefore matched
+  zero rows, and `RAGEngine.contextual_recall` had nothing to return. The
+  query is now normalized into a safe FTS5 expression: metacharacters
+  stripped, stopwords removed, single tokens become prefix matches
+  (`token*`), and multi-token queries are OR-joined so BM25 ranks the rows
+  hitting the most terms first. **Recall now actually works.**
+- **`animus_search` failed on natural language queries** for the same
+  reason — single-word queries worked, but anything like
+  `"docker compose deploy"` returned an empty list. Same fix applies.
+- **`animus_timeline --hours N` reported "No memories" right after a fresh
+  `animus_collect`.** The collector imports Copilot chat logs whose original
+  `timestamp` is the chat date (often days/weeks old), but the index only
+  just received them. The timeline now (a) accepts a new `by_indexed`
+  argument that filters on `created_at` (when the row landed in the local
+  DB), and (b) automatically falls back to `created_at` when filtering on
+  `timestamp` returns nothing — so post-collect recall just works.
+
+### Added
+- New `IndexEngine._build_fts_query` helper, isolated and unit-tested
+  (7 new test cases in `tests/test_engine.py`).
+- `by_indexed` parameter on the `animus_timeline` MCP tool, surfaced in the
+  tool's input schema for the client.
+
+### Internal
+- Suite: **191 passing** (test_e2e/test_server skipped due to a pre-existing
+  unrelated `jinja2` import in the dev env).
+
 ## [0.4.2] — 2026-05-03
 
 ### Documentation
