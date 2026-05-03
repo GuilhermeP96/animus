@@ -4,6 +4,19 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-05-03
+
+### Documentation
+- **`hub_url` must be reachable from where the peer runs.** README and
+  `installer_kit/COPILOT.md` now warn that a Docker bridge IP (`172.x`,
+  `10.x`) is **not** a valid `hub_url` for peers running on the host or on
+  another machine — use the public HTTPS URL (e.g.
+  `https://animus.datano.com.br`). Docker bridge IPs also change across
+  `docker restart`, so even an in-network peer should prefer the service
+  name (`http://animus:8314`) over a hard-coded IP.
+- README's *Instalação → Peer* section gained an **"After install"**
+  subsection covering daemon control commands and how to switch `hub_url`.
+
 ## [0.4.1] — 2026-05-03
 
 ### Fixed
