@@ -59,7 +59,7 @@
             <div class="recruit-tabs" style="display: flex; gap: 4px; border-bottom: 1px solid #30363d; margin-bottom: 0;">
                 <button class="recruit-tab active" data-tab="linux"   onclick="showRecruitTab('linux')">🐧 Linux / macOS</button>
                 <button class="recruit-tab"        data-tab="windows" onclick="showRecruitTab('windows')">🪟 Windows (PowerShell)</button>
-                <button class="recruit-tab"        data-tab="zip"     onclick="showRecruitTab('zip')">📦 Windows (ZIP + .bat)</button>
+                <button class="recruit-tab"        data-tab="zip"     onclick="showRecruitTab('zip')">📦 Self-install ZIP</button>
             </div>
 
             <div class="recruit-pane active" data-pane="linux">
@@ -80,19 +80,40 @@
 
             <div class="recruit-pane" data-pane="zip" style="display:none;">
                 <p style="margin-top: 12px; font-size: 13px; color: var(--animus-text-dim);">
-                    For machines where running an `irm | iex` one-liner is restricted, download the
-                    self-contained ZIP and double-click <code>install-peer.bat</code>:
+                    Generate a <strong>self-contained installer kit</strong> with the hub URL, HMAC
+                    secret and a fresh <code>node_id</code> already baked in. No source code — just
+                    the wrapper scripts. Works for shells <em>and</em> for GitHub Copilot in VS Code
+                    (read <code>COPILOT.md</code> inside the ZIP).
                 </p>
-                <ol style="font-size: 13px; line-height: 1.8;">
-                    <li>Download:
-                        <a href="{{ repo_url }}/archive/refs/heads/master.zip" target="_blank" rel="noopener"
-                           style="color: var(--animus-glow);">animus-master.zip</a>
-                    </li>
-                    <li>Extract anywhere</li>
-                    <li>Open <code>scripts\</code> and double-click
-                        <code>install-peer.bat</code> (it elevates and runs the .ps1 with execution policy bypass)</li>
-                    <li>Enter the secret revealed above when prompted</li>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0;">
+                    <div>
+                        <label style="font-size: 11px; color: var(--animus-text-dim); text-transform: uppercase; letter-spacing: 1px;">Node name (optional)</label>
+                        <input id="kit-node-name" type="text" placeholder="e.g. macbook-laura"
+                               style="width: 100%; padding: 6px 8px; background: #0d1117; border: 1px solid #30363d;
+                                      color: var(--animus-text); font-family: monospace; font-size: 12px; border-radius: 4px;" />
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: var(--animus-text-dim); text-transform: uppercase; letter-spacing: 1px;">Node ID (optional — auto if empty)</label>
+                        <input id="kit-node-id" type="text" placeholder="auto-generated (12 chars)"
+                               style="width: 100%; padding: 6px 8px; background: #0d1117; border: 1px solid #30363d;
+                                      color: var(--animus-text); font-family: monospace; font-size: 12px; border-radius: 4px;" />
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                    <button class="btn" onclick="downloadInstallerZip()">📦 Generate Installer ZIP</button>
+                    <span id="kit-msg" style="font-size: 12px; color: var(--animus-text-dim);"></span>
+                </div>
+                <ol style="font-size: 13px; line-height: 1.8; margin-top: 14px;">
+                    <li>Click <strong>Generate Installer ZIP</strong> above (~few KB; secret is embedded)</li>
+                    <li>Extract anywhere on the target machine</li>
+                    <li>Linux/macOS: <code>./install.sh</code> &nbsp; · &nbsp; Windows: double-click <code>install.bat</code></li>
+                    <li>No prompts — the kit already knows hub URL, secret, and node id</li>
                 </ol>
+                <div style="margin-top: 10px; padding: 8px 10px; background: rgba(0, 212, 255, 0.05);
+                            border-left: 3px solid var(--animus-glow); border-radius: 4px; font-size: 12px; color: var(--animus-text-dim);">
+                    🤖  No shell access? Open the extracted folder in VS Code and ask Copilot:
+                    <em>"Follow COPILOT.md to install the Animus peer using values from peer.env."</em>
+                </div>
             </div>
         </div>
 
@@ -171,6 +192,40 @@ function copyText(text) {
 function showRecruitTab(name) {
     document.querySelectorAll('.recruit-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.recruit-pane').forEach(p => p.style.display = (p.dataset.pane === name) ? 'block' : 'none');
+}
+async function downloadInstallerZip() {
+    const msg  = document.getElementById('kit-msg');
+    const name = document.getElementById('kit-node-name').value.trim();
+    const id   = document.getElementById('kit-node-id').value.trim();
+    msg.style.color = 'var(--animus-text-dim)';
+    msg.textContent = 'Building kit…';
+    try {
+        const params = new URLSearchParams();
+        if (name) params.set('node_name', name);
+        if (id)   params.set('node_id', id);
+        const url = '/admin/api/peers/installer.zip' + (params.toString() ? '?' + params.toString() : '');
+        const res = await fetch(url, {credentials: 'same-origin'});
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('HTTP ' + res.status + (text ? ' — ' + text : ''));
+        }
+        const blob = await res.blob();
+        const dispo = res.headers.get('Content-Disposition') || '';
+        const m = dispo.match(/filename="([^"]+)"/);
+        const filename = m ? m[1] : 'animus-peer-installer.zip';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        msg.style.color = 'var(--animus-green, #3fb950)';
+        msg.textContent = '✓ ' + filename + ' downloaded — secret is inside, treat it like a password.';
+    } catch (e) {
+        msg.style.color = 'var(--animus-red, #f85149)';
+        msg.textContent = '✗ ' + e.message;
+    }
 }
 </script>
 

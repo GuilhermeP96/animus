@@ -65,6 +65,33 @@
 
 ### Peer (cada máquina)
 
+#### Opção A — Self-install ZIP (recomendada)
+
+No hub, abra **`/admin/peers`** → aba **📦 Self-install ZIP** → clique em
+**Generate Installer ZIP**. O ZIP gerado (~8 KB) já vem com o `hub_url`,
+`server_secret` e um `node_id` novo embutidos em `peer.env`.
+
+Na máquina alvo:
+
+```bash
+# Linux / macOS
+unzip animus-peer-<id>.zip && cd animus-peer-<id>
+./install.sh
+
+# Windows
+# extrair o ZIP, então duplo-clique em install.bat (UAC)
+```
+
+Sem prompts — o kit já sabe tudo. Inclui `COPILOT.md`: passo-a-passo para o
+GitHub Copilot fazer a instalação manual em VS Code quando o shell estiver
+restrito.
+
+#### Opção B — One-liner (irm | iex / curl | bash)
+
+Veja a aba **🐧 Linux/macOS** ou **🪟 Windows (PowerShell)** no `/admin/peers`.
+
+#### Opção C — Editable / dev install
+
 ```bash
 cd animus
 pip install -e .
