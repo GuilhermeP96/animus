@@ -6,7 +6,9 @@ import asyncio
 import json
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Optional
 
 # Ensure UTF-8 stdout/stderr on Windows so emoji/box-drawing glyphs in the
 # Rich output don't crash the CLI on the default cp1252 console codepage
@@ -32,12 +34,31 @@ app = typer.Typer(
 console = Console()
 
 
-def _setup_logging(verbose: bool = False) -> None:
+def _setup_logging(verbose: bool = False, log_file: Optional[Path] = None) -> None:
     level = logging.DEBUG if verbose else logging.INFO
+    fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+
+    handlers: list[logging.Handler] = []
+    if log_file is not None:
+        # Rotate at ~5MB, keep last 5 — plenty for "what did the daemon do
+        # last week" spelunking, never enough to fill a disk.
+        log_file = Path(log_file).expanduser()
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(
+            RotatingFileHandler(
+                log_file, maxBytes=5_000_000, backupCount=5, encoding="utf-8",
+            )
+        )
+    else:
+        handlers.append(logging.StreamHandler())
+
     logging.basicConfig(
         level=level,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        datefmt="%H:%M:%S",
+        format=fmt,
+        datefmt=datefmt,
+        handlers=handlers,
+        force=True,
     )
 
 
@@ -270,27 +291,163 @@ def serve(
 # ═══════════════════════════════════════════════════════════════
 
 @app.command()
-def daemon(verbose: bool = False):
+def daemon(
+    verbose: bool = False,
+    log_file: Optional[Path] = typer.Option(
+        None,
+        "--log-file",
+        help=(
+            "Append daemon logs to this file (with rotation). When set the "
+            "daemon also stops printing to stdout — useful when supervised "
+            "by Scheduled Task / systemd / launchd."
+        ),
+    ),
+):
     """Run as a background daemon — continuous collect + sync."""
-    _setup_logging(verbose)
+    _setup_logging(verbose, log_file=log_file)
     config = AnimusConfig.load()
 
     from .network.peer import AnimusPeer
 
     peer = AnimusPeer(config)
 
-    console.print(f"[bold]⟁ Animus Daemon starting...[/]")
-    console.print(f"  Node:     {config.node_id} ({config.node_name})")
-    console.print(f"  Interval: {config.collect_interval_seconds}s")
+    # Use logger so the message lands in --log-file too; console.print only
+    # speaks to stdout and is invisible under a service manager.
+    log = logging.getLogger("animus.daemon")
+    log.info("Animus Daemon starting")
+    log.info("  Node:     %s (%s)", config.node_id, config.node_name)
+    log.info("  Interval: %ss", config.collect_interval_seconds)
     if config.hub_url:
-        console.print(f"  Hub:      {config.hub_url}")
-    console.print()
+        log.info("  Hub:      %s", config.hub_url)
 
     try:
         asyncio.run(peer.run_daemon())
     except KeyboardInterrupt:
         peer.stop()
-        console.print("\n[yellow]⟁ Animus daemon stopped.[/]")
+        log.info("Animus daemon stopped (KeyboardInterrupt).")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Service (install daemon as a OS-level service)
+# ═══════════════════════════════════════════════════════════════
+
+service_app = typer.Typer(
+    name="service",
+    help="Install/manage the Animus daemon as an OS service (Scheduled Task / systemd / launchd).",
+    no_args_is_help=True,
+)
+app.add_typer(service_app, name="service")
+
+
+def _print_service(info) -> None:
+    icon = "[green]●[/]" if info.running else ("[yellow]○[/]" if info.installed else "[red]✗[/]")
+    console.print(f"  {icon} platform:  {info.platform}")
+    console.print(f"     installed: {info.installed}")
+    console.print(f"     running:   {info.running}")
+    if info.detail:
+        console.print(f"     detail:    {info.detail}")
+
+
+@service_app.command("install")
+def service_install(
+    log_file: Optional[Path] = typer.Option(
+        None, "--log-file",
+        help="Where the daemon should append its log (default: <data_dir>/daemon.log).",
+    ),
+    animus_exe: Optional[Path] = typer.Option(
+        None, "--animus-exe",
+        help="Override the path to the animus executable (default: current venv).",
+    ),
+):
+    """Register the Animus daemon to start automatically on this machine."""
+    from . import service as svc
+
+    config = AnimusConfig.load()
+    config.ensure_dirs()
+
+    exe = animus_exe or svc.default_animus_exe()
+    log = log_file or svc.default_log_path(config.data_dir)
+
+    console.print(f"[bold]⟁ Installing Animus service[/]")
+    console.print(f"  exe:     {exe}")
+    console.print(f"  logs:    {log}")
+    console.print()
+    info = svc.install(exe, log)
+    _print_service(info)
+    if not info.installed:
+        raise typer.Exit(1)
+
+
+@service_app.command("uninstall")
+def service_uninstall():
+    """Remove the Animus daemon from the OS service manager."""
+    from . import service as svc
+
+    info = svc.uninstall()
+    _print_service(info)
+
+
+@service_app.command("status")
+def service_status(json_out: bool = typer.Option(False, "--json")):
+    """Show whether the Animus service is installed and running."""
+    from . import service as svc
+
+    info = svc.status()
+    if json_out:
+        console.print_json(data=info.to_dict())
+        return
+    _print_service(info)
+
+
+@service_app.command("start")
+def service_start():
+    """Start the Animus service (no-op if already running)."""
+    from . import service as svc
+    _print_service(svc.start())
+
+
+@service_app.command("stop")
+def service_stop():
+    """Stop the Animus service (next logon/boot will start it again)."""
+    from . import service as svc
+    _print_service(svc.stop())
+
+
+@service_app.command("logs")
+def service_logs(
+    tail: int = typer.Option(40, "--tail", "-n", help="Lines to show."),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Stream new lines."),
+):
+    """Print the daemon log file (default location: <data_dir>/daemon.log)."""
+    import time
+    from . import service as svc
+
+    config = AnimusConfig.load()
+    log = svc.default_log_path(config.data_dir)
+    if not log.exists():
+        console.print(f"[yellow]No log file at {log}[/]")
+        console.print(
+            "  Run [bold]animus service install[/] or "
+            "[bold]animus daemon --log-file <path>[/] first."
+        )
+        raise typer.Exit(1)
+
+    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    for line in lines[-tail:]:
+        print(line)
+
+    if follow:
+        try:
+            with log.open("r", encoding="utf-8", errors="replace") as fh:
+                fh.seek(0, 2)  # end
+                while True:
+                    line = fh.readline()
+                    if not line:
+                        time.sleep(0.5)
+                        continue
+                    print(line.rstrip())
+        except KeyboardInterrupt:
+            return
 
 
 # ═══════════════════════════════════════════════════════════════
