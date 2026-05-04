@@ -4,6 +4,44 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] — 2026-05-04
+
+### Added
+- **`animus service` command group** — cross-platform installer for the
+  daemon. Wraps Scheduled Task on Windows, `systemctl --user` on Linux,
+  and `launchctl` on macOS behind the same surface:
+  - `animus service install` — register and start the daemon
+  - `animus service status` — show installed/running state
+  - `animus service start` / `stop` — control without touching the OS
+  - `animus service uninstall` — remove the unit
+  - `animus service logs --tail N --follow` — tail the daemon log
+  No more "is the peer actually running?" mystery — the answer is now one
+  command away.
+- **Daemon log redirection.** `animus daemon --log-file <path>` switches
+  from stdout to a `RotatingFileHandler` (5 MB × 5 backups, UTF-8). The
+  service installer wires this automatically so headless peers always
+  leave a trail at `<data_dir>/daemon.log`.
+- New module `animus/service.py` with platform-agnostic `install`,
+  `uninstall`, `status`, `start`, `stop`, plus a `ServiceInfo`
+  dataclass. Designed to be unit-testable: every backend goes through
+  `subprocess.run`, so the tests inject fakes instead of touching the
+  host's real service manager.
+
+### Changed
+- `_setup_logging(verbose, log_file=None)` now accepts an optional
+  `log_file` and forces a clean handler set (`force=True`), so callers
+  swapping between console and file logging in the same process don't
+  leak stale handlers.
+- The `daemon` command emits its banner via the logger (so it lands in
+  the log file) instead of `console.print`, which is invisible under a
+  service supervisor.
+
+### Internal
+- 19 new tests in `tests/test_service.py` covering `detect_platform`,
+  unsupported-OS fallbacks, the systemd unit/state lifecycle, and the
+  Windows PowerShell call surface (mocked).
+- Suite: **210 passing** locally on Windows + Python 3.13.
+
 ## [0.4.3] — 2026-05-03
 
 ### Fixed
