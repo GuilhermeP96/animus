@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -15,12 +17,86 @@ from pydantic_settings import BaseSettings
 def _default_data_dir() -> Path:
     system = platform.system()
     if system == "Windows":
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        # NOTE: We deliberately avoid %APPDATA% / %LOCALAPPDATA% on
+        # Windows. When Animus runs under the Microsoft Store Python
+        # (PythonSoftwareFoundation.Python.*), AppX storage
+        # virtualization silently redirects writes under those roots
+        # to the package's LocalCache, which is invisible to other
+        # shells/tools and breaks the "config-set saved but file
+        # missing" debugging loop. The user profile root is not
+        # virtualized, so .animus/ there is stable across all
+        # interpreters.
+        base = Path.home() / ".animus"
+        return base
     elif system == "Darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     return base / "animus"
+
+
+def _legacy_data_dirs() -> list[Path]:
+    """Older data_dir locations to migrate from on first run.
+
+    Order matters: the first one that exists and contains a
+    config.json wins.
+    """
+    out: list[Path] = []
+    if platform.system() != "Windows":
+        return out
+
+    # Pre-0.4.5 default
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        out.append(Path(appdata) / "animus")
+
+    # AppX-virtualized variants (Microsoft Store Python redirects
+    # %APPDATA% writes to LocalCache\Roaming under the package).
+    localappdata = os.environ.get("LOCALAPPDATA")
+    if localappdata:
+        packages = Path(localappdata) / "Packages"
+        if packages.is_dir():
+            for pkg in packages.glob(
+                "PythonSoftwareFoundation.Python.*/LocalCache/Roaming/animus"
+            ):
+                out.append(pkg)
+
+    return out
+
+
+def _migrate_legacy_data_dir(src: Path, dst: Path) -> None:
+    """Copy a legacy data_dir into the new location.
+
+    Idempotent: only files missing at the destination are copied.
+    Logs a warning so the user notices the migration.
+    """
+    log = logging.getLogger("animus.config")
+    log.warning("Migrating Animus data from legacy path %s -> %s", src, dst)
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dst / item.name
+        if target.exists():
+            continue
+        try:
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+        except OSError as exc:
+            log.error("Failed to migrate %s: %s", item, exc)
+
+    # Rewrite the migrated config.json so its data_dir points at the
+    # new location instead of the legacy one we just copied from.
+    cfg_file = dst / "config.json"
+    if cfg_file.exists():
+        try:
+            data = json.loads(cfg_file.read_text(encoding="utf-8"))
+            data["data_dir"] = str(dst)
+            cfg_file.write_text(
+                json.dumps(data, indent=2, default=str), encoding="utf-8"
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            log.error("Failed to rewrite data_dir in migrated config: %s", exc)
 
 
 def _default_vscode_dir() -> Path:
@@ -109,6 +185,19 @@ class AnimusConfig(BaseSettings):
 
         cfg = cls()
         file = path or cfg.config_path
+
+        # One-shot migration from legacy data_dirs (pre-0.4.5 default
+        # of %APPDATA%\animus and AppX-virtualized variants under
+        # Microsoft Store Python). Only triggered when the new
+        # location has no config yet.
+        if path is None and not file.exists():
+            for legacy in _legacy_data_dirs():
+                if legacy == cfg.data_dir:
+                    continue
+                if (legacy / "config.json").exists():
+                    _migrate_legacy_data_dir(legacy, cfg.data_dir)
+                    break
+
         if file.exists():
             data = json.loads(file.read_text(encoding="utf-8"))
             try:

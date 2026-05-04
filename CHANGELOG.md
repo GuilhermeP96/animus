@@ -4,6 +4,39 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-05-04
+
+### Fixed
+- **Windows AppX virtualization trap.** When Animus runs under the
+  Microsoft Store Python (`PythonSoftwareFoundation.Python.*`), every
+  write under `%APPDATA%` and `%LOCALAPPDATA%` is silently redirected
+  to the package's `LocalCache\Roaming\…`. The daemon worked, but
+  `Test-Path "$env:APPDATA\animus\config.json"` returned `False`,
+  `animus config-set` appeared to no-op, and the data directory
+  forked between PowerShell's view and the running peer's view —
+  producing identity drift on reinstall.
+
+### Changed
+- **`data_dir` default on Windows is now `%USERPROFILE%\.animus\`.**
+  The user profile root is not subject to AppX redirection, so the
+  daemon, the CLI, the MCP server, and PowerShell all see the same
+  files regardless of which Python launched the process.
+- **One-shot migration on first load.** `AnimusConfig.load()` detects
+  legacy data directories (`%APPDATA%\animus\` and the AppX-virtualized
+  `…\Packages\PythonSoftwareFoundation.Python.*\LocalCache\Roaming\animus\`)
+  and copies them into the new home before continuing. The migrated
+  `config.json` has its `data_dir` field rewritten to point at the
+  new location so a stale absolute path can't pull the daemon back
+  into the trap. Idempotent: existing destination files are never
+  overwritten.
+
+### Internal
+- New helpers `_legacy_data_dirs()` and `_migrate_legacy_data_dir()`
+  in `animus/config.py` with 6 dedicated tests in `tests/test_config.py`
+  (default-home path, legacy candidate enumeration including AppX
+  glob, idempotent copy, post-migration `data_dir` rewrite, end-to-end
+  `load()` migration).
+
 ## [0.4.4] — 2026-05-04
 
 ### Added
