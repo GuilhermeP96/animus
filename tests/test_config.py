@@ -75,6 +75,24 @@ class TestAnimusConfig:
         assert loaded.node_id  # Should be auto-generated
         assert len(loaded.node_id) > 0
 
+    def test_load_with_explicit_path_does_not_touch_home_config(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression: a test calling ``load(some_tmp_path)`` must not
+        write to the real ``~/.animus/config.json``. Previously the
+        auto-save fallback inside ``load()`` clobbered live peer
+        configs whenever the suite ran."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        # Sanity: home config doesn't exist yet
+        home_cfg = fake_home / ".animus" / "config.json"
+        assert not home_cfg.exists()
+        # Load from a different path that doesn't exist either
+        AnimusConfig.load(tmp_path / "elsewhere" / "config.json")
+        # The home config must remain absent
+        assert not home_cfg.exists()
+
     def test_save_creates_valid_json(self, config):
         config.save()
         data = json.loads(config.config_path.read_text(encoding="utf-8"))
