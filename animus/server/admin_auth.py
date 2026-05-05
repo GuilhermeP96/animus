@@ -15,14 +15,28 @@ from pydantic import BaseModel
 
 # ── Config ──
 
+# Fail-closed defaults: if the operator hasn't set credentials and a
+# server secret, the admin panel refuses to authenticate. The legacy
+# behaviour of falling back to "admin/admin" + a hard-coded secret
+# silently exposed the panel on misconfigured hubs.
+
 ADMIN_USER = os.environ.get("ANIMUS_ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.environ.get("ANIMUS_ADMIN_PASSWORD", "admin")
-ADMIN_SECRET = os.environ.get(
+ADMIN_PASSWORD = os.environ.get("ANIMUS_ADMIN_PASSWORD", "")
+_ADMIN_SECRET_RAW = os.environ.get(
     "ANIMUS_ADMIN_SECRET",
-    os.environ.get("ANIMUS_SERVER_SECRET", "animus-default-secret-change-me"),
+    os.environ.get("ANIMUS_SERVER_SECRET", ""),
 )
+ADMIN_SECRET = _ADMIN_SECRET_RAW or "animus-fail-closed-no-secret"
+_ADMIN_INSECURE = os.environ.get("ANIMUS_ADMIN_INSECURE", "0") == "1"
 SESSION_COOKIE = "animus_session"
 SESSION_EXPIRY = 8 * 3600  # 8 hours
+
+
+def _admin_configured() -> bool:
+    """Returns True iff the admin panel has real credentials and a
+    real session secret. Allows ``ANIMUS_ADMIN_INSECURE=1`` to
+    explicitly bypass for local-dev testing."""
+    return bool(ADMIN_PASSWORD and _ADMIN_SECRET_RAW) or _ADMIN_INSECURE
 
 
 class AdminSession(BaseModel):
@@ -32,7 +46,10 @@ class AdminSession(BaseModel):
 
 
 def validate_credentials(username: str, password: str) -> bool:
-    """Constant-time credential validation."""
+    """Constant-time credential validation. Fails closed when the
+    admin panel has not been configured."""
+    if not _admin_configured():
+        return False
     user_ok = hmac.compare_digest(username.encode(), ADMIN_USER.encode())
     pass_ok = hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode())
     return user_ok and pass_ok

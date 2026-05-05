@@ -4,6 +4,72 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-05-05
+
+### Security
+- **Body-bound HMAC.** Request bodies are now hashed (SHA-256) and
+  the digest is part of the signed payload. A proxy or middlebox
+  that swaps `memories[]` while keeping a stolen header is now
+  rejected with HTTP 401. The optional `X-Animus-Body-SHA256`
+  header lets the server reject mismatches before signature
+  verification even runs.
+- **Replay protection (nonce cache).** Every signed request now
+  carries `X-Animus-Nonce` (16 random bytes hex). The hub remembers
+  recently-seen `(node_id, nonce)` pairs for the duration of the
+  freshness window and rejects duplicates with 401. Bounded LRU at
+  100k entries. Set `ANIMUS_REQUIRE_NONCE=1` once all peers are on
+  0.4.6+ to make the nonce mandatory.
+- **WebSocket handshake signed with HMAC.** `/ws/sync` no longer
+  accepts a bearer token equal to the shared secret on the wire.
+  The handshake message itself is the signed body, with the same
+  `node_id|node_name|timestamp|nonce` payload format. Comparison is
+  constant-time (closes a timing-attack vector on the previous `!=`
+  check).
+- **WebSocket Origin allowlist.** `ANIMUS_WS_ALLOWED_ORIGINS`
+  controls which browser Origins may open `/ws/sync`. Empty
+  allowlist means "native clients only" (no Origin header). `*`
+  disables the check (dev only). Browsers from rogue tabs can no
+  longer drift onto a configured hub.
+- **Admin panel fails closed.** The legacy default of
+  `admin/admin` + `animus-default-secret-change-me` no longer
+  authenticates. The panel refuses logins unless
+  `ANIMUS_ADMIN_PASSWORD` AND a session secret
+  (`ANIMUS_ADMIN_SECRET` or `ANIMUS_SERVER_SECRET`) are both set.
+  `ANIMUS_ADMIN_INSECURE=1` re-enables the old behaviour for
+  local-dev only.
+
+### Changed
+- `create_auth_header(secret, node_id)` gained an optional `body=`
+  parameter. The peer client now signs every POST body it sends to
+  the hub.
+- `verify_auth_header(secret, headers)` gained `body=` and
+  `require_nonce=` parameters and a small thread-safe replay
+  cache (`_replay_cache`).
+- `SyncProtocol.handshake(...)` accepts `shared_secret=` and emits
+  a signed handshake when set.
+
+### Internal
+- 13 new tests in `tests/test_crypto.py` (nonce uniqueness, replay
+  rejection within window, body hash determinism, tamper
+  detection, body-hash header mismatch, empty-body round-trip).
+- 5 new HTTP integration tests in `tests/test_server.py`
+  (`TestSecureAuth`) hitting `/api/sync/pull` with `TestClient`:
+  unsigned -> 401, signed -> 200, tampered body -> 401, replay ->
+  401, wrong secret -> 401.
+- New `tests/test_admin_auth.py` (5 tests) verifying fail-closed
+  defaults and the explicit `ANIMUS_ADMIN_INSECURE` bypass.
+- 249 tests passing (was 229).
+
+### Migration notes
+- Peers running 0.4.5 keep working unchanged: the verifier accepts
+  requests without nonce/body-hash for backwards compatibility.
+  Once your fleet is fully on 0.4.6, set `ANIMUS_REQUIRE_NONCE=1`
+  on the hub to harden the freshness check.
+- If you exposed the admin panel with the legacy default
+  credentials and have not set `ANIMUS_ADMIN_PASSWORD`, the panel
+  will reject all logins after upgrade. Set the env vars on the
+  hub before deploying 0.4.6.
+
 ## [0.4.5] — 2026-05-04
 
 ### Fixed
