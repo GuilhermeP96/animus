@@ -4,6 +4,27 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.11] — 2026-05-05
+
+### Added
+- **Tool calls are now captured in transcript memories.** Assistant turns
+  often consist of one short sentence ("I'll create the script and run it")
+  plus a tool call whose ``arguments`` field carries the actual payload
+  (e.g. a ``create_file`` body). The pre-0.4.11 collector kept only the
+  text and discarded the tool call entirely — producing memories that
+  read like the assistant said almost nothing.
+  Each tool call is now appended to the memory body as a fenced block:
+  ``**🔧 Tool call: `create_file`**`` followed by the pretty-printed
+  arguments. Double-encoded JSON arguments are detected and unwrapped
+  before formatting.
+
+### Changed
+- Transcript content cap raised from 50 KB to 256 KB. The 50 KB ceiling
+  was cutting large tool call bodies (long Python scripts, big diffs)
+  mid-string, producing the unrecoverable JSON we had to migrate around
+  in v0.4.9 / v0.4.10. The Memory model still enforces the 512 KB hard
+  ceiling.
+
 ## [0.4.10] — 2026-05-05
 
 ### Fixed
