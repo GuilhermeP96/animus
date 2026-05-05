@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -67,27 +68,68 @@ def _migrate_unwrap_transcript_envelopes(engine: IndexEngine) -> None:
             "LIMIT 200000"
         ).fetchall()
         repaired = 0
+        truncated_recovered = 0
+        # Regex used to recover `"content": "<value>"` from truncated rows
+        # where json.loads fails. It only matches the *first* content key,
+        # which on assistant/user message envelopes is the human-readable
+        # body — exactly what the UI should render.
+        content_re = re.compile(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
         for row in rows:
             mem_id = row["id"]
             raw = row["content"] or ""
+            text: str | None = None
             try:
                 data = json.loads(raw)
             except (TypeError, ValueError):
-                continue
-            payload = data.get("data") if isinstance(data.get("data"), dict) else data
-            text = (
-                payload.get("content")
-                or payload.get("text")
-                or payload.get("message")
-                or data.get("content")
-                or data.get("text")
-                or data.get("message")
-                or ""
-            )
-            if isinstance(text, list):
-                text = "\n".join(
-                    p.get("text", "") if isinstance(p, dict) else str(p) for p in text
-                ).strip()
+                # Truncated JSON (the pre-0.4.9 collector capped lines at 50KB).
+                # Best-effort recover the first `content` field via regex.
+                match = content_re.search(raw)
+                if match:
+                    try:
+                        text = json.loads('"' + match.group(1) + '"')
+                        truncated_recovered += 1
+                    except ValueError:
+                        text = None
+                if not text:
+                    # Even more aggressive: the closing quote was cut off.
+                    # Grab everything after the first `"content":"`, drop a
+                    # trailing partial escape, and decode.
+                    open_re = re.search(r'"content"\s*:\s*"', raw)
+                    if open_re:
+                        tail = raw[open_re.end():]
+                        # Strip a dangling backslash that would break decoding.
+                        if tail.endswith("\\"):
+                            tail = tail[:-1]
+                        try:
+                            text = json.loads('"' + tail + '"')
+                            truncated_recovered += 1
+                        except ValueError:
+                            # Last resort: manual unescape, accept some loss.
+                            text = (
+                                tail.replace("\\r\\n", "\n")
+                                .replace("\\n", "\n")
+                                .replace("\\t", "\t")
+                                .replace('\\"', '"')
+                                .replace("\\\\", "\\")
+                            )
+                            truncated_recovered += 1
+                if not text:
+                    continue
+            else:
+                payload = data.get("data") if isinstance(data.get("data"), dict) else data
+                text = (
+                    payload.get("content")
+                    or payload.get("text")
+                    or payload.get("message")
+                    or data.get("content")
+                    or data.get("text")
+                    or data.get("message")
+                    or ""
+                )
+                if isinstance(text, list):
+                    text = "\n".join(
+                        p.get("text", "") if isinstance(p, dict) else str(p) for p in text
+                    ).strip()
             if not isinstance(text, str) or not text.strip():
                 continue
             engine.conn.execute(
@@ -98,7 +140,9 @@ def _migrate_unwrap_transcript_envelopes(engine: IndexEngine) -> None:
         engine.conn.commit()
     if repaired:
         logger.info(
-            "Hub migration: unwrapped %d transcript-envelope memories", repaired
+            "Hub migration: unwrapped %d transcript-envelope memories "
+            "(%d via truncated-JSON recovery)",
+            repaired, truncated_recovered,
         )
 
 
