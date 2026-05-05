@@ -4,6 +4,25 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] — 2026-05-05
+
+### Fixed
+- **`AnimusConfig.load(path)` no longer clobbers `~/.animus/config.json`.**
+  When `load()` was called with an explicit path that didn't exist,
+  the auto-generated `node_id` fallback was being persisted to
+  `cfg.config_path` (the *default* path), not to the path the
+  caller asked for. The test `test_load_generates_node_id` was
+  silently wiping the live peer's `node_id`, `hub_url`, and
+  `server_secret` on every `pytest` run. Auto-save now only fires
+  when `load()` was called without an explicit path.
+- New regression test
+  `test_load_with_explicit_path_does_not_touch_home_config`
+  asserts that `load(some_tmp_path)` never writes under
+  `Path.home() / .animus`.
+
+### Internal
+- 250 tests passing.
+
 ## [0.4.6] — 2026-05-05
 
 ### Security

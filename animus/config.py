@@ -220,7 +220,13 @@ class AnimusConfig(BaseSettings):
             import uuid
 
             cfg.node_id = str(uuid.uuid4())[:12]
-            cfg.save()
+            # Only persist when load() was called without an explicit
+            # path. Otherwise the auto-save would clobber the user's
+            # real ~/.animus/config.json with defaults whenever a test
+            # (or any caller) points load() at a sandbox file. Tests
+            # were doing this and silently wiping live peer configs.
+            if path is None:
+                cfg.save()
         if not cfg.node_name:
             cfg.node_name = platform.node()
         return cfg
