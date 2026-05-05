@@ -4,7 +4,30 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.7] — 2026-05-05
+## [0.4.8] — 2026-05-05
+
+### Added
+- **Markdown rendering in the memory detail view.** The admin UI now renders
+  the `content` field with `marked.js` (GFM, line-break-as-`<br>`) sanitized
+  by `DOMPurify`. A "Raw" toggle keeps the original monospace pre-formatted
+  view a click away. Code blocks, headings, lists, blockquotes, tables and
+  inline code now display with proper formatting and preserved line breaks.
+- Search-result preview now uses `white-space: pre-wrap`, so line breaks in
+  the first 300 chars no longer collapse to a single line.
+
+### Fixed
+- **Hub no longer reports every memory as `Pending`.** The `synced` flag was
+  defaulting to `0` even on the hub, where there is no upstream to push to.
+  - `IndexEngine.index_memory(..., synced=False)` and
+    `index_batch(..., synced=False)` now accept an explicit flag.
+  - The hub's `/api/sync/push` ingest path passes `synced=True`.
+  - Lifespan startup runs a one-shot backfill
+    (`UPDATE memories SET synced = 1 WHERE synced = 0`) so the existing
+    archive is corrected on first boot of 0.4.8.
+  - Peer behaviour is unchanged — `synced` still defaults to `0` for locally
+    collected memories until they are pushed.
+
+
 
 ### Fixed
 - **`AnimusConfig.load(path)` no longer clobbers `~/.animus/config.json`.**

@@ -53,6 +53,19 @@ async def lifespan(app: FastAPI):
     _config.node_role = "hub"
     _config.ensure_dirs()
     _engine = IndexEngine(_config.db_path)
+    # Hub-side migration: any memory already in the DB is, by definition,
+    # synced (the hub is the destination). Without this backfill the admin
+    # UI shows every imported memory as "Pending" forever.
+    try:
+        with _engine._lock:
+            updated = _engine.conn.execute(
+                "UPDATE memories SET synced = 1 WHERE synced = 0"
+            ).rowcount
+            _engine.conn.commit()
+        if updated:
+            logger.info("Hub migration: marked %d backlog memories as synced", updated)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("Hub synced-flag backfill failed: %s", exc)
     logger.info("Animus Hub started — node=%s", _config.node_id)
     yield
     if _engine:
@@ -184,7 +197,9 @@ async def sync_push(req: PushRequest, node_id: str = Depends(verify_peer)):
     engine = get_engine()
     data = req.model_dump()
     memories, skipped = SyncProtocol.memories_from_push(data)
-    new_count = engine.index_batch(memories)
+    # Hub is the destination — there is nowhere to push these onward,
+    # so mark them synced on ingest to avoid a misleading "Pending" UI.
+    new_count = engine.index_batch(memories, synced=True)
 
     logger.info(
         "PUSH from %s (%s): %d memories, %d new, %d skipped",
