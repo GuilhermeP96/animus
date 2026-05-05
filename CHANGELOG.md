@@ -4,6 +4,19 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.12] — 2026-05-05
+
+### Fixed
+- **Markdown rendering on the memory detail view actually works now.** The
+  Subresource Integrity hashes for the `marked@12.0.2` and `dompurify@3.1.6`
+  CDN scripts in v0.4.8–0.4.11 were placeholders and never matched the
+  actual files — every browser refused to execute the scripts, the catch
+  block kicked in, and content fell back to monospace pre-formatted text.
+  Memories with tool-call markup looked like raw source code.
+  - SRI hashes corrected to the real upstream digests.
+  - Added an explicit `typeof marked === 'undefined'` fallback that logs to
+    the console and degrades gracefully if the CDN is ever blocked.
+
 ## [0.4.11] — 2026-05-05
 
 ### Added
