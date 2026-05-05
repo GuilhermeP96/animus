@@ -78,13 +78,15 @@ class AnimusPeer:
         )
 
         try:
-            headers = create_auth_header(self.config.server_secret or self.config.hub_token, self.config.node_id)
+            body_str = SyncProtocol.push(batch)
+            secret = self.config.server_secret or self.config.hub_token
+            headers = create_auth_header(secret, self.config.node_id, body=body_str)
             async with httpx.AsyncClient(timeout=30) as client:
                 # Use HTTP POST for batch sync (simpler than WS for one-shots)
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/sync/push",
-                    json=json.loads(SyncProtocol.push(batch)),
-                    headers=headers,
+                    content=body_str,
+                    headers={**headers, "Content-Type": "application/json"},
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -105,12 +107,14 @@ class AnimusPeer:
             return 0
 
         try:
-            headers = create_auth_header(self.config.server_secret or self.config.hub_token, self.config.node_id)
+            body_str = json.dumps({"node_id": self.config.node_id, "limit": 200})
+            secret = self.config.server_secret or self.config.hub_token
+            headers = create_auth_header(secret, self.config.node_id, body=body_str)
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/sync/pull",
-                    json={"node_id": self.config.node_id, "limit": 200},
-                    headers=headers,
+                    content=body_str,
+                    headers={**headers, "Content-Type": "application/json"},
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -128,12 +132,14 @@ class AnimusPeer:
             return []
 
         try:
-            headers = create_auth_header(self.config.server_secret or self.config.hub_token, self.config.node_id)
+            body_str = json.dumps({"query": query, "node_id": self.config.node_id})
+            secret = self.config.server_secret or self.config.hub_token
+            headers = create_auth_header(secret, self.config.node_id, body=body_str)
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/search",
-                    json={"query": query, "node_id": self.config.node_id},
-                    headers=headers,
+                    content=body_str,
+                    headers={**headers, "Content-Type": "application/json"},
                 )
                 if resp.status_code == 200:
                     return resp.json().get("results", [])

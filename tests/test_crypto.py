@@ -7,11 +7,21 @@ import pytest
 from animus.network.crypto import (
     create_auth_header,
     derive_peer_key,
+    generate_nonce,
     generate_token,
+    hash_body,
     sign_message,
     verify_auth_header,
     verify_signature,
+    _replay_cache_clear,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_replay():
+    _replay_cache_clear()
+    yield
+    _replay_cache_clear()
 
 
 class TestGenerateToken:
@@ -112,3 +122,76 @@ class TestAuthHeaders:
         lower = {k.lower(): v for k, v in headers.items()}
         lower["x-animus-timestamp"] = "not-a-number"
         assert verify_auth_header("secret", lower) is False
+
+class TestNonce:
+    def test_generate_nonce_unique(self):
+        n1 = generate_nonce()
+        n2 = generate_nonce()
+        assert n1 != n2
+        assert len(n1) == 32  # 16 bytes hex
+
+    def test_replay_rejected_within_window(self):
+        headers = create_auth_header("secret", "node-1", secure=True)
+        lower = {k.lower(): v for k, v in headers.items()}
+        # First call accepts
+        assert verify_auth_header("secret", lower) is True
+        # Same nonce again -> rejected
+        assert verify_auth_header("secret", lower) is False
+
+    def test_replay_cache_separates_by_node(self):
+        h1 = create_auth_header("secret", "node-1", secure=True)
+        h2 = create_auth_header("secret", "node-2", secure=True)
+        l1 = {k.lower(): v for k, v in h1.items()}
+        l2 = {k.lower(): v for k, v in h2.items()}
+        assert verify_auth_header("secret", l1) is True
+        assert verify_auth_header("secret", l2) is True
+
+    def test_require_nonce_flag(self):
+        # Build a header then strip the nonce
+        headers = create_auth_header("secret", "node-1", secure=True)
+        lower = {k.lower(): v for k, v in headers.items()}
+        lower.pop("x-animus-nonce", None)
+        # Without require_nonce, header structure is incomplete and
+        # signature won't match anyway (it includes the nonce); this
+        # is fine — we just verify require_nonce short-circuits.
+        assert verify_auth_header("secret", lower, require_nonce=True) is False
+
+
+class TestBodySigning:
+    def test_hash_body_empty(self):
+        assert hash_body(None) == ""
+        assert hash_body("") == ""
+        assert hash_body(b"") == ""
+
+    def test_hash_body_deterministic(self):
+        assert hash_body("hello") == hash_body("hello")
+        assert hash_body(b"hello") == hash_body("hello")
+
+    def test_signed_body_round_trip(self):
+        body = b'{"node_id":"n1","limit":200}'
+        headers = create_auth_header("secret", "node-1", body=body, secure=True)
+        lower = {k.lower(): v for k, v in headers.items()}
+        assert "x-animus-body-sha256" in lower
+        assert verify_auth_header("secret", lower, body=body) is True
+
+    def test_tampered_body_rejected(self):
+        body = b'{"node_id":"n1","limit":200}'
+        headers = create_auth_header("secret", "node-1", body=body, secure=True)
+        lower = {k.lower(): v for k, v in headers.items()}
+        tampered = b'{"node_id":"n1","limit":99999}'
+        assert verify_auth_header("secret", lower, body=tampered) is False
+
+    def test_body_hash_header_must_match_body(self):
+        body = b"hello"
+        headers = create_auth_header("secret", "node-1", body=body, secure=True)
+        lower = {k.lower(): v for k, v in headers.items()}
+        # Substitute a wrong body hash header — must be rejected even
+        # before signature check.
+        lower["x-animus-body-sha256"] = "0" * 64
+        assert verify_auth_header("secret", lower, body=body) is False
+
+    def test_empty_body_sig_compatible_with_body_send(self):
+        # Header created without body; verifier called with body=b""
+        headers = create_auth_header("secret", "node-1")
+        lower = {k.lower(): v for k, v in headers.items()}
+        assert verify_auth_header("secret", lower, body=b"") is True

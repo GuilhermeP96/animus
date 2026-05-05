@@ -160,3 +160,67 @@ class TestPeersEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data["peers"], list)
+
+class TestSecureAuth:
+    """v0.4.6 — body-bound HMAC + replay protection at the HTTP layer."""
+
+    @pytest.fixture
+    def secured_client(self, hub_app, hub_config):
+        from animus.network.crypto import _replay_cache_clear
+        _replay_cache_clear()
+        hub_config.server_secret = "test-shared-secret"
+        return TestClient(hub_app)
+
+    def test_unsigned_request_rejected(self, secured_client):
+        resp = secured_client.post(
+            "/api/sync/pull",
+            json={"node_id": "n1", "limit": 5},
+            headers={"X-Animus-Node": "n1"},
+        )
+        assert resp.status_code == 401
+
+    def test_signed_request_accepted(self, secured_client):
+        from animus.network.crypto import create_auth_header
+        body = b'{"node_id":"n1","limit":5}'
+        headers = create_auth_header("test-shared-secret", "n1", body=body, secure=True)
+        resp = secured_client.post(
+            "/api/sync/pull",
+            content=body,
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 200
+
+    def test_tampered_body_rejected(self, secured_client):
+        from animus.network.crypto import create_auth_header
+        body = b'{"node_id":"n1","limit":5}'
+        headers = create_auth_header("test-shared-secret", "n1", body=body, secure=True)
+        # Send a different body but the original headers
+        resp = secured_client.post(
+            "/api/sync/pull",
+            content=b'{"node_id":"n1","limit":99999}',
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 401
+
+    def test_replay_rejected(self, secured_client):
+        from animus.network.crypto import create_auth_header
+        body = b'{"node_id":"n1","limit":5}'
+        headers = create_auth_header("test-shared-secret", "n1", body=body, secure=True)
+        h = {**headers, "Content-Type": "application/json"}
+        # First request OK
+        r1 = secured_client.post("/api/sync/pull", content=body, headers=h)
+        assert r1.status_code == 200
+        # Replay same headers + body -> rejected
+        r2 = secured_client.post("/api/sync/pull", content=body, headers=h)
+        assert r2.status_code == 401
+
+    def test_wrong_secret_rejected(self, secured_client):
+        from animus.network.crypto import create_auth_header
+        body = b'{"node_id":"n1","limit":5}'
+        headers = create_auth_header("wrong-secret", "n1", body=body, secure=True)
+        resp = secured_client.post(
+            "/api/sync/pull",
+            content=body,
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 401

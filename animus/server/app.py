@@ -112,7 +112,12 @@ async def verify_peer(request: Request) -> str:
         # No auth configured — accept all (dev mode)
         return request.headers.get("x-animus-node", "anonymous")
 
-    if not verify_auth_header(config.server_secret, dict(request.headers)):
+    # Read body up front so we can include its hash in the signed
+    # payload. FastAPI caches the result on the Request object, so
+    # the downstream pydantic dependency still sees the same bytes.
+    body = await request.body() if request.method in ("POST", "PUT", "PATCH") else b""
+
+    if not verify_auth_header(config.server_secret, dict(request.headers), body=body):
         raise HTTPException(status_code=401, detail="Invalid authentication")
     return request.headers["x-animus-node"]
 
@@ -259,9 +264,35 @@ async def list_peers(node_id: str = Depends(verify_peer)):
 
 # ── WebSocket for realtime sync ──
 
+
+def _ws_origin_allowed(origin: str) -> bool:
+    """Allowlist of Origins permitted to open the sync WebSocket.
+
+    Set ``ANIMUS_WS_ALLOWED_ORIGINS`` to a comma-separated list. If
+    empty, only requests with no Origin header (i.e. native peer
+    clients, not browsers) are accepted. ``*`` disables the check
+    (dev only).
+    """
+    import os
+    allow = os.environ.get("ANIMUS_WS_ALLOWED_ORIGINS", "").strip()
+    if allow == "*":
+        return True
+    if not origin:
+        # Non-browser clients (httpx, websockets lib) typically don't
+        # send Origin; that's fine. CSRF only applies to browsers.
+        return True
+    allowed = {o.strip() for o in allow.split(",") if o.strip()}
+    return origin in allowed
+
+
 @app.websocket("/ws/sync")
 async def websocket_sync(ws: WebSocket):
     """WebSocket endpoint for realtime peer synchronization."""
+    origin = ws.headers.get("origin", "")
+    if not _ws_origin_allowed(origin):
+        await ws.close(code=4403, reason="Origin not allowed")
+        return
+
     await ws.accept()
     peer_node_id = None
 
@@ -277,11 +308,24 @@ async def websocket_sync(ws: WebSocket):
         peer_node_id = msg["node_id"]
         config = get_config()
 
-        # Verify auth if configured
+        # Verify auth if configured. The handshake message itself is
+        # the signed body, so a stolen header alone can't be replayed
+        # against a different handshake.
         if config.server_secret:
-            token = msg.get("token", "")
-            if not token or token != config.server_secret:
-                await ws.close(code=4003, reason="Invalid auth token")
+            sig_headers = {
+                "x-animus-node": msg.get("node_id", ""),
+                "x-animus-timestamp": str(msg.get("timestamp", "")),
+                "x-animus-nonce": msg.get("nonce", ""),
+                "x-animus-signature": msg.get("signature", ""),
+            }
+            signed_body = (
+                f"{msg.get('node_id', '')}|{msg.get('node_name', '')}|"
+                f"{msg.get('timestamp', '')}|{msg.get('nonce', '')}"
+            )
+            if not verify_auth_header(
+                config.server_secret, sig_headers, body=signed_body
+            ):
+                await ws.close(code=4003, reason="Invalid auth signature")
                 return
 
         _connected_peers[peer_node_id] = {

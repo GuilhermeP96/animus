@@ -27,15 +27,50 @@ class SyncProtocol:
     """
 
     @staticmethod
-    def handshake(node_id: str, node_name: str, capabilities: list[str] | None = None) -> str:
-        return json.dumps({
+    def handshake(
+        node_id: str,
+        node_name: str,
+        capabilities: list[str] | None = None,
+        shared_secret: str | None = None,
+    ) -> str:
+        """Build a HANDSHAKE message.
+
+        When ``shared_secret`` is provided, the message is signed with
+        the same HMAC scheme as REST requests so the server can
+        validate it without a bearer token traveling on the wire.
+        """
+        import time
+        from .crypto import (
+            create_auth_header,
+            derive_peer_key,
+            sign_message,
+        )
+
+        ts = str(int(time.time()))
+        payload: dict[str, Any] = {
             "type": "HANDSHAKE",
             "node_id": node_id,
             "node_name": node_name,
             "capabilities": capabilities or ["push", "pull", "query"],
             "version": "0.1.0",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+            "timestamp": ts,
+        }
+        if shared_secret:
+            # Same auth shape as REST: nonce + signed payload binding
+            # node_id, name, timestamp, nonce. Server reconstructs the
+            # same string and verifies.
+            headers = create_auth_header(shared_secret, node_id, body=None)
+            nonce = headers["X-Animus-Nonce"]
+            signed_body = f"{node_id}|{node_name}|{ts}|{nonce}"
+            peer_key = derive_peer_key(shared_secret, node_id)
+            from .crypto import hash_body, _build_payload  # type: ignore
+            sig = sign_message(
+                peer_key,
+                _build_payload(node_id, ts, nonce, hash_body(signed_body)),
+            )
+            payload["nonce"] = nonce
+            payload["signature"] = sig
+        return json.dumps(payload)
 
     @staticmethod
     def push(batch: MemoryBatch) -> str:
