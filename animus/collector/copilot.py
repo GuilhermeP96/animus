@@ -294,9 +294,38 @@ class CopilotCollector:
                             continue
                         try:
                             data = json.loads(line)
-                            role = data.get("role", data.get("type", "unknown"))
-                            text = data.get("content", data.get("text", data.get("message", "")))
-                            title_text = (text[:80] if text else data.get("type", f"turn-{i}"))
+                            # Transcripts use a nested {"type": ..., "data": {...}} envelope.
+                            # The actual message lives under data["data"]; older / non-envelope
+                            # rows put it at the top level. Probe both, in order.
+                            payload = data.get("data") if isinstance(data.get("data"), dict) else data
+                            role = (
+                                data.get("type")
+                                or payload.get("role")
+                                or payload.get("type")
+                                or "unknown"
+                            )
+                            text = (
+                                payload.get("content")
+                                or payload.get("text")
+                                or payload.get("message")
+                                or data.get("content")
+                                or data.get("text")
+                                or data.get("message")
+                                or ""
+                            )
+                            # Some payloads store content as a list of parts
+                            # (Anthropic / Copilot agent style: [{type:"text", text:"..."}, ...]).
+                            if isinstance(text, list):
+                                text = "\n".join(
+                                    p.get("text", "") if isinstance(p, dict) else str(p)
+                                    for p in text
+                                ).strip()
+                            elif not isinstance(text, str):
+                                text = str(text) if text is not None else ""
+                            # Skip envelope-only events with no human-readable body.
+                            if not text and role in {"session.start", "session.end", "ping"}:
+                                continue
+                            title_text = (text[:80] if text else role or f"turn-{i}")
                             mem = Memory(
                                 type=MemoryType.COPILOT_CHAT,
                                 source_node=self.config.node_id,

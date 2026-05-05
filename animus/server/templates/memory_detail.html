@@ -56,14 +56,47 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" integrity="sha256-jyUqsnk7llwbpFqUUQUTAhCRpxHuUlao1IEsUw5oN0c=" crossorigin="anonymous"></script>
     <script>
         (function () {
-            const src = document.getElementById('memory-content-source').value;
+            const raw = document.getElementById('memory-content-source').value;
             const target = document.getElementById('memory-content-rendered');
+
+            // Heuristic: many Copilot transcript memories arrive double-escaped
+            // (literal \n, \", \\ instead of real characters). Detect and fix.
+            function smartUnescape(s) {
+                if (!s) return s;
+                const trimmed = s.trim();
+                // Case A: the whole payload is one JSON string literal.
+                if (trimmed.length > 1 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        if (typeof parsed === 'string') return parsed;
+                    } catch (_) { /* fall through */ }
+                }
+                // Case B: lots of literal \n / \" / \\ sequences inside an
+                // otherwise unquoted string. Only kick in when the density
+                // is high enough to avoid mangling normal prose.
+                const matches = (s.match(/\\n|\\"|\\t|\\\\/g) || []).length;
+                if (matches < 3 || matches / Math.max(1, s.length / 120) < 0.5) return s;
+                // Escape any bare " so JSON.parse won't choke, then re-parse.
+                const safe = s.replace(/(^|[^\\])"/g, '$1\\"');
+                try {
+                    return JSON.parse('"' + safe + '"');
+                } catch (_) {
+                    return s.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n')
+                            .replace(/\\t/g, '\t').replace(/\\"/g, '"')
+                            .replace(/\\\\/g, '\\');
+                }
+            }
+
+            const cleaned = smartUnescape(raw);
+            // Update the Raw view too — what people copy should already be readable.
+            document.getElementById('memory-content-raw').textContent = cleaned;
+
             try {
                 marked.setOptions({ breaks: true, gfm: true });
-                const html = marked.parse(src);
+                const html = marked.parse(cleaned);
                 target.innerHTML = (window.DOMPurify ? DOMPurify.sanitize(html) : html);
             } catch (e) {
-                target.textContent = src;
+                target.textContent = cleaned;
                 target.style.whiteSpace = 'pre-wrap';
                 target.style.fontFamily = "'Cascadia Code', 'Fira Code', monospace";
             }

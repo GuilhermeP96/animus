@@ -46,6 +46,62 @@ def get_engine() -> IndexEngine:
     return _engine
 
 
+def _migrate_unwrap_transcript_envelopes(engine: IndexEngine) -> None:
+    """Repair transcript memories collected before v0.4.8.
+
+    The pre-0.4.8 Copilot collector probed ``data.get("content")`` at the
+    top level of each JSONL line, but VS Code's transcript format wraps
+    the message inside ``{"type": ..., "data": {"content": ...}}``. The
+    probe missed every record and fell back to writing the *raw* JSON
+    line into the memory body — which is what produced the unreadable
+    backslash-soup in the admin UI.
+
+    This migration walks any row whose ``content`` looks like a JSON
+    envelope (starts with ``{"type"``) and replaces it with the unwrapped
+    message text, when present.
+    """
+    with engine._lock:
+        rows = engine.conn.execute(
+            "SELECT id, content FROM memories "
+            "WHERE type = 'copilot_chat' AND content LIKE '{\"type\"%' "
+            "LIMIT 200000"
+        ).fetchall()
+        repaired = 0
+        for row in rows:
+            mem_id = row["id"]
+            raw = row["content"] or ""
+            try:
+                data = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            payload = data.get("data") if isinstance(data.get("data"), dict) else data
+            text = (
+                payload.get("content")
+                or payload.get("text")
+                or payload.get("message")
+                or data.get("content")
+                or data.get("text")
+                or data.get("message")
+                or ""
+            )
+            if isinstance(text, list):
+                text = "\n".join(
+                    p.get("text", "") if isinstance(p, dict) else str(p) for p in text
+                ).strip()
+            if not isinstance(text, str) or not text.strip():
+                continue
+            engine.conn.execute(
+                "UPDATE memories SET content = ? WHERE id = ?",
+                (text, mem_id),
+            )
+            repaired += 1
+        engine.conn.commit()
+    if repaired:
+        logger.info(
+            "Hub migration: unwrapped %d transcript-envelope memories", repaired
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _config, _engine
@@ -66,6 +122,13 @@ async def lifespan(app: FastAPI):
             logger.info("Hub migration: marked %d backlog memories as synced", updated)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("Hub synced-flag backfill failed: %s", exc)
+    # Hub-side migration: repair Copilot transcript memories that were
+    # collected before v0.4.8, where the collector stored the raw JSONL
+    # line (heavily escaped) instead of the actual message body.
+    try:
+        _migrate_unwrap_transcript_envelopes(_engine)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Transcript-envelope unwrap migration failed: %s", exc)
     logger.info("Animus Hub started — node=%s", _config.node_id)
     yield
     if _engine:

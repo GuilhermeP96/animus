@@ -4,6 +4,31 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] — 2026-05-05
+
+### Fixed
+- **Transcript memories no longer arrive as raw JSON.** The Copilot
+  collector probed `data.get("content")` at the top level of each JSONL
+  line, but VS Code's transcript format wraps the message inside
+  `{"type": ..., "data": {"content": ...}}`. Every row missed the probe
+  and fell back to writing the *raw* JSON line as the memory body, which
+  is what produced the heavily-escaped backslash-soup in the admin UI.
+  - Collector now traverses both shapes and supports list-of-parts
+    payloads (`[{type:"text", text:"..."}, ...]`).
+  - Envelope-only events (`session.start`, `session.end`, `ping` with no
+    body) are skipped instead of being stored as noise.
+  - Hub lifespan startup runs a one-shot migration that detects rows
+    where `content` is a JSON envelope and rewrites them in place with
+    the unwrapped message text. Idempotent.
+
+### Added
+- **Defensive smart-unescape in the memory detail view.** Even after
+  the migration, individual records can arrive double-escaped from
+  external peers running an older collector. The detail page now detects
+  literal `\\n`, `\\"`, `\\\\` sequences and runs them through `JSON.parse`
+  before handing the text to the Markdown renderer. The Raw view also
+  shows the cleaned text so copy-paste yields readable content.
+
 ## [0.4.8] — 2026-05-05
 
 ### Added
