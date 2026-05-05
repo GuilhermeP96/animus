@@ -96,8 +96,13 @@ class IndexEngine:
             );
         """)
 
-    def index_memory(self, memory: Memory) -> bool:
-        """Index a single memory. Returns True if new, False if duplicate."""
+    def index_memory(self, memory: Memory, *, synced: bool = False) -> bool:
+        """Index a single memory. Returns True if new, False if duplicate.
+
+        Pass ``synced=True`` when the memory was received from a peer (i.e.
+        on the hub side) — there is nowhere else to push it to, so it must
+        not be reported as ``Pending`` in the UI.
+        """
         # Auto-extract tags
         memory.tags = extract_tags(memory)
         # Clean content for search
@@ -108,8 +113,8 @@ class IndexEngine:
                 cursor = self.conn.execute(
                     """INSERT OR IGNORE INTO memories
                        (id, type, source_node, source_path, workspace, timestamp,
-                        title, content, metadata, tags, sequence)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        title, content, metadata, tags, sequence, synced)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         memory.id,
                         memory.type.value,
@@ -122,6 +127,7 @@ class IndexEngine:
                         json.dumps(memory.metadata),
                         json.dumps(memory.tags),
                         memory.sequence,
+                        1 if synced else 0,
                     ),
                 )
                 self.conn.commit()
@@ -129,11 +135,15 @@ class IndexEngine:
             except sqlite3.IntegrityError:
                 return False
 
-    def index_batch(self, memories: list[Memory]) -> int:
-        """Index a batch of memories. Returns count of new memories."""
+    def index_batch(self, memories: list[Memory], *, synced: bool = False) -> int:
+        """Index a batch of memories. Returns count of new memories.
+
+        Pass ``synced=True`` on the hub-side ingest path so received
+        memories don't appear as ``Pending`` in the admin UI.
+        """
         new_count = 0
         for mem in memories:
-            if self.index_memory(mem):
+            if self.index_memory(mem, synced=synced):
                 new_count += 1
         return new_count
 

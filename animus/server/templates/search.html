@@ -40,7 +40,7 @@
                 </a>
                 <span class="tag tag-{{ r.type | replace('_', '-') }}" style="flex-shrink: 0; margin-left: 12px;">{{ r.type }}</span>
             </div>
-            <div style="font-size: 13px; color: var(--animus-text-dim); line-height: 1.6; margin-bottom: 8px;">
+            <div style="font-size: 13px; color: var(--animus-text-dim); line-height: 1.6; margin-bottom: 8px; white-space: pre-wrap; word-wrap: break-word; max-height: 6.4em; overflow: hidden;">
                 {{ r.content[:300] }}{% if r.content | length > 300 %}…{% endif %}
             </div>
             <div style="display: flex; gap: 16px; font-size: 11px; color: var(--animus-text-dim);">
