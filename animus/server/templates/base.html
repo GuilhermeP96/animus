@@ -649,6 +649,12 @@
                     <span class="nav-icon">🧬</span> Memories
                     {% if stats and stats.total_memories %}<span class="nav-badge">{{ stats.total_memories }}</span>{% endif %}
                 </a>
+                <a class="nav-item {% if active_page == 'sessions' %}active{% endif %}" href="/admin/sessions">
+                    <span class="nav-icon">🧠</span> Sessions
+                </a>
+                <a class="nav-item {% if active_page == 'graph' %}active{% endif %}" href="/admin/graph">
+                    <span class="nav-icon">⟁</span> Neural Map
+                </a>
                 <a class="nav-item {% if active_page == 'search' %}active{% endif %}" href="/admin/search">
                     <span class="nav-icon">🦅</span> Eagle Vision
                 </a>

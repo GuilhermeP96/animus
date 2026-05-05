@@ -4,6 +4,35 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.13] — 2026-05-05
+
+### Added
+- **Sessions view (`/admin/sessions`).** Reconstructs every Copilot Chat
+  conversation as a single chronologically ordered transcript. Turns are
+  rendered as cards with role badges (user / assistant / tool), each turn's
+  Markdown is rendered with the same `marked` + `DOMPurify` pipeline as the
+  detail view, and an in-page filter lets you search across the entire
+  conversation or hide tool calls. Indexed by workspace; the largest session
+  in production currently spans 10 236 turns and reads as one document.
+- **Neural Map (`/admin/graph`).** Force-directed graph linking workspaces
+  (cyan boxes) to their sessions (gold dots, sized by turn count). Sessions
+  that share at least two semantic tags are connected by dashed gold edges
+  — a visual signal of cross-pollination of context. Double-click a session
+  node to jump straight to its transcript. Renders ~50k memories in well
+  under a second on the production dataset because aggregation happens in
+  SQLite via `json_extract(metadata, '$.session')`.
+- **Neural connections panel on every memory detail page.** A new card in
+  the right sidebar fetches `/admin/api/memories/{id}/related` and shows
+  the previous and next turns of the same session plus eight nearby
+  siblings — every memory becomes navigable to its conversational neighbours.
+- **New JSON endpoints** for tooling: `GET /admin/api/graph` and
+  `GET /admin/api/memories/{id}/related`.
+
+### Notes
+- Of 47 365 memories in production, 99.8% carry a `metadata.session`
+  identifier, so the Sessions view and Neural Map cover essentially the
+  entire archive without further migrations.
+
 ## [0.4.12] — 2026-05-05
 
 ### Fixed

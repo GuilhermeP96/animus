@@ -193,6 +193,270 @@ async def memory_detail(
     })
 
 
+# ── Sessions: reconstruct conversations as a coherent transcript ──
+
+@router.get("/admin/sessions", response_class=HTMLResponse, name="admin_sessions")
+async def sessions_index(
+    request: Request,
+    session: AdminSession = Depends(require_admin),
+    workspace: str | None = None,
+):
+    """List every distinct Copilot session, biggest first."""
+    engine = get_engine()
+    where = ""
+    params: list[Any] = []
+    if workspace:
+        where = "AND workspace = ?"
+        params.append(workspace)
+    rows = engine.conn.execute(
+        f"""
+        SELECT
+            json_extract(metadata, '$.session') as session_id,
+            workspace,
+            source_node,
+            COUNT(*) as turn_count,
+            MIN(timestamp) as first_seen,
+            MAX(timestamp) as last_seen
+        FROM memories
+        WHERE json_extract(metadata, '$.session') IS NOT NULL {where}
+        GROUP BY session_id, workspace, source_node
+        ORDER BY last_seen DESC
+        LIMIT 500
+        """,
+        params,
+    ).fetchall()
+    sessions = [dict(r) for r in rows]
+    workspaces_rows = engine.conn.execute(
+        "SELECT DISTINCT workspace FROM memories WHERE workspace IS NOT NULL "
+        "AND workspace != '' ORDER BY workspace"
+    ).fetchall()
+    return templates.TemplateResponse(request, "sessions.html", {
+        "session": session,
+        "sessions": sessions,
+        "workspaces": [w["workspace"] for w in workspaces_rows],
+        "filter_workspace": workspace,
+    })
+
+
+@router.get("/admin/sessions/{session_id}", response_class=HTMLResponse, name="admin_session_detail")
+async def session_detail(
+    request: Request,
+    session_id: str,
+    session: AdminSession = Depends(require_admin),
+):
+    """Render every turn of one Copilot session in chronological order."""
+    engine = get_engine()
+    rows = engine.conn.execute(
+        """
+        SELECT * FROM memories
+        WHERE json_extract(metadata, '$.session') = ?
+        ORDER BY COALESCE(sequence, 0), timestamp
+        """,
+        (session_id,),
+    ).fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Session not found")
+    turns: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["metadata_parsed"] = json.loads(d.get("metadata") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d["metadata_parsed"] = {}
+        turns.append(d)
+    summary = {
+        "session_id": session_id,
+        "workspace": turns[0].get("workspace"),
+        "source_node": turns[0].get("source_node"),
+        "first_seen": turns[0].get("timestamp"),
+        "last_seen": turns[-1].get("timestamp"),
+        "turn_count": len(turns),
+    }
+    return templates.TemplateResponse(request, "session_detail.html", {
+        "session": session,
+        "summary": summary,
+        "turns": turns,
+    })
+
+
+# ── Neural Map: workspace × session graph ──
+
+@router.get("/admin/graph", response_class=HTMLResponse, name="admin_graph")
+async def graph_view(
+    request: Request,
+    session: AdminSession = Depends(require_admin),
+):
+    return templates.TemplateResponse(request, "graph.html", {"session": session})
+
+
+@router.get("/admin/api/graph", name="admin_graph_data")
+async def graph_data(
+    session: AdminSession = Depends(require_admin),
+    min_turns: int = 5,
+):
+    """Return nodes + edges for the Neural Map.
+
+    Nodes:
+      - one per workspace (group="workspace")
+      - one per session with at least ``min_turns`` turns (group="session")
+    Edges:
+      - workspace → session (containment)
+      - session ↔ session when they share at least one tag
+    """
+    engine = get_engine()
+    sess_rows = engine.conn.execute(
+        """
+        SELECT
+            json_extract(metadata, '$.session') as session_id,
+            workspace,
+            COUNT(*) as turn_count,
+            MIN(timestamp) as first_seen,
+            MAX(timestamp) as last_seen
+        FROM memories
+        WHERE json_extract(metadata, '$.session') IS NOT NULL
+        GROUP BY session_id, workspace
+        HAVING turn_count >= ?
+        ORDER BY turn_count DESC
+        """,
+        (min_turns,),
+    ).fetchall()
+
+    workspaces: dict[str, int] = {}
+    sessions: list[dict] = []
+    for r in sess_rows:
+        ws = r["workspace"] or "(unscoped)"
+        workspaces[ws] = workspaces.get(ws, 0) + r["turn_count"]
+        sessions.append({
+            "id": f"s:{r['session_id']}",
+            "label": (r["session_id"] or "")[:8],
+            "title": (
+                f"Session {r['session_id']}\\n"
+                f"Workspace: {ws}\\n"
+                f"Turns: {r['turn_count']}\\n"
+                f"{r['first_seen'][:19]} → {r['last_seen'][:19]}"
+            ),
+            "value": r["turn_count"],
+            "group": "session",
+            "workspace": ws,
+            "session_id": r["session_id"],
+        })
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    for ws, total in workspaces.items():
+        nodes.append({
+            "id": f"w:{ws}",
+            "label": ws,
+            "title": f"Workspace {ws}\\nTotal turns: {total}",
+            "value": total,
+            "group": "workspace",
+        })
+    for s in sessions:
+        nodes.append(s)
+        edges.append({
+            "from": f"w:{s['workspace']}",
+            "to": s["id"],
+            "color": {"opacity": 0.25},
+            "width": 1,
+        })
+
+    # Tag-based edges between sessions in different workspaces (cross-pollination).
+    # Aggregate top tags per session, then connect pairs sharing ≥2 tags.
+    tag_rows = engine.conn.execute(
+        """
+        SELECT json_extract(metadata, '$.session') as sid,
+               tags
+        FROM memories
+        WHERE json_extract(metadata, '$.session') IS NOT NULL
+          AND tags IS NOT NULL AND tags != '[]'
+        """
+    ).fetchall()
+    from collections import defaultdict
+    tags_per_session: dict[str, set[str]] = defaultdict(set)
+    for tr in tag_rows:
+        try:
+            tag_list = json.loads(tr["tags"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(tag_list, list):
+            tags_per_session[tr["sid"]].update(t for t in tag_list if isinstance(t, str))
+
+    sess_ids = [s["session_id"] for s in sessions]
+    for i, a in enumerate(sess_ids):
+        for b in sess_ids[i + 1:]:
+            shared = tags_per_session[a] & tags_per_session[b]
+            if len(shared) >= 2:
+                edges.append({
+                    "from": f"s:{a}",
+                    "to": f"s:{b}",
+                    "color": {"color": "#c8a84e", "opacity": 0.5},
+                    "width": min(4, len(shared) / 2),
+                    "title": f"Shared tags: {', '.join(sorted(shared))}",
+                    "dashes": True,
+                })
+
+    return {"nodes": nodes, "edges": edges}
+
+
+@router.get("/admin/api/memories/{memory_id}/related", name="admin_memory_related")
+async def memory_related(
+    memory_id: str,
+    session: AdminSession = Depends(require_admin),
+):
+    """Sibling memories: previous/next turn in the session, and a few neighbours."""
+    engine = get_engine()
+    row = engine.conn.execute(
+        "SELECT * FROM memories WHERE id = ?", (memory_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    try:
+        meta = json.loads(row["metadata"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    session_id = meta.get("session")
+    if not session_id:
+        return {"session_id": None, "prev": None, "next": None, "siblings": []}
+
+    seq = row["sequence"] if row["sequence"] is not None else 0
+    prev_row = engine.conn.execute(
+        """
+        SELECT id, title, sequence, json_extract(metadata, '$.role') as role
+        FROM memories
+        WHERE json_extract(metadata, '$.session') = ?
+          AND COALESCE(sequence, 0) < ?
+        ORDER BY COALESCE(sequence, 0) DESC LIMIT 1
+        """,
+        (session_id, seq),
+    ).fetchone()
+    next_row = engine.conn.execute(
+        """
+        SELECT id, title, sequence, json_extract(metadata, '$.role') as role
+        FROM memories
+        WHERE json_extract(metadata, '$.session') = ?
+          AND COALESCE(sequence, 0) > ?
+        ORDER BY COALESCE(sequence, 0) ASC LIMIT 1
+        """,
+        (session_id, seq),
+    ).fetchone()
+    sibling_rows = engine.conn.execute(
+        """
+        SELECT id, title, sequence, json_extract(metadata, '$.role') as role
+        FROM memories
+        WHERE json_extract(metadata, '$.session') = ? AND id != ?
+        ORDER BY ABS(COALESCE(sequence, 0) - ?) ASC
+        LIMIT 12
+        """,
+        (session_id, memory_id, seq),
+    ).fetchall()
+    return {
+        "session_id": session_id,
+        "prev": dict(prev_row) if prev_row else None,
+        "next": dict(next_row) if next_row else None,
+        "siblings": [dict(r) for r in sibling_rows],
+    }
+
+
 @router.delete("/admin/api/memories/{memory_id}")
 async def delete_memory(
     memory_id: str,
