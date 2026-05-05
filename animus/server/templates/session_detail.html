@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% set active_page = "sessions" %}
+
+{% block title %}Session {{ summary.session_id[:8] }}{% endblock %}
+{% block breadcrumb %}<span>⟁</span> <a href="/admin/sessions" style="color: var(--animus-text-dim); text-decoration: none;">Sessions</a> / {{ summary.session_id[:8] }}…{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 20px;">
+    <div style="flex: 1;">
+        <div class="page-title">🧠 Session {{ summary.session_id[:8] }}…{{ summary.session_id[-4:] }}</div>
+        <div class="page-subtitle">
+            {{ summary.workspace or '—' }} · {{ summary.turn_count }} turns ·
+            {{ summary.first_seen[:19] if summary.first_seen else '' }} → {{ summary.last_seen[:19] if summary.last_seen else '' }}
+        </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="/admin/sessions" class="btn">← All sessions</a>
+        <button class="btn" onclick="document.getElementById('search-input').focus()">🔍 Search in session</button>
+    </div>
+</div>
+
+<div class="card" style="padding: 12px 16px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <input type="text" id="search-input" placeholder="Filter turns by substring (case-insensitive)…"
+        oninput="filterTurns(this.value)"
+        style="flex: 1; min-width: 280px; background: var(--animus-surface-2); color: var(--animus-text); border: 1px solid var(--animus-border); padding: 8px 12px; border-radius: 4px; font-size: 13px;">
+    <label style="font-size: 12px; color: var(--animus-text-dim); display: flex; gap: 6px; align-items: center;">
+        <input type="checkbox" id="hide-tools" onchange="filterTurns(document.getElementById('search-input').value)"> Hide tool calls
+    </label>
+    <span id="turn-counter" style="font-size: 12px; color: var(--animus-text-dim); font-family: monospace;">{{ turns|length }} / {{ turns|length }}</span>
+</div>
+
+<div id="conversation" style="display: flex; flex-direction: column; gap: 10px;">
+{% for t in turns %}
+{% set role = t.metadata_parsed.role or '' %}
+{% set is_user = 'user' in role %}
+{% set is_assistant = 'assistant' in role %}
+{% set is_tool = 'tool' in role %}
+<div class="turn"
+    data-role="{{ role }}"
+    data-content="{{ (t.content or '')|lower }}"
+    style="display: flex; gap: 12px; padding: 12px 14px; border-radius: 8px;
+        background: {% if is_user %}rgba(0, 212, 255, 0.05){% elif is_assistant %}rgba(200, 168, 78, 0.04){% else %}rgba(90, 106, 122, 0.05){% endif %};
+        border-left: 3px solid {% if is_user %}var(--animus-glow){% elif is_assistant %}var(--animus-gold){% else %}var(--animus-text-dim){% endif %};">
+    <div style="flex-shrink: 0; width: 60px; text-align: center;">
+        <div style="font-size: 18px;">{% if is_user %}👤{% elif is_assistant %}⟁{% elif is_tool %}🔧{% else %}❔{% endif %}</div>
+        <div style="font-size: 10px; color: var(--animus-text-dim); font-family: monospace; margin-top: 2px;">#{{ t.sequence if t.sequence is not none else loop.index0 }}</div>
+    </div>
+    <div style="flex: 1; min-width: 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: {% if is_user %}var(--animus-glow){% elif is_assistant %}var(--animus-gold){% else %}var(--animus-text-dim){% endif %};">
+                {{ role or 'unknown' }}
+            </div>
+            <a href="/admin/memories/{{ t.id }}" style="font-size: 10px; font-family: monospace; color: var(--animus-text-dim); text-decoration: none;">{{ t.id }}</a>
+        </div>
+        <div class="turn-body md-body" data-source="{{ (t.content or '')|e }}" style="font-size: 13.5px; line-height: 1.6; color: var(--animus-text); overflow-x: auto;"></div>
+    </div>
+</div>
+{% endfor %}
+</div>
+
+<style>
+    .md-body h1, .md-body h2, .md-body h3, .md-body h4 { color: var(--animus-text-bright); margin: 0.6em 0 0.3em; line-height: 1.3; }
+    .md-body h1 { font-size: 1.4em; }
+    .md-body h2 { font-size: 1.25em; }
+    .md-body h3 { font-size: 1.1em; }
+    .md-body p { margin: 0.4em 0; }
+    .md-body ul, .md-body ol { margin: 0.4em 0 0.4em 1.4em; }
+    .md-body li { margin: 0.15em 0; }
+    .md-body code { background: rgba(0, 212, 255, 0.08); color: var(--animus-glow); padding: 1px 5px; border-radius: 3px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; }
+    .md-body pre { background: rgba(0, 0, 0, 0.45); border: 1px solid var(--animus-border); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 0.5em 0; }
+    .md-body pre code { background: none; color: var(--animus-text); padding: 0; font-size: 12.5px; line-height: 1.55; }
+    .md-body blockquote { border-left: 3px solid var(--animus-gold); padding: 2px 12px; margin: 0.5em 0; color: var(--animus-text-dim); background: rgba(200, 168, 78, 0.05); }
+    .md-body a { color: var(--animus-glow); text-decoration: none; }
+    .md-body a:hover { text-decoration: underline; }
+    .md-body table { border-collapse: collapse; margin: 0.5em 0; font-size: 0.95em; }
+    .md-body th, .md-body td { border: 1px solid var(--animus-border); padding: 4px 8px; }
+    .md-body th { background: var(--animus-surface-2); }
+    .md-body hr { border: none; border-top: 1px solid var(--animus-border); margin: 0.8em 0; }
+    .turn.hidden { display: none !important; }
+    mark { background: var(--animus-gold); color: var(--animus-bg); padding: 0 2px; border-radius: 2px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha256-Ffq85bZYmLMrA/XtJen4kacprUwNbYdxEKd0SqhHqJQ=" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" integrity="sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=" crossorigin="anonymous"></script>
+<script>
+    function smartUnescape(s) {
+        if (!s) return s;
+        const trimmed = s.trim();
+        if (trimmed.length > 1 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+            try { const p = JSON.parse(trimmed); if (typeof p === 'string') return p; } catch (_) {}
+        }
+        const matches = (s.match(/\\n|\\"|\\t|\\\\/g) || []).length;
+        if (matches < 3 || matches / Math.max(1, s.length / 120) < 0.5) return s;
+        const safe = s.replace(/(^|[^\\])"/g, '$1\\"');
+        try { return JSON.parse('"' + safe + '"'); }
+        catch (_) {
+            return s.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        }
+    }
+    document.querySelectorAll('.turn-body').forEach(el => {
+        const src = smartUnescape(el.getAttribute('data-source') || '');
+        if (typeof marked === 'undefined') {
+            el.textContent = src;
+            el.style.whiteSpace = 'pre-wrap';
+            el.style.fontFamily = "'Cascadia Code', 'Fira Code', monospace";
+            return;
+        }
+        try {
+            marked.setOptions({ breaks: true, gfm: true });
+            const html = marked.parse(src);
+            el.innerHTML = (window.DOMPurify ? DOMPurify.sanitize(html) : html);
+        } catch (e) {
+            el.textContent = src;
+            el.style.whiteSpace = 'pre-wrap';
+        }
+    });
+
+    function filterTurns(query) {
+        const q = (query || '').trim().toLowerCase();
+        const hideTools = document.getElementById('hide-tools').checked;
+        let visible = 0;
+        const total = document.querySelectorAll('.turn').length;
+        document.querySelectorAll('.turn').forEach(t => {
+            const role = (t.dataset.role || '').toLowerCase();
+            const content = t.dataset.content || '';
+            const matchQuery = !q || content.indexOf(q) !== -1 || role.indexOf(q) !== -1;
+            const matchTools = !(hideTools && (role.includes('tool') || content.includes('🔧 tool call')));
+            if (matchQuery && matchTools) {
+                t.classList.remove('hidden');
+                visible++;
+            } else {
+                t.classList.add('hidden');
+            }
+        });
+        document.getElementById('turn-counter').textContent = `${visible} / ${total}`;
+    }
+</script>
+{% endblock %}

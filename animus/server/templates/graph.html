@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% set active_page = "graph" %}
+
+{% block title %}Neural Map{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Neural Map{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 16px;">
+    <div class="page-title">⟁ Neural Map</div>
+    <div class="page-subtitle">
+        Workspaces (squares) anchor their conversation sessions (circles, sized by turn count).
+        Gold dashed edges link sessions that share at least two semantic tags — cross-pollination of context.
+    </div>
+</div>
+
+<div class="card" style="padding: 12px 16px; margin-bottom: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+    <label style="font-size: 12px; color: var(--animus-text-dim); display: flex; gap: 8px; align-items: center;">
+        Min turns per session
+        <input type="number" id="min-turns" value="5" min="1" max="500" style="width: 70px; background: var(--animus-surface-2); color: var(--animus-text); border: 1px solid var(--animus-border); padding: 4px 8px; border-radius: 4px;">
+    </label>
+    <button class="btn" onclick="loadGraph()">↻ Refresh</button>
+    <button class="btn" onclick="net && net.fit()">⤢ Fit</button>
+    <span id="graph-stats" style="margin-left: auto; font-size: 12px; color: var(--animus-text-dim); font-family: monospace;">…</span>
+</div>
+
+<div class="card" style="padding: 0;">
+    <div id="graph" style="height: 72vh; min-height: 520px; background: var(--animus-bg); border-radius: 8px;"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js" integrity="sha384-yxKDWWf0wwdUj/gPeuL11czrnKFQROnLgY8ll7En9NYoXibgg3C6NK/UDHNtUgWJ" crossorigin="anonymous"></script>
+<script>
+    let net = null;
+    async function loadGraph() {
+        const minTurns = parseInt(document.getElementById('min-turns').value || '5', 10);
+        document.getElementById('graph-stats').textContent = 'Loading…';
+        const r = await fetch('/admin/api/graph?min_turns=' + minTurns);
+        if (!r.ok) {
+            document.getElementById('graph-stats').textContent = 'Error: ' + r.status;
+            return;
+        }
+        const data = await r.json();
+        document.getElementById('graph-stats').textContent =
+            `${data.nodes.length} nodes · ${data.edges.length} edges`;
+        renderGraph(data);
+    }
+    function renderGraph(data) {
+        const container = document.getElementById('graph');
+        const options = {
+            nodes: {
+                shape: 'dot',
+                scaling: { min: 10, max: 80, label: { enabled: true, min: 12, max: 26 } },
+                font: { color: '#c5d0dc', face: 'Segoe UI', size: 13 },
+                borderWidth: 2,
+            },
+            edges: {
+                smooth: { type: 'continuous' },
+                color: { color: '#1e2d3d', highlight: '#00d4ff' },
+            },
+            groups: {
+                workspace: {
+                    shape: 'box',
+                    color: { background: '#1a2332', border: '#00d4ff', highlight: { background: '#1a2332', border: '#00d4ff' } },
+                    font: { color: '#e8f0f8', size: 14, bold: true },
+                    margin: 10,
+                },
+                session: {
+                    shape: 'dot',
+                    color: { background: '#c8a84e', border: '#8a6d2b', highlight: { background: '#ffd966', border: '#c8a84e' } },
+                },
+            },
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: { gravitationalConstant: -60, centralGravity: 0.005, springLength: 120, springConstant: 0.06, damping: 0.6 },
+                stabilization: { iterations: 250, fit: true },
+            },
+            interaction: { hover: true, tooltipDelay: 120, navigationButtons: false },
+        };
+        net = new vis.Network(container, data, options);
+        net.on('doubleClick', (params) => {
+            if (!params.nodes.length) return;
+            const id = params.nodes[0];
+            if (id.startsWith('s:')) {
+                window.location.href = '/admin/sessions/' + id.slice(2);
+            }
+        });
+    }
+    loadGraph();
+</script>
+{% endblock %}
