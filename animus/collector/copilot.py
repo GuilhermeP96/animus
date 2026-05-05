@@ -322,6 +322,38 @@ class CopilotCollector:
                                 ).strip()
                             elif not isinstance(text, str):
                                 text = str(text) if text is not None else ""
+                            # Append tool call summaries when present. Assistant
+                            # turns frequently consist of one short sentence plus
+                            # a tool call whose ``arguments`` field carries the
+                            # real payload (e.g. a ``create_file`` body). Keeping
+                            # only ``content`` would discard the substantive part.
+                            tool_reqs = payload.get("toolRequests") or data.get("toolRequests")
+                            if isinstance(tool_reqs, list) and tool_reqs:
+                                tool_blocks: list[str] = []
+                                for tr in tool_reqs:
+                                    if not isinstance(tr, dict):
+                                        continue
+                                    name = tr.get("name") or "tool"
+                                    args = tr.get("arguments") or tr.get("input") or ""
+                                    if isinstance(args, (dict, list)):
+                                        try:
+                                            args = json.dumps(args, ensure_ascii=False, indent=2)
+                                        except (TypeError, ValueError):
+                                            args = str(args)
+                                    elif isinstance(args, str):
+                                        # Many transcripts double-encode the JSON
+                                        # arguments as a string; pretty-print when
+                                        # we can parse them.
+                                        try:
+                                            parsed = json.loads(args)
+                                            args = json.dumps(parsed, ensure_ascii=False, indent=2)
+                                        except (TypeError, ValueError):
+                                            pass
+                                    tool_blocks.append(
+                                        f"\n\n**🔧 Tool call: `{name}`**\n\n```json\n{args}\n```"
+                                    )
+                                if tool_blocks:
+                                    text = (text or "") + "".join(tool_blocks)
                             # Skip envelope-only events with no human-readable body.
                             if not text and role in {"session.start", "session.end", "ping"}:
                                 continue
@@ -332,7 +364,10 @@ class CopilotCollector:
                                 source_path=str(jsonl_file),
                                 workspace=ws_dir.name,
                                 title=f"transcript:{role}:{title_text}",
-                                content=text if text else line[:50000],
+                                # Cap at 256 KB \u2014 large enough to keep tool call
+                                # arguments (e.g. full file bodies) intact while
+                                # protecting against pathological lines.
+                                content=(text if text else line)[:256_000],
                                 metadata={
                                     "source": "transcript",
                                     "session": jsonl_file.stem,
