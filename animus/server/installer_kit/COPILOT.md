@@ -199,9 +199,10 @@ machine, add to `~/.vscode-server/data/User/mcp.json` (Linux) or
 }
 ```
 
-Restart VS Code; the seven tools (`animus_search`, `animus_recall`,
+Restart VS Code; the eleven tools (`animus_search`, `animus_recall`,
 `animus_remember`, `animus_forget`, `animus_stats`, `animus_collect`,
-`animus_context`, `animus_timeline`) should appear in the tool picker.
+`animus_context`, `animus_timeline`, `animus_session_list`,
+`animus_session`, `animus_related`, `animus_neural_map`) should appear in the tool picker.
 
 ---
 

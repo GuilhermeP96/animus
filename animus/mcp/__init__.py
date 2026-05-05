@@ -36,6 +36,10 @@ class AnimusMCPServer:
     - animus_collect: Trigger a manual collection cycle
     - animus_context: Get contextual memories for a file/workspace
     - animus_timeline: Get chronological memory timeline
+    - animus_session_list: List Copilot sessions (each is a full conversation)
+    - animus_session: Get a full session transcript by id
+    - animus_related: Get neighbouring turns of a memory in its session
+    - animus_neural_map: Get the workspace × session graph (nodes + edges)
     """
 
     TOOL_DEFINITIONS = [
@@ -211,6 +215,114 @@ class AnimusMCPServer:
                 "required": [],
             },
         },
+        {
+            "name": "animus_session_list",
+            "description": (
+                "List Copilot Chat sessions reconstructed from synced memories. Each session "
+                "is a single conversation and may span thousands of turns. Use this to find "
+                "which session a piece of work happened in before pulling its transcript with "
+                "`animus_session`."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace": {
+                        "type": "string",
+                        "description": "Filter by workspace identifier",
+                    },
+                    "min_turns": {
+                        "type": "integer",
+                        "description": "Only return sessions with at least this many turns (default: 1)",
+                        "default": 1,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum sessions returned, ordered by last activity desc (default: 25)",
+                        "default": 25,
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "animus_session",
+            "description": (
+                "Get the full chronologically ordered transcript of a Copilot session. "
+                "Returns every turn (user, assistant, tool) with role, sequence, timestamp "
+                "and content. Use this to recover the entire context of a past conversation."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "The session id (UUID, as returned by animus_session_list or stored in memory metadata)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum turns to return; large sessions can have thousands (default: 200)",
+                        "default": 200,
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Skip the first N turns — use together with limit for paging",
+                        "default": 0,
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": "Optional role filter substring (e.g. 'user', 'assistant', 'tool')",
+                    },
+                    "search": {
+                        "type": "string",
+                        "description": "Optional case-insensitive substring filter on turn content",
+                    },
+                },
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "animus_related",
+            "description": (
+                "Given a memory id, return its previous and next turn in the same session "
+                "plus the closest sibling turns. Use this to walk a conversation around any "
+                "memory you have already located via search/recall."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "The id of the anchor memory",
+                    },
+                    "siblings": {
+                        "type": "integer",
+                        "description": "How many nearby siblings to return (default: 8)",
+                        "default": 8,
+                    },
+                },
+                "required": ["memory_id"],
+            },
+        },
+        {
+            "name": "animus_neural_map",
+            "description": (
+                "Get the Animus Neural Map — a graph linking workspaces to their sessions, "
+                "with cross-session edges where they share semantic tags. Returns nodes and "
+                "edges as JSON; useful to discover which conversations are related across "
+                "projects without opening every transcript."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "min_turns": {
+                        "type": "integer",
+                        "description": "Minimum turns per session to include in the map (default: 5)",
+                        "default": 5,
+                    },
+                },
+                "required": [],
+            },
+        },
     ]
 
     RESOURCE_DEFINITIONS = [
@@ -300,6 +412,10 @@ class AnimusMCPServer:
             "animus_timeline": self._tool_timeline,
             "animus_stats": self._tool_stats,
             "animus_collect": self._tool_collect,
+            "animus_session_list": self._tool_session_list,
+            "animus_session": self._tool_session,
+            "animus_related": self._tool_related,
+            "animus_neural_map": self._tool_neural_map,
         }.get(name)
 
         if tool_handler is None:
@@ -524,6 +640,258 @@ class AnimusMCPServer:
             f"✓ Collection complete\n"
             f"  Found: {len(memories)} | New: {new_count} | Total: {stats['total_memories']}"
         )
+
+    # ── Session-aware tools (mirror /admin/sessions, /admin/graph) ──
+
+    def _tool_session_list(self, args: dict) -> str:
+        workspace = args.get("workspace")
+        min_turns = max(1, int(args.get("min_turns") or 1))
+        limit = max(1, int(args.get("limit") or 25))
+
+        sql = (
+            "SELECT json_extract(metadata, '$.session') AS session_id, "
+            "       workspace, source_node, COUNT(*) AS turn_count, "
+            "       MIN(timestamp) AS first_seen, MAX(timestamp) AS last_seen "
+            "FROM memories "
+            "WHERE json_extract(metadata, '$.session') IS NOT NULL "
+        )
+        params: list[Any] = []
+        if workspace:
+            sql += "AND workspace = ? "
+            params.append(workspace)
+        sql += (
+            "GROUP BY session_id, workspace, source_node "
+            "HAVING turn_count >= ? "
+            "ORDER BY last_seen DESC LIMIT ?"
+        )
+        params.extend([min_turns, limit])
+
+        rows = self.engine.conn.execute(sql, params).fetchall()
+        if not rows:
+            return "No sessions found."
+
+        seen: set[str] = set()
+        lines = [f"⟁ Sessions ({len(rows)}):\n"]
+        for r in rows:
+            d = dict(r)
+            sid = d["session_id"]
+            if sid in seen:
+                continue
+            seen.add(sid)
+            lines.append(
+                f"  {sid}  turns={d['turn_count']:>5}  "
+                f"ws={d.get('workspace') or '-':<32}  "
+                f"{(d.get('first_seen') or '')[:19]} → {(d.get('last_seen') or '')[:19]}"
+            )
+        return "\n".join(lines)
+
+    def _tool_session(self, args: dict) -> str:
+        session_id = args.get("session_id", "")
+        if not session_id:
+            return "Error: session_id is required"
+        limit = max(1, int(args.get("limit") or 200))
+        offset = max(0, int(args.get("offset") or 0))
+        role_filter = (args.get("role") or "").lower().strip()
+        search = (args.get("search") or "").lower().strip()
+
+        rows = self.engine.conn.execute(
+            "SELECT id, sequence, timestamp, workspace, content, metadata "
+            "FROM memories WHERE json_extract(metadata, '$.session') = ? "
+            "ORDER BY COALESCE(sequence, 0), timestamp",
+            (session_id,),
+        ).fetchall()
+        if not rows:
+            return f"No turns found for session {session_id}."
+
+        # Apply optional filters before paging
+        filtered = []
+        for r in rows:
+            d = dict(r)
+            try:
+                meta = json.loads(d.get("metadata") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            role = (meta.get("role") or "").lower()
+            content = (d.get("content") or "")
+            if role_filter and role_filter not in role:
+                continue
+            if search and search not in content.lower():
+                continue
+            d["_role"] = role or "?"
+            filtered.append(d)
+
+        total = len(filtered)
+        page = filtered[offset:offset + limit]
+        if not page:
+            return (
+                f"Session {session_id}: {total} turns matched filters, "
+                f"but offset {offset} is past the end."
+            )
+
+        header = (
+            f"⟁ Session {session_id}\n"
+            f"  Total matching turns: {total} | showing {len(page)} "
+            f"(offset {offset}, limit {limit})"
+        )
+        if role_filter or search:
+            header += f" | filters: role~'{role_filter}' search~'{search}'"
+        out = [header, ""]
+        for d in page:
+            seq = d.get("sequence")
+            seq_s = f"#{seq}" if seq is not None else "#?"
+            out.append(
+                f"── {seq_s} [{d['_role']}] {(d.get('timestamp') or '')[:19]} "
+                f"id={d['id']} ──"
+            )
+            content = (d.get("content") or "").rstrip()
+            if len(content) > 4000:
+                content = content[:4000] + f"\n…[truncated, full length {len(d['content'])}]"
+            out.append(content)
+            out.append("")
+        return "\n".join(out)
+
+    def _tool_related(self, args: dict) -> str:
+        memory_id = args.get("memory_id", "")
+        if not memory_id:
+            return "Error: memory_id is required"
+        sibling_count = max(1, min(50, int(args.get("siblings") or 8)))
+
+        row = self.engine.conn.execute(
+            "SELECT id, title, sequence, metadata FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+        if not row:
+            return f"Memory {memory_id} not found."
+        try:
+            meta = json.loads(row["metadata"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        session_id = meta.get("session")
+        if not session_id:
+            return f"Memory {memory_id} is not part of a Copilot session — no neighbours."
+
+        seq = row["sequence"] if row["sequence"] is not None else 0
+        prev_row = self.engine.conn.execute(
+            "SELECT id, title, sequence, json_extract(metadata, '$.role') AS role "
+            "FROM memories WHERE json_extract(metadata, '$.session') = ? "
+            "AND COALESCE(sequence, 0) < ? "
+            "ORDER BY COALESCE(sequence, 0) DESC LIMIT 1",
+            (session_id, seq),
+        ).fetchone()
+        next_row = self.engine.conn.execute(
+            "SELECT id, title, sequence, json_extract(metadata, '$.role') AS role "
+            "FROM memories WHERE json_extract(metadata, '$.session') = ? "
+            "AND COALESCE(sequence, 0) > ? "
+            "ORDER BY COALESCE(sequence, 0) ASC LIMIT 1",
+            (session_id, seq),
+        ).fetchone()
+        sibling_rows = self.engine.conn.execute(
+            "SELECT id, title, sequence, json_extract(metadata, '$.role') AS role "
+            "FROM memories WHERE json_extract(metadata, '$.session') = ? AND id != ? "
+            "ORDER BY ABS(COALESCE(sequence, 0) - ?) ASC LIMIT ?",
+            (session_id, memory_id, seq, sibling_count),
+        ).fetchall()
+
+        def fmt(r: Any) -> str:
+            d = dict(r)
+            seq_s = f"#{d['sequence']}" if d.get("sequence") is not None else "#?"
+            return (
+                f"  {seq_s:>6} [{(d.get('role') or '?'):20s}] "
+                f"id={d['id']}  {(d.get('title') or '')[:60]}"
+            )
+
+        out = [
+            f"⟁ Neural connections for memory {memory_id}",
+            f"  Session: {session_id}  (anchor seq={seq})",
+            "",
+            "  Previous turn:",
+            fmt(prev_row) if prev_row else "    (none — first turn)",
+            "  Next turn:",
+            fmt(next_row) if next_row else "    (none — last turn)",
+            "",
+            f"  Nearby turns ({len(sibling_rows)}):",
+        ]
+        out.extend(fmt(s) for s in sibling_rows)
+        return "\n".join(out)
+
+    def _tool_neural_map(self, args: dict) -> str:
+        min_turns = max(1, int(args.get("min_turns") or 5))
+
+        sess_rows = self.engine.conn.execute(
+            "SELECT json_extract(metadata, '$.session') AS sid, workspace, "
+            "       COUNT(*) AS turn_count, MIN(timestamp) AS first_seen, "
+            "       MAX(timestamp) AS last_seen "
+            "FROM memories WHERE json_extract(metadata, '$.session') IS NOT NULL "
+            "GROUP BY sid, workspace "
+            "HAVING turn_count >= ? ORDER BY turn_count DESC",
+            (min_turns,),
+        ).fetchall()
+        if not sess_rows:
+            return f"No sessions with at least {min_turns} turns."
+
+        workspaces: dict[str, int] = {}
+        sessions: list[dict] = []
+        seen: set[str] = set()
+        for r in sess_rows:
+            sid = r["sid"]
+            if sid in seen:
+                continue
+            seen.add(sid)
+            ws = r["workspace"] or "(unscoped)"
+            workspaces[ws] = workspaces.get(ws, 0) + r["turn_count"]
+            sessions.append({
+                "session_id": sid,
+                "workspace": ws,
+                "turns": r["turn_count"],
+                "first_seen": r["first_seen"],
+                "last_seen": r["last_seen"],
+            })
+
+        # Tag-based cross-session edges
+        tag_rows = self.engine.conn.execute(
+            "SELECT json_extract(metadata, '$.session') AS sid, tags FROM memories "
+            "WHERE json_extract(metadata, '$.session') IS NOT NULL "
+            "AND tags IS NOT NULL AND tags != '[]'"
+        ).fetchall()
+        from collections import defaultdict
+        tags_per_session: dict[str, set[str]] = defaultdict(set)
+        for tr in tag_rows:
+            try:
+                tags = json.loads(tr["tags"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(tags, list):
+                tags_per_session[tr["sid"]].update(t for t in tags if isinstance(t, str))
+
+        sids = [s["session_id"] for s in sessions]
+        edges: list[dict] = []
+        for i, a in enumerate(sids):
+            for b in sids[i + 1:]:
+                shared = tags_per_session[a] & tags_per_session[b]
+                if len(shared) >= 2:
+                    edges.append({
+                        "from": a,
+                        "to": b,
+                        "shared_tags": sorted(shared),
+                    })
+
+        graph = {
+            "workspaces": [
+                {"id": ws, "total_turns": total} for ws, total in workspaces.items()
+            ],
+            "sessions": sessions,
+            "tag_edges": edges,
+        }
+
+        # Compact human-readable summary plus the JSON for the agent.
+        summary = [
+            f"⟁ Animus Neural Map (min_turns={min_turns})",
+            f"  Workspaces: {len(workspaces)} | Sessions: {len(sessions)} | "
+            f"Tag-bridged edges: {len(edges)}",
+            "",
+            json.dumps(graph, indent=2, default=str),
+        ]
+        return "\n".join(summary)
 
     # ── Helpers ──
 
