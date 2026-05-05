@@ -45,10 +45,16 @@
     }
     function renderGraph(data) {
         const container = document.getElementById('graph');
+        // Clamp value range so a 10k-turn outlier doesn't crush the rest.
+        const sizes = data.nodes.filter(n => n.value).map(n => n.value).sort((a,b)=>a-b);
+        const cap = sizes.length ? sizes[Math.floor(sizes.length * 0.9)] : 100;
+        for (const n of data.nodes) {
+            if (n.value && n.value > cap) n.value = cap;
+        }
         const options = {
             nodes: {
                 shape: 'dot',
-                scaling: { min: 10, max: 80, label: { enabled: true, min: 12, max: 26 } },
+                scaling: { min: 12, max: 50, label: { enabled: true, min: 12, max: 22 } },
                 font: { color: '#c5d0dc', face: 'Segoe UI', size: 13 },
                 borderWidth: 2,
             },
@@ -71,12 +77,15 @@
             physics: {
                 enabled: true,
                 solver: 'forceAtlas2Based',
-                forceAtlas2Based: { gravitationalConstant: -60, centralGravity: 0.005, springLength: 120, springConstant: 0.06, damping: 0.6 },
-                stabilization: { iterations: 250, fit: true },
+                forceAtlas2Based: { gravitationalConstant: -55, centralGravity: 0.01, springLength: 130, springConstant: 0.06, damping: 0.7 },
+                stabilization: { iterations: 300, fit: true },
             },
-            interaction: { hover: true, tooltipDelay: 120, navigationButtons: false },
+            interaction: { hover: true, tooltipDelay: 120, navigationButtons: true },
         };
+        if (net) { try { net.destroy(); } catch (_) {} }
         net = new vis.Network(container, data, options);
+        window.net = net;
+        net.once('stabilizationIterationsDone', () => { try { net.fit({ animation: { duration: 600 } }); } catch (_) {} });
         net.on('doubleClick', (params) => {
             if (!params.nodes.length) return;
             const id = params.nodes[0];
