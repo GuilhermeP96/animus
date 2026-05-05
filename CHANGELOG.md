@@ -4,6 +4,18 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10] — 2026-05-05
+
+### Fixed
+- **Truncated transcript memories now recover too.** The pre-0.4.9 collector
+  also capped each JSONL line at 50 KB, which meant assistant messages
+  containing large tool arguments (e.g. a `create_file` call with a long
+  script body) were stored as *invalid* JSON — the unwrap migration in
+  v0.4.9 silently skipped them. The migration now falls back to a regex
+  extraction of the first `"content": "…"` field when `json.loads` fails,
+  recovering the human-readable body and discarding the truncated tool
+  payload tail.
+
 ## [0.4.9] — 2026-05-05
 
 ### Fixed
