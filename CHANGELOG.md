@@ -4,6 +4,30 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.15] — 2026-05-05
+
+### Added
+- **Four new MCP tools** so Copilot can leverage the same session/graph
+  primitives that the admin UI exposes — directly on the local peer
+  database, no HTTP round-trip:
+  - `animus_session_list` — enumerate Copilot Chat sessions (each is a
+    full conversation), filterable by workspace and minimum turn count.
+  - `animus_session` — dump the full chronologically-ordered transcript
+    of a session, with paging (`limit`/`offset`) and optional `role`/
+    `search` filters so 10 000-turn sessions stay manageable.
+  - `animus_related` — given any memory id, return its previous and
+    next turn in the same session plus the closest sibling turns.
+  - `animus_neural_map` — return the workspace × session graph (nodes
+    + tag-bridged edges) as JSON, the same data the `/admin/graph`
+    canvas renders.
+- The Animus MCP active-context blurb now lists all eleven tools so the
+  agent knows about session navigation from the first message.
+
+### Notes
+- All four new tools are read-only, query the local peer SQLite, and
+  share the same `metadata.session` aggregation used by the hub admin
+  routes — 99.8% of synced memories are reachable through them.
+
 ## [0.4.14] — 2026-05-05
 
 ### Fixed
