@@ -323,14 +323,22 @@ async def graph_data(
 
     workspaces: dict[str, int] = {}
     sessions: list[dict] = []
+    seen_sessions: set[str] = set()
     for r in sess_rows:
+        sid = r["session_id"]
+        if sid in seen_sessions:
+            # Same session was recorded under multiple workspaces (e.g.
+            # workspace was reset between turns). Skip the duplicate;
+            # the first occurrence wins because rows are ordered by turn_count DESC.
+            continue
+        seen_sessions.add(sid)
         ws = r["workspace"] or "(unscoped)"
         workspaces[ws] = workspaces.get(ws, 0) + r["turn_count"]
         sessions.append({
-            "id": f"s:{r['session_id']}",
-            "label": (r["session_id"] or "")[:8],
+            "id": f"s:{sid}",
+            "label": (sid or "")[:8],
             "title": (
-                f"Session {r['session_id']}\\n"
+                f"Session {sid}\\n"
                 f"Workspace: {ws}\\n"
                 f"Turns: {r['turn_count']}\\n"
                 f"{r['first_seen'][:19]} → {r['last_seen'][:19]}"
@@ -338,7 +346,7 @@ async def graph_data(
             "value": r["turn_count"],
             "group": "session",
             "workspace": ws,
-            "session_id": r["session_id"],
+            "session_id": sid,
         })
 
     nodes: list[dict] = []

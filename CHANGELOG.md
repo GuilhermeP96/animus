@@ -4,6 +4,24 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.14] — 2026-05-05
+
+### Fixed
+- **Neural Map now actually renders.** v0.4.13 grouped sessions by
+  `(session_id, workspace)` in SQL, so a session whose `workspace` field
+  changed mid-conversation produced two rows with the same `session_id`.
+  vis-network rejects duplicate node ids and threw
+  `Cannot add item: item with id s:… already exists` from the constructor,
+  leaving the canvas empty even though the stats line still showed
+  “20 nodes · 121 edges”. Sessions are now de-duplicated server-side
+  (first occurrence wins, ordered by turn count desc).
+- **Fit-after-stabilization.** Outlier workspaces with 10k+ turns dwarfed
+  every other node and pushed the layout off-screen. Node values are now
+  capped at the 90th percentile, scaling clamps to 12–50 px, the network
+  is exposed as `window.net` for debugging, and `fit({ animation })`
+  fires automatically after physics stabilization.
+- Navigation buttons are enabled on the graph viewport.
+
 ## [0.4.13] — 2026-05-05
 
 ### Added
