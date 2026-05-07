@@ -32,8 +32,11 @@ Get-Content $envFile | ForEach-Object {
     }
 }
 
-if (-not $env:ANIMUS_SERVER_SECRET -or $env:ANIMUS_SERVER_SECRET -eq '{{SECRET}}') {
-    Write-Host "✗  peer.env nao tem ANIMUS_SERVER_SECRET — gere o ZIP novamente no hub." -ForegroundColor Red
+# NOTE: the literal '{{SECRET}}' would be substituted by the hub's installer-kit
+# renderer, so we cannot use it as an "unrendered" sentinel here. A simple empty
+# check is enough — peer.env from the hub always carries a real value.
+if (-not $env:ANIMUS_SERVER_SECRET) {
+    Write-Host "X  peer.env nao tem ANIMUS_SERVER_SECRET - gere o ZIP novamente no hub." -ForegroundColor Red
     exit 1
 }
 
