@@ -97,13 +97,15 @@ def create_auth_header(
 ) -> dict[str, str]:
     """Create authentication headers for hub requests.
 
-    By default, the **legacy** payload format is used so a 0.4.6
-    peer can talk to a 0.4.5 hub during a rolling upgrade. Set
-    ``secure=True`` (or ``ANIMUS_SECURE_AUTH=1``) once your hub is
-    on 0.4.6+ to enable nonce + body-hash signing.
+    Defaults to the **secure** payload format (nonce + body-hash signing)
+    introduced in 0.4.6. Hubs on 0.4.6+ accept both formats via the legacy
+    fallback in :func:`verify_auth_header`, but hubs configured with
+    ``ANIMUS_REQUIRE_NONCE=1`` reject the legacy format outright. Set
+    ``ANIMUS_SECURE_AUTH=0`` (or ``secure=False``) only when this peer
+    must talk to a hub older than 0.4.6 during a rolling upgrade.
     """
     if secure is None:
-        secure = os.environ.get("ANIMUS_SECURE_AUTH", "0") == "1"
+        secure = os.environ.get("ANIMUS_SECURE_AUTH", "1") == "1"
 
     timestamp = str(int(time.time()))
     peer_key = derive_peer_key(shared_secret, node_id)

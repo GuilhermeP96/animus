@@ -43,8 +43,11 @@ function Install-Deps {
 
     $pythonOk = $false
     if (Test-Cmd python) {
-        $v = (& python -c 'import sys; print("%d.%d"%sys.version_info[:2])').Trim()
-        if ([version]$v -ge [version]'3.11') { $pythonOk = $true }
+        $verOut = (& python --version 2>&1) -join ' '
+        if ($verOut -match '(\d+)\.(\d+)') {
+            $major = [int]$Matches[1]; $minor = [int]$Matches[2]
+            if ($major -gt 3 -or ($major -eq 3 -and $minor -ge 11)) { $pythonOk = $true }
+        }
     }
 
     if (-not $pythonOk) {
