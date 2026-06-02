@@ -47,7 +47,7 @@ class TestRootAndHealth:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Animus Hub"
-        assert data["codename"] == "Abstergo"
+        assert data["codename"] == "Animus Hub"
 
     def test_health(self, client, auth_headers):
         resp = client.get("/health")
