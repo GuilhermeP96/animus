@@ -21,6 +21,9 @@
 #   $env:ANIMUS_REPO_URL         Default: https://github.com/GuilhermeP96/animus.git
 #   $env:ANIMUS_BRANCH           Default: master
 #   $env:ANIMUS_INSTALL_TASK     yes|no  (default: yes)
+#   $env:ANIMUS_INSTALL_CLAUDE_MCP yes|no (default: yes se houver %USERPROFILE%\.claude.json)
+#     Quando 'yes', acrescenta o servidor MCP 'animus' ao .claude.json para
+#     que o Claude Code consuma as memórias como ferramentas.
 # =============================================================================
 
 [CmdletBinding()]
@@ -151,6 +154,36 @@ function Read-DefaultedHost($prompt, $default) {
     if ([string]::IsNullOrWhiteSpace($r)) { return $default } else { return $r }
 }
 
+# ── 7b. Registrar MCP no Claude Code ───────────────────────────────────
+# Idempotente: substitui qualquer entrada anterior em mcpServers.animus
+# em vez de duplicar. Quando $env:USERPROFILE\.claude.json não existe,
+# o Claude Code não está instalado para este usuário — pulamos sem erro.
+function Install-ClaudeMcp($dir, $enabled) {
+    if ($enabled -ne 'yes') { return }
+    $cfg = Join-Path $env:USERPROFILE '.claude.json'
+    if (-not (Test-Path $cfg)) {
+        Write-Warn '.claude.json não encontrado — Claude Code não instalado neste usuário. Pulando MCP.'
+        return
+    }
+    $mcp = Join-Path $dir '.venv\Scripts\animus-mcp.exe'
+    if (-not (Test-Path $mcp)) { Write-Warn "$mcp ausente — pulando MCP"; return }
+
+    Write-Step "Registrando MCP 'animus' em $cfg..."
+    $py = Join-Path $dir '.venv\Scripts\python.exe'
+    $script = @"
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+data = json.loads(p.read_text())
+data.setdefault('mcpServers', {})
+data['mcpServers']['animus'] = {'command': sys.argv[2], 'args': [], 'env': {}}
+p.write_text(json.dumps(data, indent=2))
+print('  ok — mcpServers agora tem:', list(data['mcpServers']))
+"@
+    & $py -c $script $cfg $mcp
+    Write-Ok 'Animus MCP registrado para Claude Code'
+}
+
 # ── Main ───────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '  ⟁  ANIMUS — Peer Installation Kit (Windows)' -ForegroundColor Magenta
@@ -165,6 +198,8 @@ $repo    = if ($env:ANIMUS_REPO_URL)    { $env:ANIMUS_REPO_URL }    else { $Repo
 $branch  = if ($env:ANIMUS_BRANCH)      { $env:ANIMUS_BRANCH }      else { 'master' }
 $dir     = if ($env:ANIMUS_INSTALL_DIR) { $env:ANIMUS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'animus' }
 $task    = if ($env:ANIMUS_INSTALL_TASK){ $env:ANIMUS_INSTALL_TASK }else { 'yes' }
+$mcp     = if ($env:ANIMUS_INSTALL_CLAUDE_MCP) { $env:ANIMUS_INSTALL_CLAUDE_MCP } `
+           elseif (Test-Path (Join-Path $env:USERPROFILE '.claude.json')) { 'yes' } else { 'no' }
 
 if ([string]::IsNullOrWhiteSpace($hub))    { $hub    = Read-DefaultedHost 'Hub URL' $HubDefault }
 if ([string]::IsNullOrWhiteSpace($secret)) {
@@ -178,7 +213,7 @@ if ([string]::IsNullOrWhiteSpace($nodeId)) {
     $nodeId = (& python -c 'import uuid; print(str(uuid.uuid4())[:12])').Trim()
 }
 
-Write-Step "Plano:  install_dir=$dir  hub=$hub  node_id=$nodeId  service=$task"
+Write-Step "Plano:  install_dir=$dir  hub=$hub  node_id=$nodeId  service=$task  claude-mcp=$mcp"
 Write-Host ''
 
 Install-Deps
@@ -187,6 +222,7 @@ New-VenvAndInstall $dir
 Configure-Peer     $dir   $hub    $secret $nodeId $nodeNm
 Initial-Sync       $dir
 Install-Task       $dir   $task
+Install-ClaudeMcp  $dir   $mcp
 
 Write-Host ''
 Write-Host '  ─────────────────────────────────────' -ForegroundColor Magenta
