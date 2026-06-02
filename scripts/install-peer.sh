@@ -171,6 +171,10 @@ install_service() {
     fi
 
     log "Gerando $service_path"
+    # Restart=always + SuccessExitStatus=75 sustenta o auto-update:
+    # quando o daemon detecta uma versão nova ele tenta ``os.execv`` (sem
+    # passar pelo systemd) e, em fallback, sai com EX_TEMPFAIL (75) — o
+    # systemd respawna em RestartSec e a nova versão entra em produção.
     cat > /tmp/animus-peer.service <<EOF
 [Unit]
 Description=Animus Peer — Collector + Sync Daemon
@@ -180,8 +184,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=$install_dir/.venv/bin/animus daemon
-Restart=on-failure
-RestartSec=10
+Restart=always
+RestartSec=5
+SuccessExitStatus=75
 NoNewPrivileges=true
 PrivateTmp=true
 

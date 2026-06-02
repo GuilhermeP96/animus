@@ -2,7 +2,7 @@
 
 > *"We work in the dark to serve the light."*
 
-**Animus** é uma rede de sincronização de memórias do GitHub Copilot — inspirada no Animus de Assassin's Creed. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas.
+**Animus** é uma rede de sincronização de memórias do GitHub Copilot e do Claude Code — inspirada no Animus de Assassin's Creed. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas.
 
 ## Conceito
 
@@ -60,6 +60,8 @@
 | `/memories/session/` | `session_note` | Notas de sessão |
 | `/memories/repo/` | `repo_note` | Memórias do repositório |
 | MCP Memory | `mcp_knowledge` | Knowledge graph do MCP server |
+| Claude Code transcripts (`~/.claude/projects/*/<sid>.jsonl`) | `claude_chat` | Turnos de sessão do Claude Code (com `session_title` derivado do primeiro prompt) |
+| Claude Code auto-memory (`~/.claude/projects/*/memory/*.md`) | `claude_memory` | Memórias persistentes do Claude Code com frontmatter `name`/`description`/`metadata.type` (user/feedback/project/reference) |
 
 ## Instalação
 
@@ -166,6 +168,75 @@ animus sync
 # Ou rodar como daemon (collect + sync contínuo)
 animus daemon
 ```
+
+## Auto-update (peers se atualizam sozinhos)
+
+A partir de v0.5.0 o daemon peer **checa o hub** periodicamente e instala a
+versão nova sem intervenção — tanto Linux/macOS (systemd / launchd) quanto
+Windows (Scheduled Task).
+
+### Fluxo
+
+1. Hub expõe `GET /api/version` (sem auth) com:
+   ```json
+   {
+     "latest": "0.5.0",
+     "min_compat": "",
+     "channel": "stable",
+     "install_url": "git+https://github.com/GuilhermeP96/animus.git",
+     "git_ref": "main",
+     "notes": ""
+   }
+   ```
+2. Peer compara `latest` com `animus.__version__`. Se for mais nova, roda
+   `pip install --upgrade <install_url>@<git_ref>` no mesmo venv.
+3. Peer faz `os.execv` (re-exec in-place) ou sai com código `75` (EX_TEMPFAIL);
+   o supervisor (systemd `Restart=always` + `SuccessExitStatus=75`, ou
+   Scheduled Task com `RestartCount 999`) respawna em segundos.
+
+### Comandos
+
+```bash
+# Ver versão local + remota
+animus self-update --check
+
+# Forçar reinstalação (mesmo já estando na versão atual — útil pós-corrupção)
+animus self-update --force
+
+# Atualizar sem reiniciar (scripts)
+animus self-update --no-restart
+
+# Desligar o auto-update no daemon
+animus config-set auto_update_enabled false
+animus config-set update_check_interval_seconds 21600   # 6h (default)
+animus config-set update_allow_pre false                # opt-in a --pre
+```
+
+### Operacional no hub
+
+Permite parar uma rollout / pinning sem rebuild da imagem — env vars no
+container do hub (`docker compose exec` ou no `.env` do compose):
+
+| Variável                | Efeito |
+|-------------------------|--------|
+| `ANIMUS_PIN_VERSION`    | Sobrescreve `latest` (ex.: `0.4.15` para travar peers) |
+| `ANIMUS_GIT_REF`        | Aponta para uma tag/branch específica (`v0.5.0-rc.1`) |
+| `ANIMUS_CHANNEL`        | `stable`/`beta` — informativo (clientes não bloqueiam) |
+| `ANIMUS_INSTALL_URL`    | Repo alternativo (mirror, fork) |
+| `ANIMUS_MIN_COMPAT`     | Versão mínima esperada (informativo) |
+| `ANIMUS_RELEASE_NOTES`  | Mensagem opcional surfacede no CLI |
+
+### Quando o peer recusa auto-update
+
+* Install em diretório read-only / pacote do SO / `pipx` — refuses, loga e
+  continua na versão atual.
+* `pip` não encontrado ao lado de `sys.executable` (instalação manual fora
+  de venv) — mesma resposta.
+* `hub_url` vazio — pulado.
+
+Nesses casos o operador deve reinstalar manualmente (`pip install --upgrade
+git+https://github.com/GuilhermeP96/animus.git@main`) ou rodar o script
+`install-peer.sh` de novo, que recria o venv writable.
 
 ## Conectividade
 

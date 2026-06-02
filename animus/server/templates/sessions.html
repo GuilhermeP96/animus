@@ -7,7 +7,7 @@
 {% block content %}
 <div style="margin-bottom: 20px;">
     <div class="page-title">🧠 Conversation Sessions</div>
-    <div class="page-subtitle">Each session is a single Copilot Chat — turns belong together. {{ sessions|length }} sessions.</div>
+    <div class="page-subtitle">Each session is one chat — Copilot or Claude Code. Title shows the first user prompt. {{ sessions|length }} sessions.</div>
 </div>
 
 <form method="get" action="/admin/sessions" class="card" style="padding: 14px 20px; margin-bottom: 16px;">
@@ -30,23 +30,35 @@
         <table style="width: 100%; border-collapse: collapse;">
             <thead>
                 <tr style="background: var(--animus-surface-2); text-align: left;">
-                    <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">Session</th>
+                    <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">Source</th>
+                    <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">Chat title</th>
                     <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">Workspace</th>
                     <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px; text-align: right;">Turns</th>
-                    <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">First seen</th>
+                    <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">Session</th>
                     <th style="padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--animus-text-dim); letter-spacing: 0.5px;">Last seen</th>
                 </tr>
             </thead>
             <tbody>
                 {% for s in sessions %}
                 <tr style="border-top: 1px solid var(--animus-border); transition: background 0.15s;" onmouseover="this.style.background='rgba(0,212,255,0.04)'" onmouseout="this.style.background='transparent'">
-                    <td style="padding: 12px 16px; font-family: 'Cascadia Code', monospace; font-size: 12px;">
-                        <a href="/admin/sessions/{{ s.session_id }}" style="color: var(--animus-glow); text-decoration: none;">{{ s.session_id[:8] }}…{{ s.session_id[-4:] }}</a>
+                    <td style="padding: 12px 16px; white-space: nowrap;">
+                        {% if s.is_claude %}
+                        <span style="display:inline-flex;gap:6px;align-items:center;padding:3px 9px;border-radius:11px;font-size:11px;background:rgba(200,168,78,0.15);color:var(--animus-gold);border:1px solid rgba(200,168,78,0.35);">⟁ Claude</span>
+                        {% else %}
+                        <span style="display:inline-flex;gap:6px;align-items:center;padding:3px 9px;border-radius:11px;font-size:11px;background:rgba(0,212,255,0.15);color:var(--animus-glow);border:1px solid rgba(0,212,255,0.35);">▣ Copilot</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px 16px; font-size: 13.5px; color: var(--animus-text-bright); max-width: 480px;">
+                        <a href="/admin/sessions/{{ s.session_id }}" style="color: var(--animus-text-bright); text-decoration: none; font-weight: 500;">
+                            {{ s.display_title or '(no title — empty session)' }}
+                        </a>
                     </td>
                     <td style="padding: 12px 16px; font-size: 13px; color: var(--animus-text);">{{ s.workspace or '—' }}</td>
                     <td style="padding: 12px 16px; text-align: right; font-family: monospace; color: var(--animus-gold); font-weight: 600;">{{ s.turn_count }}</td>
-                    <td style="padding: 12px 16px; font-family: monospace; font-size: 12px; color: var(--animus-text-dim);">{{ s.first_seen[:19] if s.first_seen else '—' }}</td>
-                    <td style="padding: 12px 16px; font-family: monospace; font-size: 12px; color: var(--animus-text-dim);">{{ s.last_seen[:19] if s.last_seen else '—' }}</td>
+                    <td style="padding: 12px 16px; font-family: 'Cascadia Code', monospace; font-size: 11px; color: var(--animus-text-dim);">
+                        {{ s.session_id[:8] }}…{{ s.session_id[-4:] }}
+                    </td>
+                    <td style="padding: 12px 16px; font-family: monospace; font-size: 12px; color: var(--animus-text-dim); white-space: nowrap;">{{ s.last_seen[:19] if s.last_seen else '—' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
