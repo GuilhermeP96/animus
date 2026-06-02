@@ -1,1 +1,1 @@
-"""Animus Hub server — central memory synchronization node (Abstergo)."""
+"""Animus Hub server — central memory synchronization node."""

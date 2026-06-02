@@ -273,11 +273,11 @@ def serve(
     port: int = typer.Option(8314, "--port"),
     verbose: bool = False,
 ):
-    """Run the Animus Hub server — Abstergo mode."""
+    """Run the Animus Hub server — central hub mode."""
     _setup_logging(verbose)
     import uvicorn
 
-    console.print(f"[bold]⟁ Animus Hub (Abstergo) starting...[/]")
+    console.print(f"[bold]⟁ Animus Hub starting...[/]")
     console.print(f"  Listening: {host}:{port}")
     console.print(f"  Docs:      http://{host}:{port}/docs\n")
 
