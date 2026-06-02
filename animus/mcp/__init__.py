@@ -1,8 +1,11 @@
-"""Animus MCP Server — exposes memories as tools for Copilot.
+"""Animus MCP Server — exposes memories as tools for the host IDE.
 
-This is a Model Context Protocol (MCP) server that runs via stdio,
-allowing GitHub Copilot to directly query, store, and retrieve memories
-in real-time during conversations.
+This is a Model Context Protocol (MCP) server that runs via stdio, allowing
+the host (GitHub Copilot, Claude Code, or any MCP-aware assistant) to query,
+store, and retrieve memories in real-time during conversations. Memories
+come from both Copilot (Chat / debug logs / transcripts / workspace memory)
+and Claude Code (session transcripts + auto-memory files), unified under
+the same FTS5 index.
 
 Protocol: JSON-RPC 2.0 over stdio (MCP standard).
 """
@@ -18,6 +21,7 @@ from typing import Any
 
 from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
+from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.models import Memory, MemoryType
 
@@ -36,7 +40,7 @@ class AnimusMCPServer:
     - animus_collect: Trigger a manual collection cycle
     - animus_context: Get contextual memories for a file/workspace
     - animus_timeline: Get chronological memory timeline
-    - animus_session_list: List Copilot sessions (each is a full conversation)
+    - animus_session_list: List Copilot + Claude Code sessions (each is a full conversation)
     - animus_session: Get a full session transcript by id
     - animus_related: Get neighbouring turns of a memory in its session
     - animus_neural_map: Get the workspace × session graph (nodes + edges)
@@ -46,9 +50,9 @@ class AnimusMCPServer:
         {
             "name": "animus_search",
             "description": (
-                "Search across all Copilot interaction memories using full-text search (Eagle Vision). "
-                "Use this to find past conversations, code patterns, solutions, and decisions "
-                "from any machine/workspace."
+                "Search across all Copilot and Claude Code interaction memories using full-text search "
+                "(Eagle Vision). Use this to find past conversations, code patterns, solutions, and "
+                "decisions from any machine/workspace."
             ),
             "inputSchema": {
                 "type": "object",
@@ -59,7 +63,11 @@ class AnimusMCPServer:
                     },
                     "type": {
                         "type": "string",
-                        "description": "Filter by memory type: copilot_chat, copilot_debug, workspace_memory, mcp_knowledge, session_note, user_note, repo_note, prompt_file, agent_file",
+                        "description": (
+                            "Filter by memory type: copilot_chat, copilot_debug, claude_chat, "
+                            "claude_memory, workspace_memory, mcp_knowledge, session_note, "
+                            "user_note, repo_note, prompt_file, agent_file"
+                        ),
                         "enum": [t.value for t in MemoryType],
                     },
                     "workspace": {
@@ -206,7 +214,7 @@ class AnimusMCPServer:
         {
             "name": "animus_collect",
             "description": (
-                "Trigger a manual memory collection cycle — scan Copilot logs, chat history, "
+                "Trigger a manual memory collection cycle — scan Copilot + Claude Code logs, chat history, "
                 "workspace configs, and MCP knowledge graph for new memories to index."
             ),
             "inputSchema": {
@@ -218,10 +226,10 @@ class AnimusMCPServer:
         {
             "name": "animus_session_list",
             "description": (
-                "List Copilot Chat sessions reconstructed from synced memories. Each session "
-                "is a single conversation and may span thousands of turns. Use this to find "
-                "which session a piece of work happened in before pulling its transcript with "
-                "`animus_session`."
+                "List Copilot Chat + Claude Code sessions reconstructed from synced memories. "
+                "Each session is a single conversation and may span thousands of turns. Use "
+                "this to find which session a piece of work happened in before pulling its "
+                "transcript with `animus_session`."
             ),
             "inputSchema": {
                 "type": "object",
@@ -247,9 +255,10 @@ class AnimusMCPServer:
         {
             "name": "animus_session",
             "description": (
-                "Get the full chronologically ordered transcript of a Copilot session. "
-                "Returns every turn (user, assistant, tool) with role, sequence, timestamp "
-                "and content. Use this to recover the entire context of a past conversation."
+                "Get the full chronologically ordered transcript of a Copilot or Claude Code "
+                "session. Returns every turn (user, assistant, tool) with role, sequence, "
+                "timestamp and content. Use this to recover the entire context of a past "
+                "conversation."
             ),
             "inputSchema": {
                 "type": "object",
@@ -344,7 +353,11 @@ class AnimusMCPServer:
         self.config = AnimusConfig.load()
         self.config.ensure_dirs()
         self.engine = IndexEngine(self.config.db_path)
+        # Both collectors run on every collect cycle so the MCP tool sees
+        # the same union the daemon/CLI does — anything else would silently
+        # hide Claude Code memories from in-IDE callers.
         self.collector = CopilotCollector(self.config)
+        self.claude_collector = ClaudeCollector(self.config)
 
     def handle_message(self, message: dict) -> dict | None:
         """Handle a JSON-RPC message."""
@@ -634,6 +647,7 @@ class AnimusMCPServer:
 
     def _tool_collect(self, args: dict) -> str:
         memories = self.collector.collect_all()
+        memories.extend(self.claude_collector.collect_all())
         new_count = self.engine.index_batch(memories)
         stats = self.engine.get_stats()
         return (

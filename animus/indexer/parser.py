@@ -35,9 +35,26 @@ def extract_searchable_text(memory: Memory) -> str:
 
 
 def extract_tags(memory: Memory) -> list[str]:
-    """Auto-extract tags from memory content."""
+    """Auto-extract tags from memory content.
+
+    We also stamp an origin tag (``claude`` / ``copilot``) on every memory.
+    The Neural Map's session ↔ session edges require ≥2 shared tags, and
+    without an origin tag a Claude session and a Copilot session that talk
+    about the same topic only share one language tag — they'd never get
+    cross-linked even though they're clearly about the same thing.
+    """
     tags = list(memory.tags)
     text = memory.content.lower()
+
+    # Origin tag — derived from MemoryType so the rule stays in one place.
+    if memory.type in (MemoryType.CLAUDE_CHAT, MemoryType.CLAUDE_MEMORY):
+        tags.append("claude")
+    elif memory.type in (
+        MemoryType.COPILOT_CHAT,
+        MemoryType.COPILOT_DEBUG,
+        MemoryType.COPILOT_INLINE,
+    ):
+        tags.append("copilot")
 
     # Detect programming languages
     lang_patterns = {
