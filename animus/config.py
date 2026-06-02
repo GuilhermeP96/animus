@@ -109,6 +109,11 @@ def _default_vscode_dir() -> Path:
         return Path.home() / ".config" / "Code" / "User"
 
 
+def _default_claude_dir() -> Path:
+    """Claude Code's data root — same shape on every OS."""
+    return Path.home() / ".claude"
+
+
 class AnimusConfig(BaseSettings):
     """Core Animus configuration."""
 
@@ -122,6 +127,10 @@ class AnimusConfig(BaseSettings):
     # ── Paths ──
     data_dir: Path = Field(default_factory=_default_data_dir)
     vscode_user_dir: Path = Field(default_factory=_default_vscode_dir)
+    claude_data_dir: Path = Field(
+        default_factory=_default_claude_dir,
+        description="Claude Code data root (~/.claude). Holds projects/<enc>/<session>.jsonl and projects/<enc>/memory/*.md.",
+    )
 
     # ── Hub Connection ──
     hub_url: str = Field(default="", description="Hub server URL (wss://...)")
@@ -149,10 +158,20 @@ class AnimusConfig(BaseSettings):
     collect_copilot_chat: bool = True
     collect_workspace_memories: bool = True
     collect_mcp_memory: bool = True
+    collect_claude_chat: bool = True       # Claude Code session transcripts
+    collect_claude_memory: bool = True     # Claude Code auto-memory .md files
 
     # ── Indexer ──
     fts_enabled: bool = True
     vector_enabled: bool = False
+
+    # ── Self-update ──
+    auto_update_enabled: bool = True
+    # How often the daemon asks the hub "anything new?". Defaults to 6h —
+    # short enough that a release rolls out within a workday, long enough
+    # that a chatty daemon doesn't hammer the hub.
+    update_check_interval_seconds: int = 21_600
+    update_allow_pre: bool = False  # opt-in to ``--pre`` releases
 
     @property
     def db_path(self) -> Path:

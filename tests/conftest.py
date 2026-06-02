@@ -30,6 +30,7 @@ def config(tmp_path):
         node_role="peer",
         data_dir=tmp_path / "data",
         vscode_user_dir=tmp_path / "vscode",
+        claude_data_dir=tmp_path / "claude",
         server_secret="test-secret-key-12345",
         hub_url="",
         server_port=18314,
@@ -47,6 +48,7 @@ def hub_config(tmp_path):
         node_role="hub",
         data_dir=tmp_path / "hub-data",
         vscode_user_dir=tmp_path / "vscode",
+        claude_data_dir=tmp_path / "claude",
         server_secret="test-secret-key-12345",
         server_port=18314,
     )

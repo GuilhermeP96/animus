@@ -8,8 +8,9 @@
 <div style="margin-bottom: 16px;">
     <div class="page-title">⟁ Neural Map</div>
     <div class="page-subtitle">
-        Workspaces (squares) anchor their conversation sessions (circles, sized by turn count).
-        Gold dashed edges link sessions that share at least two semantic tags — cross-pollination of context.
+        Workspaces (squares) anchor their conversations — Copilot Chat (cyan) and Claude Code (gold) sessions
+        share themes through auto-memory anchors (diamonds, colored by kind). Gold edges link sessions that
+        share ≥2 tags; green edges trace which memory was written from which chat.
     </div>
 </div>
 
@@ -18,9 +19,23 @@
         Min turns per session
         <input type="number" id="min-turns" value="5" min="1" max="500" style="width: 70px; background: var(--animus-surface-2); color: var(--animus-text); border: 1px solid var(--animus-border); padding: 4px 8px; border-radius: 4px;">
     </label>
+    <label style="font-size: 12px; color: var(--animus-text-dim); display: flex; gap: 8px; align-items: center;">
+        <input type="checkbox" id="show-memories" checked> Show memory anchors
+    </label>
     <button class="btn" onclick="loadGraph()">↻ Refresh</button>
     <button class="btn" onclick="net && net.fit()">⤢ Fit</button>
     <span id="graph-stats" style="margin-left: auto; font-size: 12px; color: var(--animus-text-dim); font-family: monospace;">…</span>
+</div>
+
+<!-- Legend -->
+<div class="card" style="padding: 10px 16px; margin-bottom: 12px; display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--animus-text-dim);">
+    <span><span style="display:inline-block;width:10px;height:10px;background:#1a2332;border:2px solid #00d4ff;vertical-align:middle;"></span> Workspace</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00d4ff;vertical-align:middle;"></span> Copilot session</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#c8a84e;vertical-align:middle;"></span> Claude Code session</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#00ff88;transform:rotate(45deg);vertical-align:middle;"></span> Memory · user</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#ff8c5a;transform:rotate(45deg);vertical-align:middle;"></span> Memory · feedback</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#ba55d3;transform:rotate(45deg);vertical-align:middle;"></span> Memory · project</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#6495ed;transform:rotate(45deg);vertical-align:middle;"></span> Memory · reference</span>
 </div>
 
 <div class="card" style="padding: 0;">
@@ -30,6 +45,16 @@
 <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js" integrity="sha384-yxKDWWf0wwdUj/gPeuL11czrnKFQROnLgY8ll7En9NYoXibgg3C6NK/UDHNtUgWJ" crossorigin="anonymous"></script>
 <script>
     let net = null;
+    // Diamond colors per memory_kind — matches the legend above.
+    const MEMORY_COLORS = {
+        user:      { background: '#00ff88', border: '#00aa55' },
+        feedback:  { background: '#ff8c5a', border: '#aa5a2b' },
+        project:   { background: '#ba55d3', border: '#7a3088' },
+        reference: { background: '#6495ed', border: '#3a5fb8' },
+        memory:    { background: '#c5d0dc', border: '#5a6a7a' },
+        unknown:   { background: '#c5d0dc', border: '#5a6a7a' },
+    };
+
     async function loadGraph() {
         const minTurns = parseInt(document.getElementById('min-turns').value || '5', 10);
         document.getElementById('graph-stats').textContent = 'Loading…';
@@ -39,8 +64,31 @@
             return;
         }
         const data = await r.json();
+        const showMemories = document.getElementById('show-memories').checked;
+        if (!showMemories) {
+            const memIds = new Set(data.nodes.filter(n => n.group === 'memory').map(n => n.id));
+            data.nodes = data.nodes.filter(n => n.group !== 'memory');
+            data.edges = data.edges.filter(e => !memIds.has(e.from) && !memIds.has(e.to));
+        }
+        // Per-node tweaks: pick palette per memory_kind, give Claude sessions
+        // a square-ish shape, and let workspace boxes wear their label proudly.
+        for (const n of data.nodes) {
+            if (n.group === 'memory') {
+                const c = MEMORY_COLORS[n.memory_kind] || MEMORY_COLORS.unknown;
+                n.color = { background: c.background, border: c.border,
+                            highlight: { background: c.background, border: c.border } };
+                n.label = n.label.length > 28 ? n.label.slice(0, 28) + '…' : n.label;
+            } else if (n.group === 'claude_session' || n.group === 'session') {
+                // Show the human title; vis caps font automatically.
+                n.label = n.label && n.label.length > 36 ? n.label.slice(0, 36) + '…' : n.label;
+            }
+        }
+        const counts = data.nodes.reduce((acc, n) => {
+            acc[n.group] = (acc[n.group] || 0) + 1;
+            return acc;
+        }, {});
         document.getElementById('graph-stats').textContent =
-            `${data.nodes.length} nodes · ${data.edges.length} edges`;
+            `${data.nodes.length} nodes (${counts.workspace || 0} ws · ${counts.session || 0} copilot · ${counts.claude_session || 0} claude · ${counts.memory || 0} memory) · ${data.edges.length} edges`;
         renderGraph(data);
     }
     function renderGraph(data) {
@@ -54,7 +102,7 @@
         const options = {
             nodes: {
                 shape: 'dot',
-                scaling: { min: 12, max: 50, label: { enabled: true, min: 12, max: 22 } },
+                scaling: { min: 12, max: 50, label: { enabled: true, min: 11, max: 20 } },
                 font: { color: '#c5d0dc', face: 'Segoe UI', size: 13 },
                 borderWidth: 2,
             },
@@ -71,14 +119,26 @@
                 },
                 session: {
                     shape: 'dot',
+                    color: { background: '#00d4ff', border: '#0088aa', highlight: { background: '#33e0ff', border: '#00d4ff' } },
+                    font: { color: '#e8f0f8', size: 12 },
+                },
+                claude_session: {
+                    shape: 'dot',
                     color: { background: '#c8a84e', border: '#8a6d2b', highlight: { background: '#ffd966', border: '#c8a84e' } },
+                    font: { color: '#e8f0f8', size: 12 },
+                },
+                memory: {
+                    shape: 'diamond',
+                    // Color set per-node based on memory_kind (see loadGraph()).
+                    font: { color: '#0a0e14', size: 11, bold: true },
+                    size: 18,
                 },
             },
             physics: {
                 enabled: true,
                 solver: 'forceAtlas2Based',
-                forceAtlas2Based: { gravitationalConstant: -55, centralGravity: 0.01, springLength: 130, springConstant: 0.06, damping: 0.7 },
-                stabilization: { iterations: 300, fit: true },
+                forceAtlas2Based: { gravitationalConstant: -65, centralGravity: 0.01, springLength: 145, springConstant: 0.06, damping: 0.7 },
+                stabilization: { iterations: 350, fit: true },
             },
             interaction: { hover: true, tooltipDelay: 120, navigationButtons: true },
         };
@@ -91,9 +151,12 @@
             const id = params.nodes[0];
             if (id.startsWith('s:')) {
                 window.location.href = '/admin/sessions/' + id.slice(2);
+            } else if (id.startsWith('m:')) {
+                window.location.href = '/admin/memories/' + id.slice(2);
             }
         });
     }
+    document.getElementById('show-memories').addEventListener('change', loadGraph);
     loadGraph();
 </script>
 {% endblock %}

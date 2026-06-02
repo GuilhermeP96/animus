@@ -15,6 +15,9 @@ def extract_searchable_text(memory: Memory) -> str:
 
     if memory.type in (MemoryType.COPILOT_DEBUG, MemoryType.COPILOT_CHAT):
         content = _clean_log_content(content)
+    elif memory.type == MemoryType.CLAUDE_CHAT:
+        # Claude turns are already cleaned by the collector; keep markdown.
+        pass
     elif memory.type in (
         MemoryType.WORKSPACE_MEMORY,
         MemoryType.SESSION_NOTE,
@@ -22,6 +25,7 @@ def extract_searchable_text(memory: Memory) -> str:
         MemoryType.REPO_NOTE,
         MemoryType.PROMPT_FILE,
         MemoryType.AGENT_FILE,
+        MemoryType.CLAUDE_MEMORY,
     ):
         content = _clean_markdown(content)
     elif memory.type == MemoryType.MCP_KNOWLEDGE:

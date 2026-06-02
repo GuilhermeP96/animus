@@ -1,13 +1,21 @@
 {% extends "base.html" %}
 {% set active_page = "sessions" %}
 
-{% block title %}Session {{ summary.session_id[:8] }}{% endblock %}
-{% block breadcrumb %}<span>⟁</span> <a href="/admin/sessions" style="color: var(--animus-text-dim); text-decoration: none;">Sessions</a> / {{ summary.session_id[:8] }}…{% endblock %}
+{% block title %}{{ summary.session_title or summary.session_id[:8] }}{% endblock %}
+{% block breadcrumb %}<span>⟁</span> <a href="/admin/sessions" style="color: var(--animus-text-dim); text-decoration: none;">Sessions</a> / {{ summary.session_title[:60] if summary.session_title else summary.session_id[:8] }}{% endblock %}
 
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 20px;">
-    <div style="flex: 1;">
-        <div class="page-title">🧠 Session {{ summary.session_id[:8] }}…{{ summary.session_id[-4:] }}</div>
+    <div style="flex: 1; min-width: 0;">
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 4px;">
+            {% if summary.is_claude %}
+            <span style="display:inline-flex;gap:6px;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;background:rgba(200,168,78,0.15);color:var(--animus-gold);border:1px solid rgba(200,168,78,0.4);">⟁ Claude Code</span>
+            {% else %}
+            <span style="display:inline-flex;gap:6px;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;background:rgba(0,212,255,0.15);color:var(--animus-glow);border:1px solid rgba(0,212,255,0.4);">▣ GitHub Copilot</span>
+            {% endif %}
+            <span style="font-family: monospace; font-size: 11px; color: var(--animus-text-dim);">{{ summary.session_id[:8] }}…{{ summary.session_id[-4:] }}</span>
+        </div>
+        <div class="page-title" style="line-height: 1.2;">{{ summary.session_title or 'Untitled session' }}</div>
         <div class="page-subtitle">
             {{ summary.workspace or '—' }} · {{ summary.turn_count }} turns ·
             {{ summary.first_seen[:19] if summary.first_seen else '' }} → {{ summary.last_seen[:19] if summary.last_seen else '' }}

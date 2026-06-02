@@ -4,6 +4,94 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-02 — Claude Code memories, Neural Map themed labels, self-updating peers
+
+### Self-update (NEW)
+- `animus.network.updater` module + `animus self-update [--check|--force|--no-restart]`
+  CLI command. Peers poll `GET /api/version` on the hub, compare against
+  `animus.__version__`, and `pip install --upgrade <install_url>@<git_ref>`
+  into the running venv when the hub is newer. After a successful upgrade the
+  peer does `os.execv` (fast path) or exits with sentinel code `75` (fallback)
+  so the supervisor brings the new code online — no manual intervention.
+- Daemon runs the check on startup + every `update_check_interval_seconds`
+  (default 6h). Config flags: `auto_update_enabled`, `update_allow_pre`.
+- Guards refuse to upgrade when the install dir isn't writable (system pkg,
+  pipx, read-only mount) or when there's no `pip` alongside `sys.executable`.
+- Hub endpoint is unauth'd; operator overrides via env vars on the hub
+  container (`ANIMUS_PIN_VERSION`, `ANIMUS_GIT_REF`, `ANIMUS_CHANNEL`,
+  `ANIMUS_INSTALL_URL`, `ANIMUS_MIN_COMPAT`, `ANIMUS_RELEASE_NOTES`) — no
+  rebuild needed to stage a rollout or roll back.
+- systemd unit and Windows Scheduled Task generators (in `animus/service.py`
+  + `scripts/install-peer.{sh,ps1}`) updated to `Restart=always` /
+  `SuccessExitStatus=75` and `RestartCount 999` + `IgnoreNew` so a
+  self-update cycle never wedges the supervisor.
+- `__version__` now lives in `animus/__init__.py` and is bumped to `0.5.0`
+  in lockstep with `pyproject.toml`.
+- 23 new tests cover the version parser (incl. `0.5.0-rc.1` < `0.5.0`),
+  fetch, dry-run, force, refuses-when-read-only, pip-failure, exec-fallback,
+  and the version endpoint with env overrides.
+
+### Memories (Claude Code ingestion)
+
+#### Collectors
+- New `animus.collector.claude.ClaudeCollector` ingests Claude Code state from
+  `~/.claude/`:
+  - **Session transcripts** (`projects/<encoded-cwd>/<session>.jsonl`) — one
+    `claude_chat` memory per user/assistant turn. The first user prompt is
+    captured as `metadata.session_title` and backfilled onto every turn in
+    the session so the Neural Map can label sessions by topic instead of by
+    UUID. Assistant tool calls are rendered as fenced JSON inside the body
+    (matches the existing Copilot transcript flow).
+  - **Auto-memory files** (`projects/<enc>/memory/*.md`) — one `claude_memory`
+    memory per file, with `memory_kind` (user/feedback/project/reference) and
+    `theme` (the YAML `description`) carried in metadata + tags. `MEMORY.md`
+    is indexed as an index marker.
+- Workspace label is taken from the first `cwd` field inside the transcript
+  (the directory name is lossy when paths contain `-`).
+- Config gains `claude_data_dir`, `collect_claude_chat`, `collect_claude_memory`.
+- Hooked into `AnimusPeer.collect_and_index()` and `animus collect` CLI.
+- `MemoryType` adds `CLAUDE_CHAT` and `CLAUDE_MEMORY`; parser routes them to
+  the markdown cleaner / passthrough as appropriate.
+
+#### Neural Map (`/admin/graph`)
+- Session group split into `session` (Copilot, cyan) and `claude_session`
+  (Claude Code, gold) — distinct colors and tooltips.
+- Sessions now show the **chat title** (derived from `session_title` or the
+  first user turn) instead of the opaque session UUID prefix.
+- New diamond-shaped `memory` nodes anchor Claude auto-memory files. Color
+  encodes `memory_kind` (user/feedback/project/reference) to match the
+  legend rendered on the page.
+- New green dashed edges link a memory to the session it was likely written
+  from (lineage), based on shared keywords between the memory name/theme
+  and the session title.
+- Toggle to hide/show memory anchors; per-group counts in the status bar.
+- Double-clicking a memory node deep-links to its detail page.
+
+#### Sessions index (`/admin/sessions`)
+- Adds a **Source** badge (Copilot / Claude) and a **Chat title** column
+  surfacing the derived session title. Session UUID moves to a secondary
+  column.
+
+#### Session detail (`/admin/sessions/<id>`)
+- Page title and breadcrumb now read the session's chat title; badge marks
+  Claude vs Copilot.
+
+#### Memory archive (`/admin/memories`)
+- Row now shows the chat title or theme as a secondary line under the memory
+  title, and a colored **Kind** pill (user/feedback/project/reference for
+  Claude memories, role for chat turns). New type pills for `claude_chat`
+  and `claude_memory`.
+
+#### Tests
+- New `tests/test_claude_collector.py` (21 cases) covers the encoded-cwd
+  decoder, frontmatter parser, content flattening (text / tool_use /
+  tool_result / thinking), session-title backfill, kind tagging, and the
+  collect-on/off toggles.
+- `conftest.py::config` and `::hub_config` now pin `claude_data_dir` to a
+  tmp path so existing peer tests don't pick up the host's real `~/.claude`.
+
+---
+
 ## [0.4.15] — 2026-05-05
 
 ### Added
