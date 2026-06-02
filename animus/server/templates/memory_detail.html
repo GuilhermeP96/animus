@@ -196,7 +196,7 @@
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     const d = await r.json();
                     if (!d.session_id) {
-                        body.innerHTML = '<em>This memory is not part of a Copilot session — no neural links available.</em>';
+                        body.innerHTML = '<em>This memory is not part of a chat session — no neural links available.</em>';
                         return;
                     }
                     const sessionLink = `<a href="/admin/sessions/${d.session_id}" style="color: var(--animus-glow); text-decoration: none; font-family: monospace; font-size: 12px;">${d.session_id.slice(0,8)}…${d.session_id.slice(-4)}</a>`;
