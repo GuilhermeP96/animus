@@ -25,6 +25,8 @@ class MemoryType(str, Enum):
     REPO_NOTE = "repo_note"               # /memories/repo/ files
     PROMPT_FILE = "prompt_file"           # .prompt.md files
     AGENT_FILE = "agent_file"             # .agent.md files
+    CLAUDE_CHAT = "claude_chat"           # Claude Code session transcripts (.jsonl turns)
+    CLAUDE_MEMORY = "claude_memory"       # Claude Code auto-memory .md files (frontmatter typed)
 
 
 class Memory(BaseModel):

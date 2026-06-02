@@ -106,6 +106,11 @@ def _windows_install(animus_exe: Path, log_path: Path) -> ServiceInfo:
     # The task action must be an executable + arguments. We pass the log
     # path explicitly via the daemon's own flag.
     args = f'daemon --log-file "{log_path}"'
+    # ``RestartCount 999`` + ``IgnoreNew`` underwrites the self-update flow:
+    # when the daemon detects a new version it exits with code 75; the
+    # Scheduled Task respawns it within a minute and the new code goes live
+    # with no manual intervention. ``IgnoreNew`` blocks the supervisor from
+    # double-launching us while pip is still mid-install.
     script = f"""
 $ErrorActionPreference = 'Stop'
 $action = New-ScheduledTaskAction -Execute '{animus_exe}' -Argument '{args}'
@@ -114,12 +119,13 @@ $set = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
-    -RestartCount 3 `
+    -RestartCount 999 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
+    -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Days 0)
 Register-ScheduledTask -TaskName '{SERVICE_NAME}' -Action $action `
     -Trigger $trigger -Settings $set `
-    -Description 'Animus Peer collector + sync daemon' -Force | Out-Null
+    -Description 'Animus Peer collector + sync daemon (self-updating)' -Force | Out-Null
 Start-ScheduledTask -TaskName '{SERVICE_NAME}'
 """
     proc = _ps(script)
@@ -185,6 +191,11 @@ def _systemd_install(animus_exe: Path, log_path: Path) -> ServiceInfo:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     unit = _systemd_unit_path()
     unit.parent.mkdir(parents=True, exist_ok=True)
+    # ``Restart=always`` + a short ``RestartSec`` so the self-updater can do
+    # ``os.execv`` (preferred path) or ``sys.exit(RESTART_EXIT_CODE)``
+    # (fallback) and trust systemd to bring the new code online quickly.
+    # ``SuccessExitStatus=75`` keeps that sentinel exit out of the failure
+    # counters in ``systemctl status``.
     unit.write_text(f"""[Unit]
 Description=Animus Peer collector + sync daemon
 After=network-online.target
@@ -193,8 +204,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart={animus_exe} daemon --log-file {log_path}
-Restart=on-failure
-RestartSec=10s
+Restart=always
+RestartSec=5s
+SuccessExitStatus=75
 StandardOutput=append:{log_path}
 StandardError=append:{log_path}
 

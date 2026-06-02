@@ -120,19 +120,22 @@ def config_set(key: str, value: str):
 
 @app.command()
 def collect(verbose: bool = False):
-    """Collect memories from Copilot interactions — Desynchronize."""
+    """Collect memories from Copilot + Claude Code interactions — Desynchronize."""
     _setup_logging(verbose)
     config = AnimusConfig.load()
 
+    from .collector.claude import ClaudeCollector
     from .collector.copilot import CopilotCollector
     from .indexer.engine import IndexEngine
 
     collector = CopilotCollector(config)
+    claude_collector = ClaudeCollector(config)
     engine = IndexEngine(config.db_path)
 
     console.print("[bold]⟁ Entering the Animus...[/]\n")
 
     memories = collector.collect_all()
+    memories.extend(claude_collector.collect_all())
     new_count = engine.index_batch(memories)
 
     console.print(f"  Memories found:  [cyan]{len(memories)}[/]")
@@ -325,6 +328,67 @@ def daemon(
     except KeyboardInterrupt:
         peer.stop()
         log.info("Animus daemon stopped (KeyboardInterrupt).")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Self-update
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.command("self-update")
+def self_update_cmd(
+    check: bool = typer.Option(
+        False, "--check",
+        help="Just probe the hub and print the latest version — don't install.",
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Re-install even if the hub's version isn't newer than ours.",
+    ),
+    no_restart: bool = typer.Option(
+        False, "--no-restart",
+        help="Install the new version but don't re-exec — useful from scripts.",
+    ),
+    verbose: bool = False,
+):
+    """Pull the latest Animus release from the hub and re-exec into it."""
+    _setup_logging(verbose)
+    from . import __version__
+    from .network.updater import (
+        apply_update, fetch_latest, is_newer, restart_in_place,
+    )
+
+    config = AnimusConfig.load()
+
+    console.print(f"[bold]⟁ Current version:[/] {__version__}")
+    if not config.hub_url:
+        console.print("[red]No hub_url configured — nothing to check against.[/]")
+        raise typer.Exit(2)
+
+    info = fetch_latest(config)
+    if info is None or not info.latest:
+        console.print("[red]Failed to fetch latest version from hub.[/]")
+        raise typer.Exit(3)
+
+    console.print(f"  Hub latest:    [cyan]{info.latest}[/]  (channel={info.channel})")
+    if info.notes:
+        console.print(f"  Notes:         [dim]{info.notes[:200]}[/]")
+
+    newer = is_newer(info.latest, __version__)
+    if check:
+        console.print("[yellow]up-to-date[/]" if not newer else "[green]update available[/]")
+        return
+    if not (force or newer):
+        console.print("[green]✓ Already up-to-date.[/]")
+        return
+
+    ok = apply_update(info, allow_pre=config.update_allow_pre)
+    if not ok:
+        raise typer.Exit(4)
+    console.print(f"[green]✓ Updated to v{info.latest}[/]")
+    if not no_restart:
+        console.print("[dim]Restarting…[/]")
+        restart_in_place()
 
 
 # ═══════════════════════════════════════════════════════════════

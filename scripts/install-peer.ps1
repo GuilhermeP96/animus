@@ -129,12 +129,19 @@ function Install-Task($dir, $enabled) {
     $name   = 'AnimusPeerDaemon'
 
     Write-Step "Registrando Scheduled Task '$name' no logon..."
+    # RestartCount alto + intervalo curto sustentam o self-update: o daemon
+    # detecta uma versão nova, faz `pip install --upgrade` e cai com exit
+    # code 75 (EX_TEMPFAIL); o Task Scheduler restarta dentro de 1 minuto e
+    # a nova versão entra no lugar — sem janela manual.
     $action  = New-ScheduledTaskAction  -Execute $animus -Argument 'daemon'
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
-                  -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+                  -DontStopIfGoingOnBatteries `
+                  -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
+                  -MultipleInstances IgnoreNew `
+                  -ExecutionTimeLimit (New-TimeSpan -Days 0)
     Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Settings $set `
-                           -Description 'Animus Peer collector + sync daemon' -Force | Out-Null
+                           -Description 'Animus Peer collector + sync daemon (self-updating)' -Force | Out-Null
     Start-ScheduledTask -TaskName $name
     Write-Ok "Task ativa — `Get-ScheduledTask $name` para ver o status"
 }
