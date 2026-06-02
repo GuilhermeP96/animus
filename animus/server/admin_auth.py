@@ -1,4 +1,4 @@
-"""Admin panel authentication — Abstergo Secure Access."""
+"""Admin panel authentication."""
 
 from __future__ import annotations
 

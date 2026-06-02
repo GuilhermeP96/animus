@@ -1,4 +1,4 @@
-"""FastAPI server — the Abstergo Hub."""
+"""FastAPI server — the central Animus Hub."""
 
 from __future__ import annotations
 
@@ -182,7 +182,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Animus Hub",
-    description="Central memory synchronization server — Abstergo",
+    description="Central memory synchronization server — Animus Hub",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -277,7 +277,7 @@ async def root():
         "name": "Animus Hub",
         "version": __version__,
         "status": "operational",
-        "codename": "Abstergo",
+        "codename": "Animus Hub",
     }
 
 
