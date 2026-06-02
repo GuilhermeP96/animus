@@ -22,6 +22,10 @@
 #   ANIMUS_REPO_URL       Default: https://github.com/GuilhermeP96/animus.git
 #   ANIMUS_BRANCH         Default: master
 #   ANIMUS_INSTALL_SERVICE  yes|no  (default: yes em Linux com systemd)
+#   ANIMUS_INSTALL_CLAUDE_MCP yes|no (default: yes se encontrar ~/.claude.json)
+#     Quando "yes", adiciona o servidor MCP "animus" ao
+#     ~/.claude.json para que o Claude Code consuma as memórias como
+#     ferramentas (animus_search, animus_recall, animus_session, ...).
 # =============================================================================
 
 set -euo pipefail
@@ -207,6 +211,42 @@ EOF
     fi
 }
 
+# ── 7b. Registrar MCP no Claude Code (opcional) ────────────────────────
+# Edita ~/.claude.json (ou o per-project .mcp.json se o usuário rodar dentro
+# de um repo) acrescentando ``mcpServers.animus`` apontando para o
+# animus-mcp do venv recém-criado. Idempotente — substitui a entrada
+# existente em vez de duplicar.
+install_claude_mcp() {
+    local install_dir=$1 do_install=$2
+    [[ "$do_install" == "yes" ]] || return 0
+
+    local claude_cfg="$HOME/.claude.json"
+    if [[ ! -f "$claude_cfg" ]]; then
+        warn "~/.claude.json não encontrado — Claude Code não está instalado neste usuário. Pulando MCP."
+        return 0
+    fi
+    have_cmd python3 || { warn "python3 indisponível — pulando MCP"; return 0; }
+
+    local mcp_bin="$install_dir/.venv/bin/animus-mcp"
+    if [[ ! -x "$mcp_bin" ]]; then
+        warn "$mcp_bin ausente — pulando MCP"
+        return 0
+    fi
+
+    log "Registrando MCP 'animus' em $claude_cfg..."
+    python3 - "$claude_cfg" "$mcp_bin" <<'PYEOF'
+import json, sys
+from pathlib import Path
+cfg_path, mcp_bin = Path(sys.argv[1]), sys.argv[2]
+data = json.loads(cfg_path.read_text())
+data.setdefault("mcpServers", {})
+data["mcpServers"]["animus"] = {"command": mcp_bin, "args": [], "env": {}}
+cfg_path.write_text(json.dumps(data, indent=2))
+print(f"  ok — mcpServers agora tem: {list(data['mcpServers'])}")
+PYEOF
+    ok "Animus MCP registrado para Claude Code"
+}
+
 # ── 8. Prompt interativo ───────────────────────────────────────────────
 prompt_if_empty() {
     local var=$1 prompt=$2 default=${3:-} silent=${4:-false}
@@ -247,11 +287,16 @@ EOF
     : "${ANIMUS_BRANCH:=master}"
     : "${ANIMUS_INSTALL_DIR:=}"
     : "${ANIMUS_INSTALL_SERVICE:=}"
+    : "${ANIMUS_INSTALL_CLAUDE_MCP:=}"
 
     if [[ -z "$ANIMUS_INSTALL_DIR" ]]; then
         if is_root; then ANIMUS_INSTALL_DIR=/opt/animus
         else             ANIMUS_INSTALL_DIR="$HOME/.local/animus"
         fi
+    fi
+
+    if [[ -z "$ANIMUS_INSTALL_CLAUDE_MCP" ]]; then
+        [[ -f "$HOME/.claude.json" ]] && ANIMUS_INSTALL_CLAUDE_MCP=yes || ANIMUS_INSTALL_CLAUDE_MCP=no
     fi
 
     prompt_if_empty ANIMUS_HUB_URL       "Hub URL"             "$ANIMUS_HUB_URL_DEFAULT"
@@ -278,6 +323,7 @@ EOF
     log "  node_id:      $ANIMUS_NODE_ID"
     log "  node_name:    $ANIMUS_NODE_NAME"
     log "  service:      $ANIMUS_INSTALL_SERVICE"
+    log "  claude-mcp:   $ANIMUS_INSTALL_CLAUDE_MCP"
     echo
 
     install_deps
@@ -287,6 +333,7 @@ EOF
                    "$ANIMUS_NODE_ID" "$ANIMUS_NODE_NAME"
     initial_sync   "$ANIMUS_INSTALL_DIR"
     install_service "$ANIMUS_INSTALL_DIR" "$ANIMUS_INSTALL_SERVICE"
+    install_claude_mcp "$ANIMUS_INSTALL_DIR" "$ANIMUS_INSTALL_CLAUDE_MCP"
 
     cat <<EOF
 
