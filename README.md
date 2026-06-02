@@ -169,6 +169,51 @@ animus sync
 animus daemon
 ```
 
+## MCP — consumir as memórias no Copilot / Claude Code
+
+Cada peer expõe um **servidor MCP** (`animus-mcp`) sobre stdio com 11
+ferramentas (`animus_search`, `animus_recall`, `animus_session`,
+`animus_session_list`, `animus_related`, `animus_neural_map`,
+`animus_remember`, `animus_stats`, `animus_collect`, `animus_context`,
+`animus_timeline`). Qualquer host MCP-aware — Copilot Chat (VS Code),
+Claude Code, ou outro — passa a ler/escrever na sua memória sincronizada.
+
+### Claude Code
+
+A partir de v0.5.0 o `install-peer.{sh,ps1}` detecta `~/.claude.json` e
+registra o MCP automaticamente. Resultado: ao reiniciar o Claude Code, as
+11 ferramentas aparecem.
+
+Override via env:
+
+```bash
+ANIMUS_INSTALL_CLAUDE_MCP=yes  bash install-peer.sh   # força (default quando ~/.claude.json existe)
+ANIMUS_INSTALL_CLAUDE_MCP=no   bash install-peer.sh   # desativa
+```
+
+Em peers antigos (pré-v0.5.0) ou para registrar manualmente, ver
+[CLAUDE.md](./CLAUDE.md) — script Python idempotente que edita
+`~/.claude.json` sem quebrar o resto da config.
+
+### REST API alternativa
+
+Quando não dá pra rodar um peer local (sandbox, CI, agent remoto), bata
+direto na API HTTP do hub:
+
+```bash
+# Auth: HMAC-SHA256 (ver animus/network/crypto.py) — ou rode em dev sem secret
+curl -s https://animus.datano.com.br/health
+curl -s https://animus.datano.com.br/api/version
+curl -s -X POST -H 'X-Animus-Node: <node_id>' -H 'X-Animus-Timestamp: <ts>' \
+        -H 'X-Animus-Signature: <hmac>' -H 'Content-Type: application/json' \
+        -d '{"query":"docker deploy","limit":5}' \
+        https://animus.datano.com.br/api/search
+```
+
+Endpoints públicos (sem secret): `/`, `/health`, `/api/version`. Os demais
+exigem assinatura HMAC do body — ver
+[`animus/network/crypto.py`](animus/network/crypto.py).
+
 ## Auto-update (peers se atualizam sozinhos)
 
 A partir de v0.5.0 o daemon peer **checa o hub** periodicamente e instala a
