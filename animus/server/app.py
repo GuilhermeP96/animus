@@ -272,11 +272,41 @@ class SearchRequest(BaseModel):
 
 @app.get("/")
 async def root():
+    from .. import __version__
     return {
         "name": "Animus Hub",
-        "version": "0.1.0",
+        "version": __version__,
         "status": "operational",
         "codename": "Abstergo",
+    }
+
+
+@app.get("/api/version")
+async def api_version():
+    """Latest version peers should auto-update to.
+
+    Unauthenticated on purpose — the only thing it discloses is the version
+    string the hub is already serving from ``/`` and ``/docs``. Peers poll
+    this endpoint periodically; see :mod:`animus.network.updater`.
+
+    The pin can be overridden by env so the hub op can park peers on an
+    older release (``ANIMUS_PIN_VERSION=0.4.15``) or stage a roll-out
+    (``ANIMUS_PIN_GIT_REF=v0.5.0-rc.1``) without rebuilding the image.
+    """
+    import os
+    from .. import __version__
+
+    latest = os.environ.get("ANIMUS_PIN_VERSION", __version__)
+    return {
+        "latest": latest,
+        "min_compat": os.environ.get("ANIMUS_MIN_COMPAT", ""),
+        "channel": os.environ.get("ANIMUS_CHANNEL", "stable"),
+        "install_url": os.environ.get(
+            "ANIMUS_INSTALL_URL",
+            "git+https://github.com/GuilhermeP96/animus.git",
+        ),
+        "git_ref": os.environ.get("ANIMUS_GIT_REF", "main"),
+        "notes": os.environ.get("ANIMUS_RELEASE_NOTES", ""),
     }
 
 

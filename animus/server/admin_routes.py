@@ -142,6 +142,19 @@ async def memories_page(
         ).fetchall()
         memories = [dict(r) for r in rows]
 
+    # Enrich rows with theme/session metadata so the template can show a
+    # human-readable title instead of "user: ...." or "claude:assistant:...".
+    for m in memories:
+        try:
+            meta = json.loads(m.get("metadata") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        m["theme_title"] = (
+            meta.get("session_title") or meta.get("theme") or meta.get("name") or ""
+        )
+        m["memory_kind"] = meta.get("memory_kind") or meta.get("role") or ""
+        m["session_id_meta"] = meta.get("session") or ""
+
     # Get filter options
     types_rows = engine.conn.execute("SELECT DISTINCT type FROM memories ORDER BY type").fetchall()
     ws_rows = engine.conn.execute("SELECT DISTINCT workspace FROM memories WHERE workspace != '' ORDER BY workspace").fetchall()
@@ -214,9 +227,19 @@ async def sessions_index(
             json_extract(metadata, '$.session') as session_id,
             workspace,
             source_node,
+            -- type column gets renamed so {{{{ s.type }}}} in templates remains
+            -- the per-row memory type column. We expose it as ``mem_type`` to
+            -- keep the language-of-the-domain ("session type") consistent with
+            -- the graph endpoint.
+            MAX(type) as mem_type,
             COUNT(*) as turn_count,
             MIN(timestamp) as first_seen,
-            MAX(timestamp) as last_seen
+            MAX(timestamp) as last_seen,
+            COALESCE(
+                MAX(json_extract(metadata, '$.session_title')),
+                MAX(CASE WHEN json_extract(metadata, '$.role') = 'user'
+                         THEN title END)
+            ) as session_title
         FROM memories
         WHERE json_extract(metadata, '$.session') IS NOT NULL {where}
         GROUP BY session_id, workspace, source_node
@@ -225,7 +248,19 @@ async def sessions_index(
         """,
         params,
     ).fetchall()
-    sessions = [dict(r) for r in rows]
+    sessions = []
+    for r in rows:
+        d = dict(r)
+        # Normalize the title: drop "transcript:role:" / "claude:role:" prefixes
+        # so the list shows the actual chat subject.
+        title = d.get("session_title") or ""
+        for prefix in ("transcript:", "claude:"):
+            if title.startswith(prefix):
+                title = title.split(":", 2)[-1]
+                break
+        d["display_title"] = title.strip().splitlines()[0][:120] if title else ""
+        d["is_claude"] = (d.get("mem_type") or "").startswith("claude_")
+        sessions.append(d)
     workspaces_rows = engine.conn.execute(
         "SELECT DISTINCT workspace FROM memories WHERE workspace IS NOT NULL "
         "AND workspace != '' ORDER BY workspace"
@@ -264,6 +299,25 @@ async def session_detail(
         except (json.JSONDecodeError, TypeError):
             d["metadata_parsed"] = {}
         turns.append(d)
+    # Derive a human-readable chat title: prefer ``metadata.session_title`` if
+    # the collector already stamped it; otherwise fall back to the first
+    # user turn's text (stripping the ``role:`` prefix the collectors prepend).
+    session_title = ""
+    for t in turns:
+        st = t["metadata_parsed"].get("session_title")
+        if st:
+            session_title = st
+            break
+    if not session_title:
+        for t in turns:
+            if t["metadata_parsed"].get("role") == "user":
+                raw = t.get("title") or t.get("content") or ""
+                for prefix in ("transcript:user:", "claude:user:"):
+                    if raw.startswith(prefix):
+                        raw = raw[len(prefix):]
+                session_title = raw.strip().splitlines()[0][:160] if raw else ""
+                break
+
     summary = {
         "session_id": session_id,
         "workspace": turns[0].get("workspace"),
@@ -271,6 +325,8 @@ async def session_detail(
         "first_seen": turns[0].get("timestamp"),
         "last_seen": turns[-1].get("timestamp"),
         "turn_count": len(turns),
+        "session_title": session_title,
+        "is_claude": (turns[0].get("type") or "").startswith("claude_"),
     }
     return templates.TemplateResponse(request, "session_detail.html", {
         "session": session,
@@ -297,11 +353,23 @@ async def graph_data(
     """Return nodes + edges for the Neural Map.
 
     Nodes:
-      - one per workspace (group="workspace")
-      - one per session with at least ``min_turns`` turns (group="session")
+      - one per workspace (``group="workspace"``) — anchors all chats from
+        the same project
+      - one per chat session with ≥ ``min_turns`` turns. Two flavors:
+        Copilot Chat sessions (``group="session"``) and Claude Code sessions
+        (``group="claude_session"``). The label is the human-readable chat
+        title (first user prompt or session_title metadata) instead of an
+        opaque UUID.
+      - one per Claude Code auto-memory file (``group="memory"``) — the
+        ``description`` from the file's frontmatter becomes the theme label,
+        and the ``metadata.type`` (user / feedback / project / reference)
+        becomes a secondary sub-group for color-coding.
     Edges:
-      - workspace → session (containment)
-      - session ↔ session when they share at least one tag
+      - workspace → session  (containment)
+      - workspace → memory   (containment)
+      - session ↔ session when they share ≥2 tags (cross-pollination)
+      - memory ↔ session when the memory's name/theme appears in the session's
+        first-user-prompt title (memory was likely written from that chat)
     """
     engine = get_engine()
     sess_rows = engine.conn.execute(
@@ -309,17 +377,36 @@ async def graph_data(
         SELECT
             json_extract(metadata, '$.session') as session_id,
             workspace,
+            type as mem_type,
             COUNT(*) as turn_count,
             MIN(timestamp) as first_seen,
-            MAX(timestamp) as last_seen
+            MAX(timestamp) as last_seen,
+            -- First non-empty session_title wins; falls back to title text.
+            COALESCE(
+                MAX(json_extract(metadata, '$.session_title')),
+                MAX(CASE WHEN json_extract(metadata, '$.role') = 'user'
+                         THEN title END)
+            ) as session_title
         FROM memories
         WHERE json_extract(metadata, '$.session') IS NOT NULL
-        GROUP BY session_id, workspace
+        GROUP BY session_id, workspace, mem_type
         HAVING turn_count >= ?
         ORDER BY turn_count DESC
         """,
         (min_turns,),
     ).fetchall()
+
+    def _clean_title(raw: str | None, fallback: str) -> str:
+        if not raw:
+            return fallback
+        t = raw
+        # Strip the "transcript:role:" / "claude:role:" prefixes the
+        # collectors prepend so the node label reads like a human chat title.
+        for prefix in ("transcript:", "claude:"):
+            if t.startswith(prefix):
+                t = t.split(":", 2)[-1]
+                break
+        return t.strip().splitlines()[0][:60] or fallback
 
     workspaces: dict[str, int] = {}
     sessions: list[dict] = []
@@ -334,19 +421,63 @@ async def graph_data(
         seen_sessions.add(sid)
         ws = r["workspace"] or "(unscoped)"
         workspaces[ws] = workspaces.get(ws, 0) + r["turn_count"]
+        is_claude = (r["mem_type"] or "").startswith("claude_")
+        title = _clean_title(r["session_title"], (sid or "")[:8])
         sessions.append({
             "id": f"s:{sid}",
-            "label": (sid or "")[:8],
+            "label": title,
             "title": (
-                f"Session {sid}\\n"
+                f"{'Claude Code' if is_claude else 'Copilot'} session\\n"
+                f"{title}\\n"
                 f"Workspace: {ws}\\n"
                 f"Turns: {r['turn_count']}\\n"
-                f"{r['first_seen'][:19]} → {r['last_seen'][:19]}"
+                f"{(r['first_seen'] or '')[:19]} → {(r['last_seen'] or '')[:19]}"
             ),
             "value": r["turn_count"],
-            "group": "session",
+            "group": "claude_session" if is_claude else "session",
             "workspace": ws,
             "session_id": sid,
+            "_title_lc": title.lower(),
+        })
+
+    # Claude auto-memory files become their own thematic anchors.
+    memory_rows = engine.conn.execute(
+        """
+        SELECT id, workspace, title, metadata, timestamp
+        FROM memories
+        WHERE type = 'claude_memory'
+        ORDER BY timestamp DESC
+        """
+    ).fetchall()
+    memories_nodes: list[dict] = []
+    for r in memory_rows:
+        try:
+            meta = json.loads(r["metadata"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if meta.get("is_index"):
+            continue  # Skip MEMORY.md — it's an index, not a thematic anchor.
+        kind = (meta.get("memory_kind") or "memory").lower()
+        theme = (meta.get("theme") or "").strip()
+        name = (meta.get("name") or r["title"] or "").strip()
+        label = name or theme[:40] or "memory"
+        ws = r["workspace"] or "(unscoped)"
+        workspaces.setdefault(ws, 0)
+        memories_nodes.append({
+            "id": f"m:{r['id']}",
+            "label": label,
+            "title": (
+                f"Auto-memory: {name}\\n"
+                f"Kind: {kind}\\n"
+                f"{theme}\\n"
+                f"Workspace: {ws}"
+            ),
+            "value": 1,
+            "group": "memory",
+            "memory_kind": kind,
+            "theme": theme,
+            "workspace": ws,
+            "_label_lc": (label + " " + theme).lower(),
         })
 
     nodes: list[dict] = []
@@ -356,15 +487,25 @@ async def graph_data(
             "id": f"w:{ws}",
             "label": ws,
             "title": f"Workspace {ws}\\nTotal turns: {total}",
-            "value": total,
+            "value": max(total, 1),
             "group": "workspace",
         })
     for s in sessions:
-        nodes.append(s)
+        # Strip our internal helper field from the response payload.
+        nodes.append({k: v for k, v in s.items() if not k.startswith("_")})
         edges.append({
             "from": f"w:{s['workspace']}",
             "to": s["id"],
             "color": {"opacity": 0.25},
+            "width": 1,
+        })
+    for m in memories_nodes:
+        nodes.append({k: v for k, v in m.items() if not k.startswith("_")})
+        edges.append({
+            "from": f"w:{m['workspace']}",
+            "to": m["id"],
+            "color": {"opacity": 0.2},
+            "dashes": [2, 4],
             "width": 1,
         })
 
@@ -401,6 +542,28 @@ async def graph_data(
                     "width": min(4, len(shared) / 2),
                     "title": f"Shared tags: {', '.join(sorted(shared))}",
                     "dashes": True,
+                })
+
+    # Memory ↔ session lineage: when a memory's name or theme text appears in
+    # a session's title we link them — the memory was almost certainly written
+    # from (or about) that conversation.
+    for m in memories_nodes:
+        name_tokens = [
+            tok for tok in m["_label_lc"].replace("-", " ").split()
+            if len(tok) >= 4
+        ]
+        if not name_tokens:
+            continue
+        for s in sessions:
+            hits = sum(1 for tok in name_tokens if tok in s["_title_lc"])
+            if hits >= 2 or (hits == 1 and len(name_tokens) == 1):
+                edges.append({
+                    "from": m["id"],
+                    "to": s["id"],
+                    "color": {"color": "#00ff88", "opacity": 0.45},
+                    "width": 1,
+                    "title": f"Memory references session ({hits} tokens matched)",
+                    "dashes": [4, 2],
                 })
 
     return {"nodes": nodes, "edges": edges}

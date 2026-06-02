@@ -11,8 +11,11 @@ import httpx
 import websockets
 from websockets.asyncio.client import connect as ws_connect
 
+from .. import __version__
+from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.models import MemoryBatch
+from . import updater
 from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
 from .crypto import create_auth_header
@@ -32,13 +35,20 @@ class AnimusPeer:
         self.config.ensure_dirs()
         self.engine = IndexEngine(config.db_path)
         self.collector = CopilotCollector(config)
+        self.claude_collector = ClaudeCollector(config)
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
+        # Self-update bookkeeping: the daemon checks at most once per
+        # ``config.update_check_interval_seconds`` regardless of how short
+        # ``collect_interval_seconds`` is, so a 60-second collect loop
+        # doesn't translate into 60-second pip storms.
+        self._last_update_check_monotonic: float = 0.0
 
     async def collect_and_index(self) -> int:
         """Run a collection cycle — gather and index new memories."""
         logger.info("Collecting memories...")
         memories = self.collector.collect_all()
+        memories.extend(self.claude_collector.collect_all())
         new_count = self.engine.index_batch(memories)
         logger.info("Collected %d memories, %d new", len(memories), new_count)
         return new_count
@@ -147,21 +157,60 @@ class AnimusPeer:
             logger.error("Remote search error: %s", e)
         return []
 
+    async def _maybe_self_update(self) -> None:
+        """Check the hub for a new release; re-exec if there is one.
+
+        Runs at most once per ``update_check_interval_seconds`` (monotonic
+        clock so a wall-clock jump doesn't trigger a check storm). All work
+        happens off the event loop via ``asyncio.to_thread`` because pip
+        is decidedly blocking.
+        """
+        if not self.config.auto_update_enabled:
+            return
+        import time as _time
+        now = _time.monotonic()
+        interval = max(60, int(self.config.update_check_interval_seconds))
+        if now - self._last_update_check_monotonic < interval:
+            return
+        self._last_update_check_monotonic = now
+
+        try:
+            restart_required, info = await asyncio.to_thread(
+                updater.check_and_apply, self.config
+            )
+        except Exception as exc:
+            logger.warning("Self-update check failed: %s", exc)
+            return
+        if restart_required and info is not None:
+            logger.info(
+                "Self-update installed v%s (was %s) — re-execing now",
+                info.latest, __version__,
+            )
+            # ``restart_in_place`` does not return on success.
+            updater.restart_in_place()
+
     async def run_daemon(self) -> None:
         """Run the peer as a background daemon — collect, index, sync on interval."""
         self._running = True
         logger.info(
-            "Animus peer %s (%s) starting — interval=%ds",
+            "Animus peer %s (%s) v%s starting — interval=%ds (auto-update=%s)",
             self.config.node_id,
             self.config.node_name,
+            __version__,
             self.config.collect_interval_seconds,
+            self.config.auto_update_enabled,
         )
+
+        # Check for updates immediately on startup — picks up releases that
+        # happened while the host was off, before we even sync.
+        await self._maybe_self_update()
 
         while self._running:
             try:
                 await self.collect_and_index()
                 await self.sync_to_hub()
                 await self.pull_from_hub()
+                await self._maybe_self_update()
             except Exception as e:
                 logger.error("Daemon cycle error: %s", e)
 

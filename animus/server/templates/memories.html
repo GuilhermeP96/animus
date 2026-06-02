@@ -8,7 +8,11 @@
 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
     <div>
         <div class="page-title">Memory Archive</div>
-        <div class="page-subtitle">{{ total }} genetic memories indexed across all subjects</div>
+        <div class="page-subtitle">
+            {{ total }} genetic memories indexed across all subjects.
+            Theme = the description/topic carried by the memory or its session;
+            Kind = user · feedback · project · reference (Claude memories) or role (chat turns).
+        </div>
     </div>
 </div>
 
@@ -46,6 +50,23 @@
     </div>
 </div>
 
+<style>
+    .mem-row td { padding: 11px 14px; vertical-align: top; }
+    .mem-title-line { color: var(--animus-text-bright); font-weight: 500; font-size: 13.5px; line-height: 1.35; }
+    .mem-theme-line { color: var(--animus-text-dim); font-size: 11.5px; margin-top: 2px; font-style: italic; }
+    .mem-meta-line { color: var(--animus-text-dim); font-size: 11px; margin-top: 4px; font-family: monospace; display: flex; gap: 10px; flex-wrap: wrap; }
+    .kind-pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10.5px; font-weight: 600; text-transform: lowercase; }
+    .kind-user      { background: rgba(0, 255, 136, 0.12); color: var(--animus-green); border: 1px solid rgba(0,255,136,0.3); }
+    .kind-feedback  { background: rgba(255, 140, 90, 0.13); color: #ff8c5a; border: 1px solid rgba(255,140,90,0.3); }
+    .kind-project   { background: rgba(186, 85, 211, 0.13); color: #ba55d3; border: 1px solid rgba(186,85,211,0.3); }
+    .kind-reference { background: rgba(100, 149, 237, 0.13); color: #6495ed; border: 1px solid rgba(100,149,237,0.3); }
+    .kind-assistant { background: rgba(200, 168, 78, 0.13); color: var(--animus-gold); border: 1px solid rgba(200,168,78,0.3); }
+    .kind-index     { background: rgba(255, 255, 255, 0.06); color: #ccc; border: 1px solid rgba(255,255,255,0.2); }
+    /* Tag colours for new Claude types so the type pill is recognisable */
+    .tag-claude-chat   { background: rgba(200, 168, 78, 0.15); color: var(--animus-gold); }
+    .tag-claude-memory { background: rgba(0, 255, 136, 0.10); color: var(--animus-green); }
+</style>
+
 <!-- Memories Table -->
 <div class="card">
     <div class="card-body" style="padding: 0;">
@@ -53,36 +74,57 @@
         <table class="animus-table">
             <thead>
                 <tr>
-                    <th style="width: 180px;">Timestamp</th>
-                    <th>Title</th>
-                    <th style="width: 140px;">Type</th>
-                    <th style="width: 120px;">Node</th>
-                    <th style="width: 120px;">Workspace</th>
+                    <th style="width: 160px;">Timestamp</th>
+                    <th>Theme · Title</th>
+                    <th style="width: 130px;">Type</th>
+                    <th style="width: 110px;">Kind</th>
+                    <th style="width: 150px;">Workspace</th>
                     <th style="width: 60px;"></th>
                 </tr>
             </thead>
             <tbody>
                 {% for mem in memories %}
-                <tr>
+                {% set kind = (mem.memory_kind or '')|lower %}
+                <tr class="mem-row">
                     <td>
                         <span style="font-size: 12px; font-family: monospace; color: var(--animus-text-dim);">
                             {{ mem.timestamp[:19] if mem.timestamp else '—' }}
                         </span>
                     </td>
                     <td>
-                        <a href="/admin/memories/{{ mem.id }}" style="color: var(--animus-text); text-decoration: none;">
-                            {{ mem.title[:80] }}{% if mem.title | length > 80 %}…{% endif %}
+                        <a href="/admin/memories/{{ mem.id }}" style="text-decoration: none;" class="mem-title-line">
+                            {% set raw_title = mem.title or '' %}
+                            {# Strip "transcript:role:" / "claude:role:" prefixes for legibility #}
+                            {% if raw_title.startswith('transcript:') %}
+                                {% set _split = raw_title.split(':', 2) %}
+                                {{ _split[2][:120] if _split|length > 2 else raw_title[:120] }}
+                            {% elif raw_title.startswith('claude:') %}
+                                {% set _split = raw_title.split(':', 2) %}
+                                {{ _split[2][:120] if _split|length > 2 else raw_title[:120] }}
+                            {% else %}
+                                {{ raw_title[:120] }}{% if raw_title|length > 120 %}…{% endif %}
+                            {% endif %}
                         </a>
+                        {% if mem.theme_title and mem.theme_title != mem.title %}
+                        <div class="mem-theme-line">
+                            {% if mem.session_id_meta %}↳ session: {% else %}↳ theme: {% endif %}
+                            {{ mem.theme_title[:140] }}{% if mem.theme_title|length > 140 %}…{% endif %}
+                        </div>
+                        {% endif %}
                     </td>
                     <td>
                         <span class="tag tag-{{ mem.type | replace('_', '-') }}">{{ mem.type }}</span>
                     </td>
                     <td>
-                        <span style="font-size: 12px;">{{ mem.source_node[:15] }}{% if mem.source_node | length > 15 %}…{% endif %}</span>
+                        {% if kind %}
+                        <span class="kind-pill kind-{{ kind }}">{{ kind }}</span>
+                        {% else %}
+                        <span style="color: var(--animus-text-dim);">—</span>
+                        {% endif %}
                     </td>
                     <td>
-                        <span style="font-size: 12px; color: var(--animus-text-dim);">
-                            {{ mem.workspace[:15] if mem.workspace else '—' }}{% if mem.workspace and mem.workspace | length > 15 %}…{% endif %}
+                        <span style="font-size: 12px; color: var(--animus-text); font-family: monospace;">
+                            {{ mem.workspace[:24] if mem.workspace else '—' }}{% if mem.workspace and mem.workspace | length > 24 %}…{% endif %}
                         </span>
                     </td>
                     <td>
