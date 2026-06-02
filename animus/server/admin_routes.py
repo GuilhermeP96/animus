@@ -530,10 +530,16 @@ async def graph_data(
         if isinstance(tag_list, list):
             tags_per_session[tr["sid"]].update(t for t in tag_list if isinstance(t, str))
 
+    # Cross-pollination edges. Origin tags (``claude``, ``copilot``,
+    # ``claude-memory``) are stamped on every session of the matching source,
+    # so they would create a dense intra-source web while saying nothing
+    # about topic overlap. We strip them before counting shared tags so the
+    # ≥2-tags rule continues to mean "same two topics" — the original intent.
+    _GENERIC_TAGS = {"claude", "copilot", "claude-memory"}
     sess_ids = [s["session_id"] for s in sessions]
     for i, a in enumerate(sess_ids):
         for b in sess_ids[i + 1:]:
-            shared = tags_per_session[a] & tags_per_session[b]
+            shared = (tags_per_session[a] & tags_per_session[b]) - _GENERIC_TAGS
             if len(shared) >= 2:
                 edges.append({
                     "from": f"s:{a}",
