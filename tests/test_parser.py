@@ -146,7 +146,31 @@ class TestExtractTags:
             tags=[],
         )
         tags = extract_tags(mem)
-        assert tags == []
+        # ``copilot`` origin tag is always stamped on copilot turns; nothing
+        # else fires for this generic content.
+        assert tags == ["copilot"]
+
+    @pytest.mark.parametrize("mem_type, expected_origin", [
+        (MemoryType.CLAUDE_CHAT, "claude"),
+        (MemoryType.CLAUDE_MEMORY, "claude"),
+        (MemoryType.COPILOT_CHAT, "copilot"),
+        (MemoryType.COPILOT_DEBUG, "copilot"),
+        (MemoryType.COPILOT_INLINE, "copilot"),
+    ])
+    def test_origin_tag_per_type(self, mem_type, expected_origin):
+        mem = Memory(type=mem_type, source_node="n1", content="hello", tags=[])
+        assert expected_origin in extract_tags(mem)
+
+    def test_no_origin_tag_for_non_chat_types(self):
+        mem = Memory(
+            type=MemoryType.WORKSPACE_MEMORY,
+            source_node="n1",
+            content="hello",
+            tags=[],
+        )
+        tags = extract_tags(mem)
+        assert "claude" not in tags
+        assert "copilot" not in tags
 
 
 class TestCleanLogContent:
