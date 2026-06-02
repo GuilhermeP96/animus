@@ -1,8 +1,8 @@
 # ⟁ Animus
 
-> *"We work in the dark to serve the light."*
+> Rede peer-to-peer de sincronização de memórias dos seus assistentes de IA.
 
-**Animus** é uma rede de sincronização de memórias do GitHub Copilot e do Claude Code — inspirada no Animus de Assassin's Creed. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas.
+**Animus** é uma rede de sincronização de memórias do GitHub Copilot e do Claude Code. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas. O nome e parte da estética são uma referência cultural à franquia *Assassin's Creed*, mas este projeto não é afiliado, endossado ou patrocinado pela Ubisoft — ver [Aviso](#-aviso-marcas-e-afiliação).
 
 ## Conceito
 
@@ -11,7 +11,7 @@
 | Animus | O sistema completo |
 | Memórias Genéticas | Interações do Copilot, chat logs, contextos |
 | Subject (Desmond) | Sua máquina — um nó peer |
-| Abstergo | Hub central na VPS |
+| Hub central | Servidor agregador na VPS |
 | Bleeding Effect | Cross-context: memórias de outros nós disponíveis localmente |
 | Eagle Vision | Busca full-text + semântica em todas as memórias |
 | Brotherhood | Rede peer-to-peer de sincronização |
@@ -35,7 +35,7 @@
        └───────────┐       │       ┌───────────┘
                    ▼       ▼       ▼
             ┌──────────────────────────┐
-            │      VPS Hub (Abstergo)  │
+            │      Animus Hub (VPS)    │
             │                          │
             │  ┌────────┐ ┌─────────┐  │
             │  │FastAPI │ │ SQLite  │  │
@@ -393,3 +393,20 @@ animus config-set K V # Alterar configuração
 ## License
 
 MIT
+
+## 📝 Aviso (marcas e afiliação)
+
+"Animus" e a estética visual do projeto (terminologia como *Eagle Vision*,
+*Brotherhood*, *Leap of Faith* etc.) são uma homenagem cultural à série
+*Assassin's Creed*, criada e publicada pela **Ubisoft Entertainment SA**.
+
+Este projeto **não é afiliado, endossado, patrocinado ou aprovado** pela
+Ubisoft. Todas as marcas e elementos de propriedade da Ubisoft pertencem a
+seus respectivos titulares. O uso aqui é nominativo / referencial — para
+descrever um conceito de "sincronização de memórias" inspirado na franquia
+— em um software open-source sem fins lucrativos, sem reutilizar arte
+oficial, áudio, código ou roteiro.
+
+Se você é representante da Ubisoft e considera que algum elemento deveria
+ser ajustado, abra uma issue ou contate o mantenedor antes de qualquer
+ação formal: estamos abertos a remover/renomear o que for solicitado.
