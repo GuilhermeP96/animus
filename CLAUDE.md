@@ -30,6 +30,11 @@ python3 -c "import json; print('animus' in json.load(open(__import__('os').path.
 systemctl --user is-active animus-peer 2>/dev/null   # Linux
 Get-ScheduledTask AnimusPeerDaemon 2>$null            # Windows
 launchctl list com.datano.animus.peer 2>/dev/null     # macOS
+
+# 4. O peer está atualizado? (assinatura de versão antiga no log)
+#    Se aparecer "claude_chat is not a valid MemoryType" ou "Pulled N, 0 new"
+#    com o hub tendo memórias do Claude → peer pré-v0.5.0, ver "Diagnóstico" abaixo.
+grep -cE "is not a valid MemoryType" ~/.animus/daemon.log 2>/dev/null   # >0 = peer desatualizado
 ```
 
 ## Fluxo de instalação (do zero)
@@ -97,6 +102,49 @@ O usuário não tem Claude Code instalado neste perfil. Não force o
 registro do MCP — é inútil sem o host. Continue com o peer (que já
 sincroniza com o hub via daemon) e ofereça registrar depois.
 
+## Diagnóstico: peer desatualizado (memórias do Claude não sincronizam)
+
+Assinatura no `~/.animus/daemon.log` de um peer **pré-v0.5.0**:
+
+```
+[animus.sync] WARNING: Skipping malformed memory: 'claude_chat' is not a valid MemoryType   ← repetido milhares de vezes
+[animus.peer]  INFO:    Pulled 1 memories, 0 new                                             ← descarta tudo que vem do hub
+```
+
+A v0.5.0 introduziu o tipo `claude_chat` e o `ClaudeCollector`. Um peer
+anterior **rejeita toda memória do Claude** que o hub envia (transporte
+funciona, mas o schema não conhece o tipo). O MCP antigo também expõe só
+7 tools em vez de 11. Correção:
+
+```bash
+# Descubra o diretório do install editable (git checkout) e o venv:
+#   Windows: %LOCALAPPDATA%\animus     Linux root: /opt/animus     user: ~/.local/animus
+git -C "$dir" pull origin master
+"$venv/bin/python" -m pip install -e "$dir"   # só necessário se pyproject mudou deps
+```
+
+Depois **reinicie o daemon** — o processo em memória NÃO recarrega o código sozinho:
+
+```bash
+systemctl --user restart animus-peer                              # Linux
+Stop-ScheduledTask AnimusPeerDaemon; Start-ScheduledTask AnimusPeerDaemon   # Windows
+launchctl kickstart -k gui/$UID/com.datano.animus.peer            # macOS
+```
+
+No próximo ciclo o log deve mostrar `vX.Y.Z starting` (≥0.5.0), zero avisos
+`MemoryType`, e `Collected ... N new` / `Pulled ... N new` com N>0 — sinal de
+que as memórias do Claude finalmente entram.
+
+> **Git Credential Manager corporativo**: em ambientes gerenciados (VDI), o
+> `git pull` pode falhar com `remote: invalid credentials` mesmo com um token
+> válido, porque o GCM injeta credenciais em cache. Contorne sem desligar o
+> TLS, passando o token na URL e desabilitando o helper só para esse comando:
+> ```bash
+> git -c credential.helper= -C "$dir" \
+>   fetch https://x-access-token:$TOKEN@github.com/GuilhermeP96/animus.git master:refs/remotes/origin/master
+> git -C "$dir" merge --ff-only origin/master
+> ```
+
 ## Sanity check do MCP
 
 Após registrar e reiniciar o Claude Code, valide que o MCP responde:
@@ -117,8 +165,10 @@ Deve retornar 2 linhas JSON: handshake + lista com 11 tools.
   peer já coletou/puxou. Rode `animus sync` quando precisar atualizar
   manualmente.
 - O daemon roda `animus self-update` a cada 6h: a próxima versão do
-  Animus chega sozinha. Se você atualizar manualmente o repo, faça
-  `pip install -U $VENV` para alinhar.
+  Animus chega sozinha (peers ≥v0.5.0; `auto-update=True` no log de
+  startup confirma). Se atualizar manualmente o repo, é `git pull` +
+  reiniciar o daemon — **não** basta o `git pull`, o processo em memória
+  só recarrega o código no restart. Veja "Diagnóstico: peer desatualizado".
 - O `animus_collect` via MCP é equivalente a `animus collect` no shell —
   pode ser pesado (~30s) em workspaces com muitas transcrições. Use
   `animus_search`/`animus_recall` para 99% dos casos.
