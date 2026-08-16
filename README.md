@@ -2,7 +2,7 @@
 
 > Rede peer-to-peer de sincronização de memórias dos seus assistentes de IA.
 
-**Animus** é uma rede de sincronização de memórias do GitHub Copilot e do Claude Code. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas. O nome e parte da estética são uma referência cultural à franquia *Assassin's Creed*, mas este projeto não é afiliado, endossado ou patrocinado pela Ubisoft — ver [Aviso](#-aviso-marcas-e-afiliação).
+> **Animus** é uma rede de sincronização de memórias do GitHub Copilot, Claude Code e Google Antigravity / Antigravity IDE. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas. O nome e parte da estética são uma referência cultural à franquia *Assassin's Creed*, mas este projeto não é afiliado, endossado ou patrocinado pela Ubisoft — ver [Aviso](#-aviso-marcas-e-afiliação).
 
 ## Conceito
 
@@ -62,6 +62,12 @@
 | MCP Memory | `mcp_knowledge` | Knowledge graph do MCP server |
 | Claude Code transcripts (`~/.claude/projects/*/<sid>.jsonl`) | `claude_chat` | Turnos de sessão do Claude Code (com `session_title` derivado do primeiro prompt) |
 | Claude Code auto-memory (`~/.claude/projects/*/memory/*.md`) | `claude_memory` | Memórias persistentes do Claude Code com frontmatter `name`/`description`/`metadata.type` (user/feedback/project/reference) |
+| Antigravity CLI (`~/.gemini/antigravity/conversations/*.db`) | `antigravity_chat` | Turnos de chat do `agy` (extração de texto a partir dos blobs protobuf do SQLite) |
+| Antigravity IDE (`~/.gemini/antigravity-ide/conversations/*.db`) | `antigravity_chat` | Turnos de chat do Antigravity IDE |
+| Antigravity brain (`~/.gemini/antigravity/brain/<conv>/*`) | `antigravity_memory` | Memory files persistentes do agente (scratch, system_generated, user_uploaded) |
+| Antigravity global `GEMINI.md` (`~/.gemini/GEMINI.md`) | `antigravity_memory` | Identidade/regras globais carregadas em toda conversa |
+| Antigravity projects (`~/.gemini/config/projects/*.json`) | `antigravity_knowledge` | Metadados de projeto do Antigravity |
+| `.antigravity/mcp.json` | `antigravity_knowledge` | Registro de MCP servers por workspace |
 
 ## Instalação
 

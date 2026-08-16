@@ -12,10 +12,14 @@ O Animus expõe um **MCP server** (`animus-mcp`) com 11 ferramentas
 `animus_related`, `animus_neural_map`, `animus_remember`, `animus_stats`,
 `animus_collect`, `animus_context`, `animus_timeline`). Uma vez registrado
 em `~/.claude.json`, **você passa a recuperar contexto de todas as
-conversas Copilot/Claude Code do usuário**, em todas as máquinas dele —
-ou seja, "Eagle Vision" sobre a memória dele.
+conversas Copilot/Claude Code/Antigravity do usuário**, em todas as
+máquinas dele — ou seja, "Eagle Vision" sobre a memória dele.
 
-Assuma que o usuário quer isso ligado. Se não estiver, ofereça ligar.
+A partir de v0.5.1 o `animus collect` também indexa memórias do Google
+Antigravity / Antigravity IDE (`~/.gemini/antigravity/conversations/*.db`,
+`brain/`, `GEMINI.md`, `config/projects/*.json` e `.antigravity/mcp.json`
+nos workspaces). Assuma que o usuário quer isso ligado. Se não estiver,
+ofereça ligar.
 
 ## Checks rápidos (rode antes de qualquer coisa)
 
