@@ -16,10 +16,12 @@ def mcp_server(config, populated_engine, monkeypatch):
     server = AnimusMCPServer.__new__(AnimusMCPServer)
     server.config = config
     server.engine = populated_engine
+    from animus.collector.antigravity import AntigravityCollector
     from animus.collector.claude import ClaudeCollector
     from animus.collector.copilot import CopilotCollector
     server.collector = CopilotCollector(config)
     server.claude_collector = ClaudeCollector(config)
+    server.antigravity_collector = AntigravityCollector(config)
     return server
 
 

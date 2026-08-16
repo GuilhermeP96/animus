@@ -12,6 +12,7 @@ import websockets
 from websockets.asyncio.client import connect as ws_connect
 
 from .. import __version__
+from ..collector.antigravity import AntigravityCollector
 from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.models import MemoryBatch
@@ -36,6 +37,7 @@ class AnimusPeer:
         self.engine = IndexEngine(config.db_path)
         self.collector = CopilotCollector(config)
         self.claude_collector = ClaudeCollector(config)
+        self.antigravity_collector = AntigravityCollector(config)
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
         # Self-update bookkeeping: the daemon checks at most once per
@@ -49,6 +51,7 @@ class AnimusPeer:
         logger.info("Collecting memories...")
         memories = self.collector.collect_all()
         memories.extend(self.claude_collector.collect_all())
+        memories.extend(self.antigravity_collector.collect_all())
         new_count = self.engine.index_batch(memories)
         logger.info("Collected %d memories, %d new", len(memories), new_count)
         return new_count
