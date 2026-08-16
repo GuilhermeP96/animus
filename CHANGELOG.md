@@ -4,6 +4,41 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-08-16 — Google Antigravity / Antigravity IDE memory sync
+
+### Added
+- **Antigravity Collector** (`animus.collector.antigravity.AntigravityCollector`):
+  - Ingests conversation turns from both `~/.gemini/antigravity/conversations/*.db`
+    (CLI `agy`) and `~/.gemini/antigravity-ide/conversations/*.db` (IDE).
+    The SQLite databases store protobuf blobs; the collector extracts
+    human-readable UTF-8 text runs from the `steps` table in read-only mode.
+  - Indexes Antigravity persistent memory files under
+    `~/.gemini/antigravity/brain/<conv>/{scratch,.system_generated,.user_uploaded}`
+    as `antigravity_memory`.
+  - Indexes global `~/.gemini/GEMINI.md` as a project-agnostic identity/rules
+    memory.
+  - Indexes project metadata from `~/.gemini/config/projects/*.json` as
+    `antigravity_knowledge`.
+  - Indexes workspace `.antigravity/mcp.json` files as `antigravity_knowledge`
+    so MCP server registrations travel with the project context.
+- `MemoryType` expands with `ANTIGRAVITY_CHAT`, `ANTIGRAVITY_MEMORY`, and
+  `ANTIGRAVITY_KNOWLEDGE`.
+- Config adds `antigravity_data_dir` (default `~/.gemini`) and three toggle
+  flags: `collect_antigravity_chat`, `collect_antigravity_memory`,
+  `collect_antigravity_knowledge`.
+- Wired into `animus collect`, `AnimusPeer.collect_and_index()`, and the
+  self-updating daemon path.
+- Tests: `tests/test_antigravity_collector.py` covers empty collection,
+  brain files, `GEMINI.md`, project context, workspace MCP config,
+  SQLite conversation parsing, config flag respect, and protobuf-text
+  noise filtering.
+
+### Changed
+- CLI `collect` help text now mentions Antigravity alongside Copilot and
+  Claude Code.
+- README and `CLAUDE.md` updated to list Antigravity as a supported memory
+  source and MCP integration target.
+
 ## [0.5.0] — 2026-06-02 — Claude Code memories, Neural Map themed labels, self-updating peers
 
 ### Self-update (NEW)

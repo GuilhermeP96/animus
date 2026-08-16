@@ -114,6 +114,11 @@ def _default_claude_dir() -> Path:
     return Path.home() / ".claude"
 
 
+def _default_antigravity_dir() -> Path:
+    """Google Antigravity's data root — same shape on every OS."""
+    return Path.home() / ".gemini"
+
+
 class AnimusConfig(BaseSettings):
     """Core Animus configuration."""
 
@@ -160,6 +165,15 @@ class AnimusConfig(BaseSettings):
     collect_mcp_memory: bool = True
     collect_claude_chat: bool = True       # Claude Code session transcripts
     collect_claude_memory: bool = True     # Claude Code auto-memory .md files
+    collect_antigravity_chat: bool = True      # Antigravity CLI/IDE conversation turns
+    collect_antigravity_memory: bool = True    # Antigravity brain / GEMINI.md memory files
+    collect_antigravity_knowledge: bool = True # Antigravity .antigravity project context
+
+    # ── Antigravity paths ──
+    antigravity_data_dir: Path = Field(
+        default_factory=_default_antigravity_dir,
+        description="Antigravity data root (~/.gemini). Holds antigravity/conversations/*.db, brain/, config/projects/, etc.",
+    )
 
     # ── Indexer ──
     fts_enabled: bool = True

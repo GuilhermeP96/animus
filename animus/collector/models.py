@@ -27,6 +27,9 @@ class MemoryType(str, Enum):
     AGENT_FILE = "agent_file"             # .agent.md files
     CLAUDE_CHAT = "claude_chat"           # Claude Code session transcripts (.jsonl turns)
     CLAUDE_MEMORY = "claude_memory"       # Claude Code auto-memory .md files (frontmatter typed)
+    ANTIGRAVITY_CHAT = "antigravity_chat"     # Google Antigravity conversation turns (CLI/IDE)
+    ANTIGRAVITY_MEMORY = "antigravity_memory" # Google Antigravity persistent memory files (brain/GEMINI.md)
+    ANTIGRAVITY_KNOWLEDGE = "antigravity_knowledge" # Google Antigravity project context / .antigravity config
 
 
 class Memory(BaseModel):
