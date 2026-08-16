@@ -21,6 +21,7 @@ from typing import Any
 
 from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
+from ..collector.antigravity import AntigravityCollector
 from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.models import Memory, MemoryType
@@ -50,7 +51,7 @@ class AnimusMCPServer:
         {
             "name": "animus_search",
             "description": (
-                "Search across all Copilot and Claude Code interaction memories using full-text search "
+                "Search across all Copilot, Claude Code, and Antigravity interaction memories using full-text search "
                 "(Eagle Vision). Use this to find past conversations, code patterns, solutions, and "
                 "decisions from any machine/workspace."
             ),
@@ -65,7 +66,8 @@ class AnimusMCPServer:
                         "type": "string",
                         "description": (
                             "Filter by memory type: copilot_chat, copilot_debug, claude_chat, "
-                            "claude_memory, workspace_memory, mcp_knowledge, session_note, "
+                            "claude_memory, antigravity_chat, antigravity_memory, "
+                            "antigravity_knowledge, workspace_memory, mcp_knowledge, session_note, "
                             "user_note, repo_note, prompt_file, agent_file"
                         ),
                         "enum": [t.value for t in MemoryType],
@@ -214,7 +216,7 @@ class AnimusMCPServer:
         {
             "name": "animus_collect",
             "description": (
-                "Trigger a manual memory collection cycle — scan Copilot + Claude Code logs, chat history, "
+                "Trigger a manual memory collection cycle — scan Copilot + Claude Code + Antigravity logs, chat history, "
                 "workspace configs, and MCP knowledge graph for new memories to index."
             ),
             "inputSchema": {
@@ -353,11 +355,12 @@ class AnimusMCPServer:
         self.config = AnimusConfig.load()
         self.config.ensure_dirs()
         self.engine = IndexEngine(self.config.db_path)
-        # Both collectors run on every collect cycle so the MCP tool sees
+        # All collectors run on every collect cycle so the MCP tool sees
         # the same union the daemon/CLI does — anything else would silently
-        # hide Claude Code memories from in-IDE callers.
+        # hide Claude Code or Antigravity memories from in-IDE callers.
         self.collector = CopilotCollector(self.config)
         self.claude_collector = ClaudeCollector(self.config)
+        self.antigravity_collector = AntigravityCollector(self.config)
 
     def handle_message(self, message: dict) -> dict | None:
         """Handle a JSON-RPC message."""
@@ -648,6 +651,7 @@ class AnimusMCPServer:
     def _tool_collect(self, args: dict) -> str:
         memories = self.collector.collect_all()
         memories.extend(self.claude_collector.collect_all())
+        memories.extend(self.antigravity_collector.collect_all())
         new_count = self.engine.index_batch(memories)
         stats = self.engine.get_stats()
         return (
