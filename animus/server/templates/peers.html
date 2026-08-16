@@ -233,7 +233,7 @@ async function downloadInstallerZip() {
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header">
         <div class="card-title">⚔️ Active Members</div>
-        <div style="font-size: 12px; color: var(--animus-text-dim);">Real-time WebSocket connections</div>
+        <div style="font-size: 12px; color: var(--animus-text-dim);">Peers seen in the last 15 min — WebSocket or HTTP sync</div>
     </div>
     <div class="card-body" style="padding: 0;">
         {% if peer_stats %}
@@ -243,21 +243,29 @@ async function downloadInstallerZip() {
                     <th>Status</th>
                     <th>Node ID</th>
                     <th>Node Name</th>
-                    <th>Connected Since</th>
+                    <th>Transport</th>
+                    <th>Last Seen</th>
                 </tr>
             </thead>
             <tbody>
                 {% for peer in peer_stats %}
                 <tr>
                     <td>
+                        {% if peer.online %}
                         <span style="color: var(--animus-green); font-size: 16px;" title="Online">●</span>
+                        {% else %}
+                        <span style="color: var(--animus-text-dim); font-size: 16px;" title="Offline (stale > 15 min)">○</span>
+                        {% endif %}
                     </td>
                     <td>
                         <span style="font-family: monospace; font-size: 12px;">{{ peer.node_id }}</span>
                     </td>
                     <td>{{ peer.node_name or '—' }}</td>
                     <td>
-                        <span style="font-family: monospace; font-size: 12px;">{{ peer.connected_at[:19] if peer.connected_at else '—' }}</span>
+                        <span style="font-size: 12px;">{{ peer.transport or '—' }}</span>
+                    </td>
+                    <td>
+                        <span style="font-family: monospace; font-size: 12px;">{{ (peer.last_seen or peer.connected_at or '—')[:19] }}</span>
                     </td>
                 </tr>
                 {% endfor %}

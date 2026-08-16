@@ -53,6 +53,7 @@ def extract_tags(memory: Memory) -> list[str]:
         MemoryType.COPILOT_CHAT,
         MemoryType.COPILOT_DEBUG,
         MemoryType.COPILOT_INLINE,
+        MemoryType.COPILOT_CLI_CHAT,
     ):
         tags.append("copilot")
 

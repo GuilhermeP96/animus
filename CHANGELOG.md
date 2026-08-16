@@ -4,6 +4,37 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-08-16 — GitHub Copilot CLI memory sync + Brotherhood presence fix
+
+### Added
+- **Copilot CLI Collector** (`animus.collector.copilot_cli.CopilotCliCollector`):
+  - Ingests session turns from `~/.copilot/session-store.db` (SQLite, read-only)
+    — one `copilot_cli_chat` memory per turn (`user:`/`assistant:` bodies),
+    grouped by `metadata.session` so the session views/MCP tools reconstruct
+    full conversations, same as Copilot Chat and Claude Code sessions.
+  - Ingests session checkpoints (`title`, `overview`, `work_done`,
+    `technical_details`, `important_files`, `next_steps`) as searchable
+    `copilot_cli_chat` memories tagged `checkpoint`.
+  - Resolves workspace labels from the session's `cwd`/`repository` and stamps
+    `git_branch` metadata.
+- `MemoryType` expands with `COPILOT_CLI_CHAT`. Pre-0.6.0 peers reject these
+  memories on pull (`'copilot_cli_chat' is not a valid MemoryType`) until they
+  self-update — same migration path as `claude_chat` in 0.5.0.
+- Config adds `copilot_cli_data_dir` (default `~/.copilot`) and the
+  `collect_copilot_cli_chat` toggle.
+- Wired into `animus collect`, `AnimusPeer.collect_and_index()`, and the MCP
+  `animus_collect` tool.
+
+### Fixed
+- **Brotherhood "Active Members" always empty** (`peers_online: 0`): presence
+  was only registered for WebSocket clients, but the daemon syncs over plain
+  HTTP (`/api/sync/push|pull`) and never opens the WS. The hub now upserts a
+  presence entry on every authenticated push/pull, tracks `last_seen` +
+  `transport`, and counts a peer as online when seen within 15 min
+  (3× the default collect interval). WS disconnects no longer delete the
+  entry — it goes stale via the TTL. The Brotherhood page shows online/offline
+  status, transport, and last-seen per member.
+
 ## [0.5.1] — 2026-08-16 — Google Antigravity / Antigravity IDE memory sync
 
 ### Added

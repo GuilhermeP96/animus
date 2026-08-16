@@ -25,7 +25,7 @@ from .admin_auth import (
     set_session_cookie,
     validate_credentials,
 )
-from .app import get_config, get_engine, _connected_peers
+from .app import get_config, get_engine, _connected_peers, _peer_is_online, _peers_with_status
 
 logger = logging.getLogger("animus.admin")
 
@@ -95,8 +95,8 @@ async def dashboard(request: Request, session: AdminSession = Depends(require_ad
             "node_name": config.node_name,
             "node_role": config.node_role,
         },
-        "peers_online": len(_connected_peers),
-        "peers": list(_connected_peers.values()),
+        "peers_online": sum(1 for p in _connected_peers.values() if _peer_is_online(p)),
+        "peers": _peers_with_status(),
     })
 
 
@@ -686,7 +686,7 @@ async def peers_page(
     """).fetchall()
 
     # Merge connected peers and historical stats
-    connected = list(_connected_peers.values())
+    connected = _peers_with_status()
     historical = [dict(r) for r in peer_stats]
 
     # Public hub URL preferred (falls back to request host)
@@ -695,7 +695,7 @@ async def peers_page(
 
     return templates.TemplateResponse(request, "peers.html", {
         "session": session,
-        "peers_online": len(_connected_peers),
+        "peers_online": sum(1 for p in connected if p["online"]),
         "peer_stats": connected,
         "historical_peers": historical,
         "hub_url": hub_url,
@@ -829,7 +829,7 @@ async def settings_page(
 async def admin_stats(session: AdminSession = Depends(require_admin)):
     engine = get_engine()
     stats = engine.get_stats()
-    stats["peers_online"] = len(_connected_peers)
+    stats["peers_online"] = sum(1 for p in _connected_peers.values() if _peer_is_online(p))
     return stats
 
 

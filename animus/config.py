@@ -119,6 +119,11 @@ def _default_antigravity_dir() -> Path:
     return Path.home() / ".gemini"
 
 
+def _default_copilot_cli_dir() -> Path:
+    """GitHub Copilot CLI's data root — same shape on every OS."""
+    return Path.home() / ".copilot"
+
+
 class AnimusConfig(BaseSettings):
     """Core Animus configuration."""
 
@@ -165,6 +170,7 @@ class AnimusConfig(BaseSettings):
     collect_mcp_memory: bool = True
     collect_claude_chat: bool = True       # Claude Code session transcripts
     collect_claude_memory: bool = True     # Claude Code auto-memory .md files
+    collect_copilot_cli_chat: bool = True  # GitHub Copilot CLI session turns/checkpoints
     collect_antigravity_chat: bool = True      # Antigravity CLI/IDE conversation turns
     collect_antigravity_memory: bool = True    # Antigravity brain / GEMINI.md memory files
     collect_antigravity_knowledge: bool = True # Antigravity .antigravity project context
@@ -173,6 +179,12 @@ class AnimusConfig(BaseSettings):
     antigravity_data_dir: Path = Field(
         default_factory=_default_antigravity_dir,
         description="Antigravity data root (~/.gemini). Holds antigravity/conversations/*.db, brain/, config/projects/, etc.",
+    )
+
+    # ── Copilot CLI paths ──
+    copilot_cli_data_dir: Path = Field(
+        default_factory=_default_copilot_cli_dir,
+        description="GitHub Copilot CLI data root (~/.copilot). Holds session-store.db, session-state/, logs, etc.",
     )
 
     # ── Indexer ──
