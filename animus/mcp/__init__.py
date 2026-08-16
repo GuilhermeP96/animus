@@ -24,6 +24,7 @@ from ..indexer.engine import IndexEngine
 from ..collector.antigravity import AntigravityCollector
 from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
+from ..collector.copilot_cli import CopilotCliCollector
 from ..collector.models import Memory, MemoryType
 
 logger = logging.getLogger("animus.mcp")
@@ -65,7 +66,7 @@ class AnimusMCPServer:
                     "type": {
                         "type": "string",
                         "description": (
-                            "Filter by memory type: copilot_chat, copilot_debug, claude_chat, "
+                            "Filter by memory type: copilot_chat, copilot_debug, copilot_cli_chat, claude_chat, "
                             "claude_memory, antigravity_chat, antigravity_memory, "
                             "antigravity_knowledge, workspace_memory, mcp_knowledge, session_note, "
                             "user_note, repo_note, prompt_file, agent_file"
@@ -361,6 +362,7 @@ class AnimusMCPServer:
         self.collector = CopilotCollector(self.config)
         self.claude_collector = ClaudeCollector(self.config)
         self.antigravity_collector = AntigravityCollector(self.config)
+        self.copilot_cli_collector = CopilotCliCollector(self.config)
 
     def handle_message(self, message: dict) -> dict | None:
         """Handle a JSON-RPC message."""
@@ -652,6 +654,7 @@ class AnimusMCPServer:
         memories = self.collector.collect_all()
         memories.extend(self.claude_collector.collect_all())
         memories.extend(self.antigravity_collector.collect_all())
+        memories.extend(self.copilot_cli_collector.collect_all())
         new_count = self.engine.index_batch(memories)
         stats = self.engine.get_stats()
         return (

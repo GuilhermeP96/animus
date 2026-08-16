@@ -19,9 +19,11 @@ def mcp_server(config, populated_engine, monkeypatch):
     from animus.collector.antigravity import AntigravityCollector
     from animus.collector.claude import ClaudeCollector
     from animus.collector.copilot import CopilotCollector
+    from animus.collector.copilot_cli import CopilotCliCollector
     server.collector = CopilotCollector(config)
     server.claude_collector = ClaudeCollector(config)
     server.antigravity_collector = AntigravityCollector(config)
+    server.copilot_cli_collector = CopilotCliCollector(config)
     return server
 
 

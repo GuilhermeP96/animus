@@ -31,6 +31,8 @@ def config(tmp_path):
         data_dir=tmp_path / "data",
         vscode_user_dir=tmp_path / "vscode",
         claude_data_dir=tmp_path / "claude",
+        antigravity_data_dir=tmp_path / "gemini",
+        copilot_cli_data_dir=tmp_path / "copilot",
         server_secret="test-secret-key-12345",
         hub_url="",
         server_port=18314,

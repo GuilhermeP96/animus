@@ -120,18 +120,20 @@ def config_set(key: str, value: str):
 
 @app.command()
 def collect(verbose: bool = False):
-    """Collect memories from Copilot + Claude Code + Antigravity interactions — Desynchronize."""
+    """Collect memories from Copilot + Copilot CLI + Claude Code + Antigravity interactions — Desynchronize."""
     _setup_logging(verbose)
     config = AnimusConfig.load()
 
     from .collector.antigravity import AntigravityCollector
     from .collector.claude import ClaudeCollector
     from .collector.copilot import CopilotCollector
+    from .collector.copilot_cli import CopilotCliCollector
     from .indexer.engine import IndexEngine
 
     collector = CopilotCollector(config)
     claude_collector = ClaudeCollector(config)
     antigravity_collector = AntigravityCollector(config)
+    copilot_cli_collector = CopilotCliCollector(config)
     engine = IndexEngine(config.db_path)
 
     console.print("[bold]⟁ Entering the Animus...[/]\n")
@@ -139,6 +141,7 @@ def collect(verbose: bool = False):
     memories = collector.collect_all()
     memories.extend(claude_collector.collect_all())
     memories.extend(antigravity_collector.collect_all())
+    memories.extend(copilot_cli_collector.collect_all())
     new_count = engine.index_batch(memories)
 
     console.print(f"  Memories found:  [cyan]{len(memories)}[/]")

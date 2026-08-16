@@ -29,7 +29,57 @@ logger = logging.getLogger("animus.server")
 # ── Globals ──
 _config: AnimusConfig | None = None
 _engine: IndexEngine | None = None
-_connected_peers: dict[str, dict] = {}  # node_id -> info
+_connected_peers: dict[str, dict] = {}  # node_id -> presence info
+
+# A peer counts as "online" when seen (WS message or HTTP sync) within this
+# window. 3× the default 300s collect interval, so one missed cycle doesn't
+# flap the Brotherhood page.
+_PEER_ONLINE_TTL_SECONDS = 900
+
+
+def _note_peer_activity(node_id: str, node_name: str = "", transport: str = "http") -> None:
+    """Upsert a presence entry for a peer.
+
+    Most peers sync over plain HTTP (``/api/sync/push|pull``) and never open
+    the WebSocket — without this, ``_connected_peers`` only ever reflected WS
+    clients and the Brotherhood page stayed empty.
+    """
+    if not node_id:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    info = _connected_peers.get(node_id)
+    if info is None:
+        info = {
+            "node_id": node_id,
+            "node_name": node_name,
+            "capabilities": [],
+            "connected_at": now,
+        }
+        _connected_peers[node_id] = info
+    if node_name:
+        info["node_name"] = node_name
+    info["last_seen"] = now
+    info["transport"] = transport
+
+
+def _peer_is_online(info: dict) -> bool:
+    last = info.get("last_seen") or info.get("connected_at")
+    if not last:
+        return False
+    try:
+        dt = datetime.fromisoformat(last)
+    except (ValueError, TypeError):
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds() < _PEER_ONLINE_TTL_SECONDS
+
+
+def _peers_with_status() -> list[dict]:
+    return [
+        {**info, "online": _peer_is_online(info)}
+        for info in _connected_peers.values()
+    ]
 
 # ── Rate limiter (in-memory) ──
 _RATE_LIMIT_REQUESTS = 60  # max requests
@@ -318,7 +368,7 @@ async def health():
         "status": "healthy",
         "memories": stats["total_memories"],
         "nodes": stats["unique_nodes"],
-        "peers_online": len(_connected_peers),
+        "peers_online": sum(1 for p in _connected_peers.values() if _peer_is_online(p)),
     }
 
 
@@ -332,6 +382,7 @@ async def stats(node_id: str = Depends(verify_peer)):
 async def sync_push(req: PushRequest, node_id: str = Depends(verify_peer)):
     """Receive memories from a peer."""
     engine = get_engine()
+    _note_peer_activity(req.node_id, req.node_name, transport="http")
     data = req.model_dump()
     memories, skipped = SyncProtocol.memories_from_push(data)
     # Hub is the destination — there is nowhere to push these onward,
@@ -361,6 +412,7 @@ async def sync_pull(req: PullRequest, node_id: str = Depends(verify_peer)):
     local DB was lost / rebuilt and needs to re-hydrate from the hub).
     """
     engine = get_engine()
+    _note_peer_activity(req.node_id, getattr(req, "node_name", ""), transport="http")
 
     conditions: list[str] = []
     params: list[Any] = []
@@ -411,7 +463,7 @@ async def recent_memories(limit: int = 20, node_id: str = Depends(verify_peer)):
 
 @app.get("/api/peers")
 async def list_peers(node_id: str = Depends(verify_peer)):
-    return {"peers": list(_connected_peers.values())}
+    return {"peers": _peers_with_status()}
 
 
 # ── WebSocket for realtime sync ──
@@ -480,12 +532,8 @@ async def websocket_sync(ws: WebSocket):
                 await ws.close(code=4003, reason="Invalid auth signature")
                 return
 
-        _connected_peers[peer_node_id] = {
-            "node_id": peer_node_id,
-            "node_name": msg.get("node_name", ""),
-            "capabilities": msg.get("capabilities", []),
-            "connected_at": datetime.now(timezone.utc).isoformat(),
-        }
+        _note_peer_activity(peer_node_id, msg.get("node_name", ""), transport="ws")
+        _connected_peers[peer_node_id]["capabilities"] = msg.get("capabilities", [])
         logger.info("Peer connected: %s (%s)", peer_node_id, msg.get("node_name"))
 
         await ws.send_text(SyncProtocol.ack("HANDSHAKE", 1))
@@ -520,14 +568,18 @@ async def websocket_sync(ws: WebSocket):
 
             elif msg["type"] == "HEARTBEAT":
                 _connected_peers[peer_node_id]["last_heartbeat"] = datetime.now(timezone.utc).isoformat()
+                _note_peer_activity(peer_node_id, transport="ws")
 
     except WebSocketDisconnect:
         logger.info("Peer disconnected: %s", peer_node_id)
     except Exception as e:
         logger.error("WebSocket error: %s", e)
     finally:
+        # Keep the entry — presence now fades via the last_seen TTL, so a
+        # peer that falls back to HTTP sync (or briefly drops the WS) still
+        # shows up on the Brotherhood page with its last activity.
         if peer_node_id and peer_node_id in _connected_peers:
-            del _connected_peers[peer_node_id]
+            _connected_peers[peer_node_id]["transport"] = "ws (closed)"
 
 
 def create_app(config: AnimusConfig | None = None) -> FastAPI:
