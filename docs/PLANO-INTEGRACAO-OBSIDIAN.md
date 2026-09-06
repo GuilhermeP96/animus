@@ -63,17 +63,16 @@ A integracao com Obsidian deve reutilizar esse modelo, sem criar um segundo banc
 
 ## 4. Arquitetura proposta
 
-```text
-Obsidian vault
-    |
-    | leitura incremental de *.md
-    v
-ObsidianCollector -> Memory(type=obsidian_note) -> IndexEngine/FTS -> Sync peer/hub
-                                                               |
-                                                               v
-                                                          MCP tools
-
-Memorias selecionadas -> ExportPolicy -> Markdown renderer -> vault/.animus/exported/
+```mermaid
+flowchart LR
+  vault["Obsidian vault"] -->|"leitura incremental de *.md"| collector["ObsidianCollector"]
+  collector --> memory["Memory<br/>obsidian_note"]
+  memory --> index["IndexEngine + FTS"]
+  index --> sync["Peer / Hub sync"]
+  index --> mcp["MCP tools"]
+  selected["Memorias selecionadas"] --> policy["ExportPolicy"]
+  policy --> renderer["Markdown renderer"]
+  renderer --> exported["vault/.animus/exported/"]
 ```
 
 ### Fonte de verdade
@@ -85,16 +84,33 @@ Memorias selecionadas -> ExportPolicy -> Markdown renderer -> vault/.animus/expo
 
 ### Pasta recomendada no vault
 
-```text
-<VAULT>/
-  .animus/
-    config.json
-    exported/
-    quarantine/
-    README.md
+```mermaid
+flowchart TD
+    root["<VAULT>/"]
+    root --> obsidian[".obsidian/"]
+    root --> notes["Notas Markdown do usuario"]
+    root --> animus[".animus/"]
+    animus --> config["config.json"]
+    animus --> exported["exported/"]
+    animus --> quarantine["quarantine/"]
+    animus --> readme["README.md"]
 ```
 
 A pasta `.animus/` deve ser ignorada pelo fluxo normal do usuario, mas continuar disponivel para auditoria e backup. A configuracao efetiva do peer permanece no diretorio de dados do Animus; o arquivo no vault serve apenas para metadados e estado local da integracao.
+
+### Responsabilidade e fonte de verdade
+
+```mermaid
+flowchart LR
+  human["Usuario"] -->|"edita e organiza"| obsidian["Obsidian<br/>conhecimento curado"]
+  agents["Agentes IA"] -->|"geram contexto"| animus["Animus<br/>memoria automatica"]
+  obsidian -->|"projecao pesquisavel"| animus
+  animus -->|"exportacao opt-in"| managed["Notas gerenciadas<br/>.animus/exported/"]
+  animus -->|"MCP: busca, recall e contexto"| agents
+  animus -->|"sync de Memory"| peers["Outros peers / hub"]
+```
+
+O conteudo manual do vault tem autoridade no fluxo Obsidian -> Animus. Uma nota exportada so pode ser atualizada automaticamente quando possuir o mesmo `memory_id` e `managed: true`.
 
 ## 5. Contrato de memoria
 
@@ -152,6 +168,26 @@ O renderizador deve preservar frontmatter e corpo existente quando atualizar uma
 ### Sincronizacao entre peers
 
 O hub continua transportando objetos `Memory`. O vault nao sera montado no hub e nenhum peer deve assumir que o caminho local de outro peer existe. Ao exportar uma memoria recebida de outro peer, incluir `source_node` e manter o caminho relativo como informacao, nao como caminho de escrita.
+
+### Fluxo de sincronizacao
+
+```mermaid
+sequenceDiagram
+  participant O as Obsidian
+  participant P as Peer Animus
+  participant H as Hub
+  participant R as Peer remoto
+  participant A as Agente via MCP
+
+  O->>P: Nota Markdown criada ou alterada
+  P->>P: Hash, parse de frontmatter e indexacao FTS
+  P->>H: Push Memory obsidian_note assinado
+  H->>R: Pull da memoria sincronizada
+  A->>P: animus_search / animus_context
+  P-->>A: Nota, origem, tags e caminho relativo
+  A->>P: Solicita exportacao seletiva
+  P->>O: Escreve nota gerenciada atomica
+```
 
 ## 7. Plano por hora
 
@@ -262,6 +298,29 @@ As horas abaixo sao uma sequencia de implementacao do MVP, nao uma promessa de d
 - Decidir se o recurso permanece experimental ou passa a stable.
 
 **Saida:** decisao de rollout baseada em dados reais.
+
+### Visao do cronograma
+
+```mermaid
+gantt
+  title MVP Obsidian + Animus
+  dateFormat HH:mm
+  axisFormat %Hh
+  section Fundacao
+  Fechamento do desenho       :h0, 00:00, 1h
+  Configuracao de vaults      :h1, after h0, 1h
+  Coletor incremental         :h2, after h1, 1h
+  Coleta e indexacao          :h3, after h2, 1h
+  section Produto
+  Busca e MCP                 :h4, after h3, 1h
+  Exportador Markdown         :h5, after h4, 1h
+  CLI e politica de selecao   :h6, after h5, 1h
+  Links e conflitos           :h7, after h6, 1h
+  section Validacao
+  Seguranca e privacidade    :h8, after h7, 1h
+  Testes e documentacao      :h9, after h8, 1h
+  Piloto controlado          :h10, after h9, 1h
+```
 
 ## 8. Testes de aceitacao
 
