@@ -18,32 +18,33 @@
 | Synchronization | Processo de sync com o hub |
 | Leap of Faith | CLI para entrar no Animus |
 
+## Integracao futura com Obsidian
+
+O Animus tem um plano futuro para integrar o Obsidian como camada de conhecimento curado, mantendo a memoria automatica, a sincronizacao e o acesso por MCP no Animus. A proposta inclui organizacao assistida por agentes, com aprovacao, policies, auditoria e rollback.
+
+Essa integracao ainda nao faz parte da funcionalidade estavel. O planejamento, os fluxos e os diagramas Mermaid estao em [PLANO-INTEGRACAO-OBSIDIAN.md](docs/PLANO-INTEGRACAO-OBSIDIAN.md).
+
 ## Arquitetura
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Machine A  │     │  Machine B  │     │  Machine C  │
-│  (Subject)  │     │  (Subject)  │     │  (Subject)  │
-│             │     │             │     │             │
-│ ┌─────────┐ │     │ ┌─────────┐ │     │ ┌─────────┐ │
-│ │Collector│ │     │ │Collector│ │     │ │Collector│ │
-│ │ Indexer │ │     │ │ Indexer │ │     │ │ Indexer │ │
-│ │  Peer   │ │     │ │  Peer   │ │     │ │  Peer   │ │
-│ └────┬────┘ │     │ └────┬────┘ │     │ └────┬────┘ │
-└──────┼──────┘     └──────┼──────┘     └──────┼──────┘
-       │   HTTPS/WSS       │                   │
-       └───────────┐       │       ┌───────────┘
-                   ▼       ▼       ▼
-            ┌──────────────────────────┐
-            │      Animus Hub (VPS)    │
-            │                          │
-            │  ┌────────┐ ┌─────────┐  │
-            │  │FastAPI │ │ SQLite  │  │
-            │  │ Server │ │  FTS5   │  │
-            │  └────────┘ └─────────┘  │
-            │                          │
-            │  Docker + Nginx + SSL    │
-            └──────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph peers["Peers locais"]
+    A["Machine A\nCollector + Indexer + Peer"]
+    B["Machine B\nCollector + Indexer + Peer"]
+    C["Machine C\nCollector + Indexer + Peer"]
+  end
+
+  A -->|"HTTPS / WSS"| hub
+  B -->|"HTTPS / WSS"| hub
+  C -->|"HTTPS / WSS"| hub
+
+  subgraph service["Animus Hub - VPS"]
+    hub["FastAPI server"]
+    db["SQLite + FTS5"]
+    edge["Docker + Nginx + SSL"]
+    hub --> db
+    edge --> hub
+  end
 ```
 
 ## O que coleta

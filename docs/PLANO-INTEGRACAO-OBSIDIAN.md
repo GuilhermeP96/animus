@@ -68,14 +68,33 @@ A integracao com Obsidian deve reutilizar esse modelo, sem criar um segundo banc
 
 ```mermaid
 flowchart LR
-  vault["Obsidian vault"] -->|"leitura incremental de *.md"| collector["ObsidianCollector"]
-  collector --> memory["Memory<br/>obsidian_note"]
-  memory --> index["IndexEngine + FTS"]
-  index --> sync["Peer / Hub sync"]
-  index --> mcp["MCP tools"]
-  selected["Memorias selecionadas"] --> policy["ExportPolicy"]
-  policy --> renderer["Markdown renderer"]
-  renderer --> exported["vault/.animus/exported/"]
+  subgraph vaultLayer["Camada Obsidian"]
+    vault["Vault Markdown"]
+    managed[".animus/exported"]
+    quarantine[".animus/quarantine"]
+  end
+
+  subgraph peerLayer["Peer Animus"]
+    collector["ObsidianCollector"]
+    memory["Memory\nobsidian_note"]
+    index["IndexEngine + FTS"]
+    policy["ExportPolicy"]
+    renderer["Markdown renderer"]
+  end
+
+  subgraph networkLayer["Rede Animus"]
+    sync["Peer / Hub sync"]
+    mcp["MCP tools"]
+  end
+
+  vault -->|"leitura incremental"| collector
+  collector --> memory --> index
+  index --> sync
+  index --> mcp
+  mcp -->|"memorias selecionadas"| policy
+  policy --> renderer
+  renderer -->|"escrita atomica"| managed
+  renderer -->|"conflito"| quarantine
 ```
 
 ### Fonte de verdade
@@ -105,11 +124,19 @@ A pasta `.animus/` deve ser ignorada pelo fluxo normal do usuario, mas continuar
 
 ```mermaid
 flowchart LR
-  human["Usuario"] -->|"edita e organiza"| obsidian["Obsidian<br/>conhecimento curado"]
-  agents["Agentes IA"] -->|"geram contexto"| animus["Animus<br/>memoria automatica"]
+  human["Usuario"] -->|"edita e organiza"| obsidian["Obsidian\nconhecimento curado"]
+  agents["Agentes IA"] -->|"geram contexto"| animus["Animus\nmemoria automatica"]
   obsidian -->|"projecao pesquisavel"| animus
-  animus -->|"exportacao opt-in"| managed["Notas gerenciadas<br/>.animus/exported/"]
   animus -->|"MCP: busca, recall e contexto"| agents
+
+  subgraph controlled["Area controlada"]
+    managed["Notas gerenciadas\n.animus/exported"]
+    audit["Audit log + rollback"]
+  end
+
+  animus -->|"exportacao opt-in"| managed
+  agents -->|"proposta + aprovacao"| audit
+  audit --> managed
   animus -->|"sync de Memory"| peers["Outros peers / hub"]
 ```
 
@@ -236,6 +263,10 @@ sequenceDiagram
   A->>P: animus_search / animus_context
   P-->>A: Nota, origem, tags e caminho relativo
   A->>P: Solicita exportacao seletiva
+  P->>P: Gera proposta e valida policy
+  P-->>A: Diff, risco e pedido de aprovacao
+  A->>P: Aprova operacao ou executa dry-run
+  P->>P: Cria backup e audit log
   P->>O: Escreve nota gerenciada atomica
 ```
 
