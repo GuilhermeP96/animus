@@ -21,6 +21,7 @@ A integracao nao deve transformar o vault em um deposito de logs. O principio ce
 - O Animus consegue exportar memorias selecionadas para Markdown legivel.
 - Notas exportadas mantem origem, id, timestamp e link para a memoria original.
 - O usuario decide o que entra no vault e o que permanece apenas no indice do Animus.
+- Agentes podem classificar, resumir, relacionar e organizar memorias no vault com politicas claras.
 - A sincronizacao entre maquinas continua sendo responsabilidade do Animus, sem depender do Obsidian Sync.
 
 ## 2. Estado atual do Animus
@@ -50,6 +51,7 @@ A integracao com Obsidian deve reutilizar esse modelo, sem criar um segundo banc
 8. Impedir loops de importacao/exportacao por meio de IDs e marcadores de origem.
 9. Oferecer comandos CLI para configurar, importar, exportar e mostrar o estado.
 10. Cobrir o fluxo com testes unitarios e um teste de integracao em vault temporario.
+11. Permitir organizacao assistida por agentes, com modo proposta, aprovacao e auditoria.
 
 ### Fora do MVP
 
@@ -60,6 +62,7 @@ A integracao com Obsidian deve reutilizar esse modelo, sem criar um segundo banc
 - Depender de plugin obrigatorio do Obsidian.
 - Copiar automaticamente todas as conversas brutas para o vault.
 - Substituir o Obsidian Sync, Git ou qualquer ferramenta de backup do usuario.
+- Permitir que agentes sobrescrevam notas humanas fora de areas gerenciadas.
 
 ## 4. Arquitetura proposta
 
@@ -110,7 +113,43 @@ flowchart LR
   animus -->|"sync de Memory"| peers["Outros peers / hub"]
 ```
 
-O conteudo manual do vault tem autoridade no fluxo Obsidian -> Animus. Uma nota exportada so pode ser atualizada automaticamente quando possuir o mesmo `memory_id` e `managed: true`.
+O conteudo manual do vault tem autoridade no fluxo Obsidian -> Animus. Uma nota exportada so pode ser atualizada automaticamente quando possuir o mesmo `memory_id` e `managed: true`. Agentes podem organizar notas dentro de areas explicitamente gerenciadas, mas toda acao precisa ser rastreavel e reversivel.
+
+### Organizacao assistida por agentes
+
+O agente nao deve apenas consultar memorias: ele pode transforma-las em conhecimento navegavel no Obsidian. O comportamento padrao sera propor primeiro e executar depois da aprovacao, com excecao de operacoes previamente autorizadas em pastas gerenciadas.
+
+Operacoes permitidas:
+
+- sugerir titulo, resumo, tags, aliases e links relacionados;
+- agrupar memorias por projeto, workspace, assunto ou sessao;
+- criar uma nota de sintese a partir de varias memorias;
+- anexar uma memoria a uma nota gerenciada existente;
+- mover ou renomear somente arquivos gerenciados pelo Animus;
+- marcar memorias como revisadas, arquivadas ou candidatas a consolidacao;
+- produzir um relatorio de organizacao sem alterar o vault.
+
+Operacoes protegidas:
+
+- editar ou mover uma nota humana sem `managed: true`;
+- apagar conteudo ou links existentes;
+- alterar frontmatter autoritativo sem registrar a origem da alteracao;
+- executar uma operacao em lote sem `dry-run`, escopo e registro de auditoria.
+
+```mermaid
+flowchart TD
+  memory["Memorias Animus"] --> agent["Agente organizador"]
+  agent --> proposal["Proposta: titulo, resumo, tags, links e destino"]
+  proposal --> decision{"Aprovado?"}
+  decision -->|"nao"| report["Relatorio sem alteracao"]
+  decision -->|"sim"| policy["Policy + escopo + dry-run"]
+  policy --> managed{"Area gerenciada?"}
+  managed -->|"nao"| consent["Consentimento explicito por nota"]
+  managed -->|"sim"| write["Escrita atomica"]
+  consent --> write
+  write --> audit["Audit log + backup + memory_id"]
+  audit --> vault["Obsidian organizado"]
+```
 
 ## 5. Contrato de memoria
 
@@ -164,6 +203,17 @@ O renderizador deve preservar frontmatter e corpo existente quando atualizar uma
 - Nunca sobrescrever uma nota manual sem `managed: true`.
 - Atualizar uma nota gerenciada somente quando o `memory_id` for o mesmo.
 - Se houver conflito de hash, criar uma copia em `quarantine/` e reportar a decisao.
+
+### Organizacao por agentes
+
+- O MCP deve expor organizacao como uma operacao separada da busca e do `animus_remember`.
+- Toda operacao deve aceitar `scope`, `dry_run` e um identificador de solicitacao.
+- O modo padrao e `propose`: retorna um plano de mudancas sem escrever arquivos.
+- O modo `apply` exige aprovacao explicita ou uma policy previamente configurada para a pasta alvo.
+- O agente deve registrar antes/depois, `memory_id`, caminho, agente solicitante, timestamp e motivo.
+- Alteracoes devem ser atomicas e gerar backup ou snapshot recuperavel.
+- Uma operacao em lote deve falhar fechada quando uma nota manual estiver no caminho de destino.
+- O resultado deve informar criadas, atualizadas, movidas, ignoradas e conflitos.
 
 ### Sincronizacao entre peers
 
@@ -246,6 +296,7 @@ As horas abaixo sao uma sequencia de implementacao do MVP, nao uma promessa de d
 - Sanitizar titulo e nome de arquivo.
 - Criar diretorios e escrever atomicamente via arquivo temporario + rename.
 - Produzir relatorio com criadas, atualizadas, ignoradas e conflitos.
+- Preparar o renderer para notas de memoria, notas de sintese e relatorios de organizacao.
 
 **Saida:** uma memoria selecionada vira uma nota legivel e auditavel.
 
@@ -256,8 +307,19 @@ As horas abaixo sao uma sequencia de implementacao do MVP, nao uma promessa de d
 - Adicionar `animus obsidian collect` ou integrar ao `animus collect` com flag.
 - Adicionar exportacao por ID, query, sessao, tags e tipo.
 - Adicionar `--dry-run` e confirmacao para operacoes destrutivas ou em lote.
+- Adicionar `animus obsidian organize --propose` e `animus obsidian organize --apply`.
+- Permitir policies por pasta, tipo de memoria, tags e agente autorizado.
 
 **Saida:** fluxo completo operavel sem editar JSON manualmente.
+
+### Hora 6.5 - Organizacao assistida por agentes
+
+- Definir o schema de proposta: operacao, origem, destino, motivo, diff e risco.
+- Criar ferramenta MCP de proposta e ferramenta MCP de aplicacao autorizada.
+- Implementar dry-run, aprovacao, idempotencia e audit log.
+- Testar resumo, agrupamento, links, renomeacao e consolidacao sem tocar notas humanas.
+
+**Saida:** um agente consegue organizar memorias com seguranca e explicabilidade.
 
 ### Hora 7 - Links, idempotencia e conflitos
 
@@ -337,6 +399,11 @@ gantt
 - [ ] Isolar um conflito de hash em `quarantine/`.
 - [ ] Sincronizar uma nota entre dois peers sem usar caminho absoluto remoto.
 - [ ] Desabilitar a coleta e confirmar que nenhum conteudo do vault e enviado.
+- [ ] Gerar uma proposta de organizacao sem alterar arquivos.
+- [ ] Aplicar uma proposta aprovada somente em area gerenciada.
+- [ ] Recusar agente sem policy tentando editar nota humana.
+- [ ] Registrar antes/depois, agente, motivo e `memory_id` no audit log.
+- [ ] Reverter uma organizacao aplicada a partir do backup ou snapshot.
 - [ ] Rodar a suite existente sem regressao.
 
 ## 9. Riscos e mitigacoes
@@ -352,6 +419,9 @@ gantt
 | Custo de indexar vault grande | Hash incremental, ignore patterns e limites configuraveis |
 | Incompatibilidade entre peers | Atualizacao automatica e documentacao de compatibilidade |
 | Dependencia excessiva do formato do Obsidian | Markdown padrao + frontmatter tolerante, sem plugin obrigatorio |
+| Agente organizar de forma destrutiva | Modo proposta, policy por pasta, aprovacao e rollback |
+| Agente criar taxonomia ruim ou tags demais | Limites de tags, templates aprovados e revisao por amostra |
+| Loop de resumos e consolidacoes | `memory_id`, hash de entrada, origem e idempotencia |
 
 ## 10. Decisoes pendentes
 
@@ -362,6 +432,9 @@ gantt
 5. O hub deve permitir exportacao remota ou somente o peer local pode escrever no vault?
 6. Devemos suportar YAML frontmatter aninhado completo ou apenas campos simples no MVP?
 7. O primeiro release deve ser marcado como experimental ate o piloto terminar?
+8. Quais agentes podem aplicar organizacao automaticamente e em quais pastas?
+9. O audit log fica no `.animus/`, no banco do Animus ou nos dois?
+10. Quais templates de resumo e taxonomias iniciais serao oficiais?
 
 ## 11. Definicao de pronto
 
@@ -369,6 +442,8 @@ A integracao esta pronta para uso experimental quando:
 
 - a coleta e a exportacao sao opt-in e idempotentes;
 - uma nota manual nunca e sobrescrita sem marcacao explicita de gerenciamento;
+- agentes conseguem propor organizacao e aplicar somente dentro de policies autorizadas;
+- toda alteracao de agente possui audit log, diff e rollback;
 - o MCP encontra notas do Obsidian com origem e caminho relativo;
 - conflitos produzem artefatos preservados e diagnostico acionavel;
 - o fluxo funciona em Windows e Linux;
