@@ -16,6 +16,7 @@ from ..collector.antigravity import AntigravityCollector
 from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.copilot_cli import CopilotCliCollector
+from ..collector.obsidian import ObsidianCollector
 from ..collector.models import MemoryBatch
 from . import updater
 from ..config import AnimusConfig
@@ -40,6 +41,7 @@ class AnimusPeer:
         self.claude_collector = ClaudeCollector(config)
         self.antigravity_collector = AntigravityCollector(config)
         self.copilot_cli_collector = CopilotCliCollector(config)
+        self.obsidian_collector = ObsidianCollector(config)
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
         # Self-update bookkeeping: the daemon checks at most once per
@@ -55,7 +57,10 @@ class AnimusPeer:
         memories.extend(self.claude_collector.collect_all())
         memories.extend(self.antigravity_collector.collect_all())
         memories.extend(self.copilot_cli_collector.collect_all())
+        memories.extend(self.obsidian_collector.collect_all())
         new_count = self.engine.index_batch(memories)
+        for vault, active_ids in self.obsidian_collector.seen_by_vault.items():
+            self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
         logger.info("Collected %d memories, %d new", len(memories), new_count)
         return new_count
 
