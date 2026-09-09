@@ -108,28 +108,58 @@ class IndexEngine:
         # Clean content for search
         searchable = extract_searchable_text(memory)
 
+        metadata_json = json.dumps(memory.metadata, default=str)
+        tags_json = json.dumps(memory.tags)
+
         with self._lock:
             try:
-                cursor = self.conn.execute(
-                    """INSERT OR IGNORE INTO memories
+                if memory.type == MemoryType.OBSIDIAN_NOTE:
+                    # Local collection is authoritative over any projected
+                    # remote row. Synced updates may revise a row only when
+                    # it originated on that same source node; this lets the
+                    # hub/other peers receive note edits without clobbering
+                    # a local vault that happens to use the same name/path.
+                    authority = "" if not synced else "memories.source_node = excluded.source_node AND "
+                    cursor = self.conn.execute(
+                        f"""INSERT INTO memories
+                           (id, type, source_node, source_path, workspace, timestamp,
+                            title, content, metadata, tags, sequence, synced)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(id) DO UPDATE SET
+                            source_node=excluded.source_node,
+                            source_path=excluded.source_path,
+                            workspace=excluded.workspace,
+                            timestamp=excluded.timestamp,
+                            title=excluded.title,
+                            content=excluded.content,
+                            metadata=excluded.metadata,
+                            tags=excluded.tags,
+                            sequence=excluded.sequence,
+                            synced=excluded.synced
+                           WHERE {authority}(memories.content != excluded.content
+                              OR memories.metadata != excluded.metadata
+                              OR memories.title != excluded.title
+                              OR memories.tags != excluded.tags)""",
+                        (
+                            memory.id, memory.type.value, memory.source_node,
+                            memory.source_path, memory.workspace, memory.timestamp.isoformat(),
+                            memory.title, searchable, metadata_json, tags_json,
+                            memory.sequence, 1 if synced else 0,
+                        ),
+                    )
+                else:
+                    cursor = self.conn.execute(
+                        """INSERT OR IGNORE INTO memories
                        (id, type, source_node, source_path, workspace, timestamp,
                         title, content, metadata, tags, sequence, synced)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        memory.id,
-                        memory.type.value,
-                        memory.source_node,
-                        memory.source_path,
-                        memory.workspace,
-                        memory.timestamp.isoformat(),
-                        memory.title,
-                        searchable,
-                        json.dumps(memory.metadata),
-                        json.dumps(memory.tags),
-                        memory.sequence,
-                        1 if synced else 0,
-                    ),
-                )
+                        (
+                            memory.id, memory.type.value, memory.source_node,
+                            memory.source_path, memory.workspace, memory.timestamp.isoformat(),
+                            memory.title, searchable, metadata_json, tags_json,
+                            memory.sequence, 1 if synced else 0,
+                        ),
+                    )
                 self.conn.commit()
                 return cursor.rowcount > 0
             except sqlite3.IntegrityError:
@@ -226,7 +256,7 @@ class IndexEngine:
         if not match_expr:
             return []
 
-        conditions = []
+        conditions = ["COALESCE(json_extract(m.metadata, '$.missing'), 0) = 0"]
         params: list = []
 
         # FTS query
@@ -284,6 +314,71 @@ class IndexEngine:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_memory(self, memory_id: str) -> Optional[dict]:
+        """Return one memory by exact id."""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM memories WHERE id = ?", (memory_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def select_memories(
+        self,
+        *,
+        query: str = "",
+        mem_type: Optional[str] = None,
+        session: str = "",
+        tags: Optional[list[str]] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Select export candidates using the MVP's supported selectors."""
+        if query:
+            rows = self.search(query, mem_type=mem_type, tags=tags, limit=limit)
+        else:
+            sql = "SELECT * FROM memories WHERE COALESCE(json_extract(metadata, '$.missing'), 0) = 0"
+            params: list = []
+            if mem_type:
+                sql += " AND type = ?"
+                params.append(mem_type)
+            if session:
+                sql += " AND json_extract(metadata, '$.session') = ?"
+                params.append(session)
+            sql += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(min(max(1, limit), 200))
+            with self._lock:
+                rows = [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+        if tags:
+            wanted = {tag.lower() for tag in tags}
+            rows = [
+                row for row in rows
+                if wanted.issubset({str(tag).lower() for tag in json.loads(row.get("tags") or "[]")})
+            ]
+        return rows
+
+    def mark_obsidian_missing(self, vault: str, source_node: str, active_ids: set[str]) -> int:
+        """Mark vanished local notes without deleting their synchronized history."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, metadata FROM memories WHERE type = ? AND source_node = ? "
+                "AND json_extract(metadata, '$.vault') = ?",
+                (MemoryType.OBSIDIAN_NOTE.value, source_node, vault),
+            ).fetchall()
+            changed = 0
+            for row in rows:
+                if row["id"] in active_ids:
+                    continue
+                metadata = json.loads(row["metadata"] or "{}")
+                if metadata.get("missing"):
+                    continue
+                metadata["missing"] = True
+                self.conn.execute(
+                    "UPDATE memories SET metadata = ?, synced = 0 WHERE id = ?",
+                    (json.dumps(metadata, default=str), row["id"]),
+                )
+                changed += 1
+            self.conn.commit()
+            return changed
 
     def mark_synced(self, memory_ids: list[str]) -> None:
         """Mark memories as synced."""
