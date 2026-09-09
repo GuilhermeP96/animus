@@ -25,6 +25,7 @@ from ..collector.antigravity import AntigravityCollector
 from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.copilot_cli import CopilotCliCollector
+from ..collector.obsidian import ObsidianCollector
 from ..collector.models import Memory, MemoryType
 
 logger = logging.getLogger("animus.mcp")
@@ -335,6 +336,38 @@ class AnimusMCPServer:
                 "required": [],
             },
         },
+        {
+            "name": "animus_obsidian_export",
+            "description": "Export selected memories into the managed area of an opt-in Obsidian vault.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault": {"type": "string", "description": "Configured vault name"},
+                    "memory_ids": {"type": "array", "items": {"type": "string"}},
+                    "dry_run": {"type": "boolean", "default": True},
+                    "actor": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["vault", "memory_ids"],
+            },
+        },
+        {
+            "name": "animus_obsidian_organize",
+            "description": "Propose or explicitly apply an audited organization inside .animus/exported.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault": {"type": "string"},
+                    "memory_ids": {"type": "array", "items": {"type": "string"}},
+                    "mode": {"type": "string", "enum": ["propose", "apply"], "default": "propose"},
+                    "approved": {"type": "boolean", "default": False},
+                    "dry_run": {"type": "boolean", "default": False},
+                    "actor": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["vault", "memory_ids"],
+            },
+        },
     ]
 
     RESOURCE_DEFINITIONS = [
@@ -363,6 +396,7 @@ class AnimusMCPServer:
         self.claude_collector = ClaudeCollector(self.config)
         self.antigravity_collector = AntigravityCollector(self.config)
         self.copilot_cli_collector = CopilotCliCollector(self.config)
+        self.obsidian_collector = ObsidianCollector(self.config)
 
     def handle_message(self, message: dict) -> dict | None:
         """Handle a JSON-RPC message."""
@@ -434,6 +468,8 @@ class AnimusMCPServer:
             "animus_session": self._tool_session,
             "animus_related": self._tool_related,
             "animus_neural_map": self._tool_neural_map,
+            "animus_obsidian_export": self._tool_obsidian_export,
+            "animus_obsidian_organize": self._tool_obsidian_organize,
         }.get(name)
 
         if tool_handler is None:
@@ -512,8 +548,16 @@ class AnimusMCPServer:
 
         output = [f"🦅 Eagle Vision — {len(results)} memories found for '{query}':\n"]
         for i, r in enumerate(results, 1):
+            metadata = json.loads(r.get("metadata") or "{}")
+            location = ""
+            if r.get("type") == MemoryType.OBSIDIAN_NOTE.value:
+                location = (
+                    f"Obsidian: {metadata.get('vault', '?')}/"
+                    f"{metadata.get('relative_path', '?')}\n    "
+                )
             output.append(
                 f"[{i}] {r.get('type', '?')} | {r.get('title', '')[:60]}\n"
+                f"    {location}"
                 f"    Workspace: {r.get('workspace', '?')} | Node: {r.get('source_node', '?')}\n"
                 f"    {r.get('content', '')[:200]}\n"
             )
@@ -651,11 +695,15 @@ class AnimusMCPServer:
         return "\n".join(lines)
 
     def _tool_collect(self, args: dict) -> str:
+        obsidian_collector = getattr(self, "obsidian_collector", ObsidianCollector(self.config))
         memories = self.collector.collect_all()
         memories.extend(self.claude_collector.collect_all())
         memories.extend(self.antigravity_collector.collect_all())
         memories.extend(self.copilot_cli_collector.collect_all())
+        memories.extend(obsidian_collector.collect_all())
         new_count = self.engine.index_batch(memories)
+        for vault, active_ids in obsidian_collector.seen_by_vault.items():
+            self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
         stats = self.engine.get_stats()
         return (
             f"✓ Collection complete\n"
@@ -663,6 +711,37 @@ class AnimusMCPServer:
         )
 
     # ── Session-aware tools (mirror /admin/sessions, /admin/graph) ──
+
+    def _tool_obsidian_export(self, args: dict) -> str:
+        from ..obsidian import ObsidianManager
+
+        result = ObsidianManager(self.config, self.engine).export(
+            args.get("vault", ""), args.get("memory_ids", []),
+            dry_run=bool(args.get("dry_run", True)),
+            actor=args.get("actor") or "mcp-agent",
+            reason=args.get("reason") or "MCP export",
+        )
+        return json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+
+    def _tool_obsidian_organize(self, args: dict) -> str:
+        from ..obsidian import ObsidianManager
+
+        manager = ObsidianManager(self.config, self.engine)
+        proposal = manager.propose_organization(
+            args.get("vault", ""), args.get("memory_ids", []),
+            actor=args.get("actor") or "mcp-agent",
+            reason=args.get("reason") or "MCP organization",
+        )
+        if args.get("mode", "propose") == "propose":
+            return json.dumps(proposal, ensure_ascii=False, indent=2)
+        result = manager.apply_organization(
+            proposal, approved=bool(args.get("approved")),
+            dry_run=bool(args.get("dry_run", False)),
+        )
+        return json.dumps(
+            {"request_id": proposal["request_id"], **result.to_dict()},
+            ensure_ascii=False, indent=2,
+        )
 
     def _tool_session_list(self, args: dict) -> str:
         workspace = args.get("workspace")

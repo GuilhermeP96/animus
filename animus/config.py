@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -124,6 +124,23 @@ def _default_copilot_cli_dir() -> Path:
     return Path.home() / ".copilot"
 
 
+class ObsidianVaultConfig(BaseModel):
+    """A local Obsidian vault exposed to this peer."""
+
+    name: str
+    path: Path
+    enabled: bool = True
+    export_enabled: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(ch in value for ch in "/\\"):
+            raise ValueError("vault name must be non-empty and cannot contain path separators")
+        return value
+
+
 class AnimusConfig(BaseSettings):
     """Core Animus configuration."""
 
@@ -174,6 +191,13 @@ class AnimusConfig(BaseSettings):
     collect_antigravity_chat: bool = True      # Antigravity CLI/IDE conversation turns
     collect_antigravity_memory: bool = True    # Antigravity brain / GEMINI.md memory files
     collect_antigravity_knowledge: bool = True # Antigravity .antigravity project context
+    # Obsidian is intentionally opt-in: vault content may be private and is
+    # eligible for peer sync after it enters the Animus index.
+    collect_obsidian: bool = False
+    obsidian_vaults: list[ObsidianVaultConfig] = Field(default_factory=list)
+    obsidian_exclude_patterns: list[str] = Field(default_factory=lambda: [
+        ".obsidian/**", ".git/**", "node_modules/**", "attachments/**", ".animus/**",
+    ])
 
     # ── Antigravity paths ──
     antigravity_data_dir: Path = Field(

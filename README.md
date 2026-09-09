@@ -18,11 +18,23 @@
 | Synchronization | Processo de sync com o hub |
 | Leap of Faith | CLI para entrar no Animus |
 
-## Integracao futura com Obsidian
+## Integracao experimental com Obsidian
 
-O Animus tem um plano futuro para integrar o Obsidian como camada de conhecimento curado, mantendo a memoria automatica, a sincronizacao e o acesso por MCP no Animus. A proposta inclui organizacao assistida por agentes, com aprovacao, policies, auditoria e rollback.
+O Obsidian pode ser usado como camada humana de conhecimento curado, mantendo a memoria automatica, a sincronizacao e o acesso por MCP no Animus. A integracao e opt-in, suporta varios vaults, coleta incremental, frontmatter YAML, tags e links, e exporta somente para a area gerenciada `.animus/exported/`.
 
-Essa integracao ainda nao faz parte da funcionalidade estavel. O planejamento, os fluxos e os diagramas Mermaid estao em [PLANO-INTEGRACAO-OBSIDIAN.md](docs/PLANO-INTEGRACAO-OBSIDIAN.md).
+```bash
+animus obsidian vault-add pessoal C:\Notas\Pessoal --enable-collection --allow-export
+animus obsidian status
+animus obsidian collect
+animus obsidian export --vault pessoal --id <memory-id> --dry-run
+animus obsidian export --vault pessoal --id <memory-id>
+animus obsidian catalog --vault pessoal
+animus obsidian organize --vault pessoal --id <memory-id>
+animus obsidian organize --vault pessoal --id <memory-id> --apply --approve
+animus obsidian rollback --vault pessoal
+```
+
+Notas humanas nunca sao sobrescritas. Edicoes divergentes em notas gerenciadas geram uma copia em `.animus/quarantine/`; atualizacoes geram backup e registro em `.animus/audit.jsonl`. O desenho e as regras completas estao em [PLANO-INTEGRACAO-OBSIDIAN.md](docs/PLANO-INTEGRACAO-OBSIDIAN.md).
 
 ## Arquitetura
 
@@ -69,6 +81,7 @@ flowchart TB
 | Antigravity global `GEMINI.md` (`~/.gemini/GEMINI.md`) | `antigravity_memory` | Identidade/regras globais carregadas em toda conversa |
 | Antigravity projects (`~/.gemini/config/projects/*.json`) | `antigravity_knowledge` | Metadados de projeto do Antigravity |
 | `.antigravity/mcp.json` | `antigravity_knowledge` | Registro de MCP servers por workspace |
+| Vaults Obsidian configurados (opt-in) | `obsidian_note` | Notas Markdown curadas, com YAML, tags e links |
 
 ## Instalação
 
@@ -178,18 +191,18 @@ animus daemon
 
 ## MCP — consumir as memórias no Copilot / Claude Code
 
-Cada peer expõe um **servidor MCP** (`animus-mcp`) sobre stdio com 11
+Cada peer expõe um **servidor MCP** (`animus-mcp`) sobre stdio com 13
 ferramentas (`animus_search`, `animus_recall`, `animus_session`,
 `animus_session_list`, `animus_related`, `animus_neural_map`,
 `animus_remember`, `animus_stats`, `animus_collect`, `animus_context`,
-`animus_timeline`). Qualquer host MCP-aware — Copilot Chat (VS Code),
+`animus_timeline`, `animus_obsidian_export`, `animus_obsidian_organize`). Qualquer host MCP-aware — Copilot Chat (VS Code),
 Claude Code, ou outro — passa a ler/escrever na sua memória sincronizada.
 
 ### Claude Code
 
 A partir de v0.5.0 o `install-peer.{sh,ps1}` detecta `~/.claude.json` e
 registra o MCP automaticamente. Resultado: ao reiniciar o Claude Code, as
-11 ferramentas aparecem.
+13 ferramentas aparecem.
 
 Override via env:
 
@@ -374,6 +387,12 @@ animus serve         # Rodar como hub
 animus tunnel MODE   # Iniciar tunnel (ssh|chisel|cloudflared)
 animus config-show   # Ver configuração
 animus config-set K V # Alterar configuração
+animus obsidian status # Estado dos vaults e da coleta
+animus obsidian collect # Coletar somente notas do Obsidian
+animus obsidian export  # Exportar memorias para a area gerenciada
+animus obsidian catalog # Gerar indice navegavel das memorias exportadas
+animus obsidian organize # Propor/aplicar organizacao auditada
+animus obsidian rollback # Restaurar a ultima alteracao com backup
 ```
 
 ## Segurança
