@@ -4,6 +4,22 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-09-09 — Experimental Obsidian knowledge layer
+
+### Added
+- Opt-in multi-vault Obsidian collector with safe YAML frontmatter parsing,
+  tags, Wiki/Markdown links, portable source paths, incremental stable IDs,
+  update-in-place, and missing-note archival markers.
+- Managed Markdown exporter with deterministic names, traceability frontmatter,
+  atomic writes, idempotency, conflict quarantine, backups, audit log, and rollback.
+- `animus obsidian` commands for vault configuration, status, collection,
+  selection-based export, curated catalog generation, agent organization
+  proposals/application, quarantine, and rollback.
+- MCP tools `animus_obsidian_export` and `animus_obsidian_organize`; Obsidian
+  search results include vault and relative-path provenance.
+- Acceptance tests covering privacy opt-in, exclusions, parsing, updates,
+  removals, manual-note protection, conflicts, and approval enforcement.
+
 ## [0.6.0] — 2026-08-16 — GitHub Copilot CLI memory sync + Brotherhood presence fix
 
 ### Added

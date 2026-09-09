@@ -118,6 +118,229 @@ def config_set(key: str, value: str):
 #  Collect
 # ═══════════════════════════════════════════════════════════════
 
+obsidian_app = typer.Typer(
+    name="obsidian",
+    help="Manage the experimental, opt-in Obsidian knowledge layer.",
+    no_args_is_help=True,
+)
+app.add_typer(obsidian_app, name="obsidian")
+
+
+@obsidian_app.command("vault-add")
+def obsidian_vault_add(
+    name: str,
+    path: Path,
+    enable_collection: bool = typer.Option(False, "--enable-collection"),
+    allow_export: bool = typer.Option(False, "--allow-export"),
+):
+    """Register a local vault; collection and export remain explicit opt-ins."""
+    from .config import ObsidianVaultConfig
+
+    cfg = AnimusConfig.load()
+    root = path.expanduser().resolve()
+    if not root.is_dir():
+        console.print(f"[red]Vault path does not exist or is not a directory:[/] {root}")
+        raise typer.Exit(1)
+    if any(v.name == name or v.path.expanduser().resolve() == root for v in cfg.obsidian_vaults):
+        console.print("[red]A vault with this name or path is already configured.[/]")
+        raise typer.Exit(1)
+    cfg.obsidian_vaults.append(ObsidianVaultConfig(
+        name=name, path=root, export_enabled=allow_export,
+    ))
+    if enable_collection:
+        cfg.collect_obsidian = True
+    cfg.save()
+    from .obsidian import initialize_vault
+
+    initialize_vault(cfg.obsidian_vaults[-1])
+    console.print(f"[green]OK[/] Vault '{name}' registered at {root}")
+    console.print(f"  collection={cfg.collect_obsidian} export={allow_export}")
+
+
+@obsidian_app.command("vault-remove")
+def obsidian_vault_remove(name: str):
+    """Remove vault configuration without deleting notes or indexed history."""
+    cfg = AnimusConfig.load()
+    remaining = [vault for vault in cfg.obsidian_vaults if vault.name != name]
+    if len(remaining) == len(cfg.obsidian_vaults):
+        console.print(f"[red]Unknown vault:[/] {name}")
+        raise typer.Exit(1)
+    cfg.obsidian_vaults = remaining
+    cfg.save()
+    console.print(f"[green]OK[/] Vault '{name}' removed; files were preserved.")
+
+
+@obsidian_app.command("vault-set")
+def obsidian_vault_set(
+    name: str,
+    enabled: Optional[bool] = typer.Option(None, "--enabled/--disabled"),
+    export: Optional[bool] = typer.Option(None, "--export/--no-export"),
+):
+    """Enable/disable one vault and its export permission."""
+    cfg = AnimusConfig.load()
+    vault = next((item for item in cfg.obsidian_vaults if item.name == name), None)
+    if vault is None:
+        console.print(f"[red]Unknown vault:[/] {name}")
+        raise typer.Exit(1)
+    if enabled is not None:
+        vault.enabled = enabled
+    if export is not None:
+        vault.export_enabled = export
+    cfg.save()
+    console.print(f"[green]OK[/] {name}: enabled={vault.enabled} export={vault.export_enabled}")
+
+
+@obsidian_app.command("status")
+def obsidian_status():
+    """Show vault availability, permissions, and indexed note counts."""
+    from .collector.models import MemoryType
+    from .indexer.engine import IndexEngine
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    table = Table(title=f"Obsidian (collection={'on' if cfg.collect_obsidian else 'off'})")
+    for heading in ("Vault", "Path", "Available", "Collect", "Export", "Indexed"):
+        table.add_column(heading)
+    for vault in cfg.obsidian_vaults:
+        count = engine.conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE type = ? AND json_extract(metadata, '$.vault') = ? "
+            "AND COALESCE(json_extract(metadata, '$.missing'), 0) = 0",
+            (MemoryType.OBSIDIAN_NOTE.value, vault.name),
+        ).fetchone()[0]
+        table.add_row(
+            vault.name, str(vault.path), str(vault.path.expanduser().is_dir()),
+            str(cfg.collect_obsidian and vault.enabled), str(vault.export_enabled), str(count),
+        )
+    console.print(table)
+    engine.close()
+
+
+@obsidian_app.command("collect")
+def obsidian_collect():
+    """Collect only configured Obsidian vaults."""
+    from .collector.obsidian import ObsidianCollector
+    from .indexer.engine import IndexEngine
+
+    cfg = AnimusConfig.load()
+    collector = ObsidianCollector(cfg)
+    engine = IndexEngine(cfg.db_path)
+    memories = collector.collect_all()
+    changed = engine.index_batch(memories)
+    missing = sum(
+        engine.mark_obsidian_missing(vault, cfg.node_id, active)
+        for vault, active in collector.seen_by_vault.items()
+    )
+    engine.close()
+    console.print(
+        f"Found={len(memories)} new/updated={changed} missing={missing} "
+        f"warnings={len(collector.diagnostics)}"
+    )
+
+
+def _obsidian_selection(engine, memory_ids: Optional[list[str]], query: str,
+                        mem_type: str, session: str, tags: str, limit: int) -> list[str]:
+    selected = list(memory_ids or [])
+    if query or mem_type or session or tags:
+        rows = engine.select_memories(
+            query=query, mem_type=mem_type or None, session=session,
+            tags=[tag.strip() for tag in tags.split(",") if tag.strip()] or None,
+            limit=limit,
+        )
+        selected.extend(row["id"] for row in rows)
+    return list(dict.fromkeys(selected))
+
+
+@obsidian_app.command("export")
+def obsidian_export(
+    vault: str = typer.Option(..., "--vault"),
+    memory_ids: Optional[list[str]] = typer.Option(None, "--id"),
+    query: str = typer.Option("", "--query"),
+    mem_type: str = typer.Option("", "--type"),
+    session: str = typer.Option("", "--session"),
+    tags: str = typer.Option("", "--tags", help="Comma-separated required tags"),
+    limit: int = typer.Option(50, "--limit"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    folder: str = typer.Option(".animus/exported", "--folder"),
+):
+    """Export memories selected by ID, query, type, session, or tags."""
+    from .indexer.engine import IndexEngine
+    from .obsidian import ObsidianManager
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    selected = _obsidian_selection(engine, memory_ids, query, mem_type, session, tags, limit)
+    if not selected:
+        console.print("[red]No memories selected.[/]")
+        engine.close()
+        raise typer.Exit(1)
+    try:
+        result = ObsidianManager(cfg, engine).export(
+            vault, selected, dry_run=dry_run, destination_folder=folder
+        )
+        console.print_json(data=result.to_dict())
+    finally:
+        engine.close()
+
+
+@obsidian_app.command("organize")
+def obsidian_organize(
+    vault: str = typer.Option(..., "--vault"),
+    memory_ids: Optional[list[str]] = typer.Option(None, "--id"),
+    query: str = typer.Option("", "--query"),
+    apply_changes: bool = typer.Option(False, "--apply"),
+    approve: bool = typer.Option(False, "--approve"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    actor: str = typer.Option("cli-agent", "--actor"),
+    reason: str = typer.Option("organize memories", "--reason"),
+):
+    """Propose first, or apply an explicitly approved managed organization."""
+    from .indexer.engine import IndexEngine
+    from .obsidian import ObsidianManager
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    selected = _obsidian_selection(engine, memory_ids, query, "", "", "", 50)
+    manager = ObsidianManager(cfg, engine)
+    try:
+        proposal = manager.propose_organization(vault, selected, actor=actor, reason=reason)
+        if not apply_changes:
+            console.print_json(data=proposal)
+            return
+        result = manager.apply_organization(proposal, approved=approve, dry_run=dry_run)
+        console.print_json(data={"request_id": proposal["request_id"], **result.to_dict()})
+    finally:
+        engine.close()
+
+
+@obsidian_app.command("rollback")
+def obsidian_rollback(vault: str = typer.Option(..., "--vault")):
+    """Restore the last updated managed note from its audit backup."""
+    from .indexer.engine import IndexEngine
+    from .obsidian import ObsidianManager
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    try:
+        path = ObsidianManager(cfg, engine).rollback_last(vault)
+        console.print(f"[green]OK[/] Restored {path}")
+    finally:
+        engine.close()
+
+
+@obsidian_app.command("catalog")
+def obsidian_catalog(vault: str = typer.Option(..., "--vault")):
+    """Build a linked index for all managed notes visible in Obsidian."""
+    from .indexer.engine import IndexEngine
+    from .obsidian import ObsidianManager
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    try:
+        console.print_json(data=ObsidianManager(cfg, engine).build_catalog(vault))
+    finally:
+        engine.close()
+
+
 @app.command()
 def collect(verbose: bool = False):
     """Collect memories from Copilot + Copilot CLI + Claude Code + Antigravity interactions — Desynchronize."""
@@ -128,12 +351,14 @@ def collect(verbose: bool = False):
     from .collector.claude import ClaudeCollector
     from .collector.copilot import CopilotCollector
     from .collector.copilot_cli import CopilotCliCollector
+    from .collector.obsidian import ObsidianCollector
     from .indexer.engine import IndexEngine
 
     collector = CopilotCollector(config)
     claude_collector = ClaudeCollector(config)
     antigravity_collector = AntigravityCollector(config)
     copilot_cli_collector = CopilotCliCollector(config)
+    obsidian_collector = ObsidianCollector(config)
     engine = IndexEngine(config.db_path)
 
     console.print("[bold]⟁ Entering the Animus...[/]\n")
@@ -142,10 +367,19 @@ def collect(verbose: bool = False):
     memories.extend(claude_collector.collect_all())
     memories.extend(antigravity_collector.collect_all())
     memories.extend(copilot_cli_collector.collect_all())
+    memories.extend(obsidian_collector.collect_all())
     new_count = engine.index_batch(memories)
+    missing_count = sum(
+        engine.mark_obsidian_missing(vault, config.node_id, active_ids)
+        for vault, active_ids in obsidian_collector.seen_by_vault.items()
+    )
 
     console.print(f"  Memories found:  [cyan]{len(memories)}[/]")
     console.print(f"  New indexed:     [green]{new_count}[/]")
+    if missing_count:
+        console.print(f"  Notes missing:   [yellow]{missing_count}[/]")
+    if obsidian_collector.diagnostics:
+        console.print(f"  Vault warnings:  [yellow]{len(obsidian_collector.diagnostics)}[/]")
 
     stats = engine.get_stats()
     console.print(f"  Total in index:  [bold]{stats['total_memories']}[/]")

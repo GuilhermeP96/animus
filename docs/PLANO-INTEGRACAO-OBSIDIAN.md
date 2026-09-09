@@ -1,8 +1,8 @@
 # Plano de integracao Obsidian + Animus
 
-**Status:** planejamento inicial  
+**Status:** MVP experimental implementado na v0.7.0
 **Data:** 2026-09-05  
-**Base:** Animus v0.6.0 (`3c467fa`)  
+**Base:** Animus v0.7.0
 **Objetivo:** combinar o Obsidian como camada humana e curada de conhecimento com o Animus como memoria automatica, pesquisavel e compartilhada entre agentes e maquinas.
 
 ## 1. Decisao de produto
@@ -491,3 +491,21 @@ A integracao esta pronta para stable somente depois do piloto em dois peers, sem
 - Remover somente a configuracao do vault se necessario.
 - O indice de memorias ja sincronizadas permanece preservado para auditoria.
 - Reverter o recurso por release, sem exigir migracao destrutiva do banco.
+
+## 13. Registro da implementacao experimental
+
+O MVP v0.7.0 resolveu as decisoes pendentes da seguinte forma:
+
+- varios vaults por peer, identificados por nome configurado e caminho local;
+- nota identificada de forma estavel por `vault + relative_path`;
+- remocoes marcadas como `missing`, preservando historico e removendo a nota da busca normal;
+- exportacao local somente em `.animus/exported/`, nunca executada pelo hub;
+- YAML completo processado com parser seguro;
+- coleta e exportacao desabilitadas ate opt-in explicito;
+- auditoria no vault, backups recuperaveis e conflitos em quarentena;
+- organizacao de agente em modo `propose` por padrao; `apply` requer aprovacao explicita e escopo gerenciado.
+
+Componentes entregues: `ObsidianCollector`, upsert incremental no `IndexEngine`,
+`ObsidianManager`, comandos `animus obsidian`, duas ferramentas MCP e testes de
+aceitacao em vault temporario. O recurso permanece experimental ate o piloto
+Windows/Linux previsto neste plano.

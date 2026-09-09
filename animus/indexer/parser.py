@@ -26,6 +26,7 @@ def extract_searchable_text(memory: Memory) -> str:
         MemoryType.PROMPT_FILE,
         MemoryType.AGENT_FILE,
         MemoryType.CLAUDE_MEMORY,
+        MemoryType.OBSIDIAN_NOTE,
     ):
         content = _clean_markdown(content)
     elif memory.type == MemoryType.MCP_KNOWLEDGE:
