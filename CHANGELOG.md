@@ -4,6 +4,15 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-09-11 — Obsidian Knowledge OS
+
+### Added
+- Obsidian Knowledge OS with project maps, a visual dashboard, native Canvas,
+  lifecycle/sensitivity metadata, optional CSS, and a canonical agent guide.
+- Gated RAG and supervised fine-tuning JSONL exports with provenance manifests;
+  only verified notes are eligible, and SFT requires explicit approved pairs.
+- MCP guide resource/tool and dataset tool so agents follow the same curation contract.
+
 ## [0.7.0] — 2026-09-09 — Experimental Obsidian knowledge layer
 
 ### Added

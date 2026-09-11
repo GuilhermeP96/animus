@@ -16,7 +16,6 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from ..config import AnimusConfig
@@ -337,8 +336,42 @@ class AnimusMCPServer:
             },
         },
         {
+            "name": "animus_obsidian_guide",
+            "description": (
+                "Read the mandatory Obsidian consultation, curation, provenance, "
+                "sensitivity, RAG, and fine-tuning rules. Call this before an agent "
+                "organizes or promotes memories."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"vault": {"type": "string"}},
+                "required": [],
+            },
+        },
+        {
+            "name": "animus_obsidian_search",
+            "description": (
+                "Search the governed Obsidian knowledge layer. Returns verified notes "
+                "by default; candidates require explicit opt-in and are flagged UNVERIFIED."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault": {"type": "string"},
+                    "query": {"type": "string"},
+                    "project": {"type": "string"},
+                    "include_candidates": {"type": "boolean", "default": False},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["vault", "query"],
+            },
+        },
+        {
             "name": "animus_obsidian_export",
-            "description": "Export selected memories into the managed area of an opt-in Obsidian vault.",
+            "description": (
+                "Export selected memories as candidates into an opt-in Obsidian vault. "
+                "Exported does not mean curated or verified; consult animus_obsidian_guide first."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -353,7 +386,10 @@ class AnimusMCPServer:
         },
         {
             "name": "animus_obsidian_organize",
-            "description": "Propose or explicitly apply an audited organization inside .animus/exported.",
+            "description": (
+                "Propose or explicitly apply audited organization inside .animus/exported. "
+                "Follow animus_obsidian_guide and preserve lifecycle/sensitivity metadata."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -366,6 +402,24 @@ class AnimusMCPServer:
                     "reason": {"type": "string"},
                 },
                 "required": ["vault", "memory_ids"],
+            },
+        },
+        {
+            "name": "animus_obsidian_dataset",
+            "description": (
+                "Dry-run or build a gated JSONL dataset. RAG requires verified notes; "
+                "SFT additionally requires an explicitly approved instruction/response pair."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["rag", "sft"], "default": "rag"},
+                    "apply": {"type": "boolean", "default": False},
+                    "include_internal": {"type": "boolean", "default": False},
+                    "actor": {"type": "string"},
+                },
+                "required": ["vault"],
             },
         },
     ]
@@ -382,6 +436,12 @@ class AnimusMCPServer:
             "name": "Memory Statistics",
             "description": "Current memory bank statistics",
             "mimeType": "application/json",
+        },
+        {
+            "uri": "animus://obsidian/guide",
+            "name": "Obsidian Agent Guide",
+            "description": "Canonical rules for querying, curating, and training from Obsidian",
+            "mimeType": "text/markdown",
         },
     ]
 
@@ -468,8 +528,11 @@ class AnimusMCPServer:
             "animus_session": self._tool_session,
             "animus_related": self._tool_related,
             "animus_neural_map": self._tool_neural_map,
+            "animus_obsidian_guide": self._tool_obsidian_guide,
+            "animus_obsidian_search": self._tool_obsidian_search,
             "animus_obsidian_export": self._tool_obsidian_export,
             "animus_obsidian_organize": self._tool_obsidian_organize,
+            "animus_obsidian_dataset": self._tool_obsidian_dataset,
         }.get(name)
 
         if tool_handler is None:
@@ -508,6 +571,16 @@ class AnimusMCPServer:
                     "uri": uri,
                     "mimeType": "application/json",
                     "text": json.dumps(stats, indent=2, default=str),
+                }]
+            }
+        elif uri == "animus://obsidian/guide":
+            from ..obsidian import AGENT_GUIDE
+
+            return {
+                "contents": [{
+                    "uri": uri,
+                    "mimeType": "text/markdown",
+                    "text": AGENT_GUIDE,
                 }]
             }
         return {"contents": []}
@@ -712,6 +785,22 @@ class AnimusMCPServer:
 
     # ── Session-aware tools (mirror /admin/sessions, /admin/graph) ──
 
+    def _tool_obsidian_guide(self, args: dict) -> str:
+        from ..obsidian import ObsidianManager
+
+        return ObsidianManager(self.config, self.engine).agent_guide(args.get("vault", ""))
+
+    def _tool_obsidian_search(self, args: dict) -> str:
+        from ..obsidian import ObsidianManager
+
+        results = ObsidianManager(self.config, self.engine).search_knowledge(
+            args.get("vault", ""), args.get("query", ""),
+            project=args.get("project") or "",
+            include_candidates=bool(args.get("include_candidates")),
+            limit=int(args.get("limit") or 10),
+        )
+        return json.dumps(results, ensure_ascii=False, indent=2)
+
     def _tool_obsidian_export(self, args: dict) -> str:
         from ..obsidian import ObsidianManager
 
@@ -742,6 +831,17 @@ class AnimusMCPServer:
             {"request_id": proposal["request_id"], **result.to_dict()},
             ensure_ascii=False, indent=2,
         )
+
+    def _tool_obsidian_dataset(self, args: dict) -> str:
+        from ..obsidian import ObsidianManager
+
+        result = ObsidianManager(self.config, self.engine).export_dataset(
+            args.get("vault", ""), kind=args.get("kind") or "rag",
+            dry_run=not bool(args.get("apply")),
+            include_internal=bool(args.get("include_internal")),
+            actor=args.get("actor") or "mcp-dataset-curator",
+        )
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     def _tool_session_list(self, args: dict) -> str:
         workspace = args.get("workspace")
