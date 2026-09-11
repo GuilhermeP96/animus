@@ -4,9 +4,6 @@ import json
 
 import pytest
 
-from animus.collector.models import Memory, MemoryType
-from animus.config import AnimusConfig
-from animus.indexer.engine import IndexEngine
 from animus.mcp import AnimusMCPServer
 
 
@@ -52,7 +49,21 @@ class TestMCPProtocol:
         msg = {"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}}
         resp = mcp_server.handle_message(msg)
         resources = resp["result"]["resources"]
-        assert len(resources) == 2
+        assert len(resources) == 3
+        assert {resource["uri"] for resource in resources} >= {
+            "animus://memories/recent",
+            "animus://memories/stats",
+            "animus://obsidian/guide",
+        }
+
+    def test_obsidian_guide_resource(self, mcp_server):
+        msg = {
+            "jsonrpc": "2.0", "id": 31, "method": "resources/read",
+            "params": {"uri": "animus://obsidian/guide"},
+        }
+        resp = mcp_server.handle_message(msg)
+        text = resp["result"]["contents"][0]["text"]
+        assert "candidato → curado → verificado" in text
 
     def test_prompts_list(self, mcp_server):
         msg = {"jsonrpc": "2.0", "id": 4, "method": "prompts/list", "params": {}}
@@ -133,7 +144,6 @@ class TestMCPToolCollect:
             "params": {"name": "animus_collect", "arguments": {}},
         }
         resp = mcp_server.handle_message(msg)
-        text = resp["result"]["content"][0]["text"]
         # Should not error
         assert resp["result"].get("isError") is not True
 

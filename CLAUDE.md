@@ -7,11 +7,13 @@ quando você abre o repo e detecta que o peer ainda não está registrado.
 
 ## Por que isso importa para você
 
-O Animus expõe um **MCP server** (`animus-mcp`) com 13 ferramentas
+O Animus expõe um **MCP server** (`animus-mcp`) com 16 ferramentas
 (`animus_search`, `animus_recall`, `animus_session`, `animus_session_list`,
 `animus_related`, `animus_neural_map`, `animus_remember`, `animus_stats`,
 `animus_collect`, `animus_context`, `animus_timeline`,
-`animus_obsidian_export`, `animus_obsidian_organize`). Uma vez registrado
+`animus_obsidian_guide`, `animus_obsidian_search`, `animus_obsidian_export`, `animus_obsidian_organize`,
+`animus_obsidian_dataset`). Antes de organizar ou promover conhecimento do
+Obsidian, consulte obrigatoriamente `animus_obsidian_guide`. Uma vez registrado
 em `~/.claude.json`, **você passa a recuperar contexto de todas as
 conversas Copilot/Copilot CLI/Claude Code/Antigravity do usuário**, em todas as
 máquinas dele — ou seja, "Eagle Vision" sobre a memória dele.
@@ -167,7 +169,7 @@ printf '%s\n' \
   | timeout 5 "$MCP_BIN" | head -2
 ```
 
-Deve retornar 2 linhas JSON: handshake + lista com 13 tools.
+Deve retornar 2 linhas JSON: handshake + lista com 16 tools.
 
 ## Limites operacionais
 
