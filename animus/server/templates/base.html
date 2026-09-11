@@ -651,6 +651,9 @@
                     <span class="nav-icon">🧬</span> Memories
                     {% if stats and stats.total_memories %}<span class="nav-badge">{{ stats.total_memories }}</span>{% endif %}
                 </a>
+                <a class="nav-item {% if active_page == 'obsidian' %}active{% endif %}" href="/admin/obsidian">
+                    <span class="nav-icon">💎</span> Obsidian
+                </a>
                 <a class="nav-item {% if active_page == 'sessions' %}active{% endif %}" href="/admin/sessions">
                     <span class="nav-icon">🧠</span> Sessions
                 </a>
