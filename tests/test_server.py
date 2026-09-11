@@ -1,6 +1,7 @@
 """Tests for animus.server.app (FastAPI endpoints)."""
 
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from animus.config import AnimusConfig
 from animus.indexer.engine import IndexEngine
 import animus.server.app as server_module
 from animus.server.app import app
+from animus.server.admin_auth import AdminSession, require_admin
 
 
 @pytest.fixture
@@ -144,6 +146,73 @@ class TestStatsEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "total_memories" in data
+
+
+class TestObsidianAdmin:
+    @staticmethod
+    def _admin_override():
+        now = time.time()
+        return AdminSession(user="test-admin", iat=now, exp=now + 60)
+
+    @staticmethod
+    def _push_note(client, auth_headers):
+        payload = {
+            "type": "PUSH",
+            "node_id": "obsidian-peer",
+            "node_name": "knowledge-node",
+            "count": 1,
+            "memories": [{
+                "id": "obsidian-test-note",
+                "type": "obsidian_note",
+                "source_node": "obsidian-peer",
+                "source_path": "obsidian://Panthro/Projetos/Animus.md",
+                "workspace": "Panthro",
+                "timestamp": "2026-09-11T00:00:00Z",
+                "title": "Arquitetura Animus",
+                "content": "---\nstatus: verificado\n---\n# Arquitetura",
+                "metadata": {
+                    "vault": "Panthro",
+                    "relative_path": "Projetos/Animus.md",
+                    "frontmatter": {
+                        "projeto": "Animus",
+                        "status": "verificado",
+                        "sensibilidade": "interno",
+                    },
+                    "missing": False,
+                },
+                "tags": ["animus"],
+                "sequence": 0,
+            }],
+            "timestamp": "2026-09-11T00:00:00Z",
+        }
+        response = client.post("/api/sync/push", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_obsidian_page_and_read_only_apis(self, client, auth_headers):
+        self._push_note(client, auth_headers)
+        app.dependency_overrides[require_admin] = self._admin_override
+        try:
+            stats = client.get("/admin/api/obsidian/stats")
+            assert stats.status_code == 200
+            assert stats.json()["verified"] == 1
+
+            notes = client.get(
+                "/admin/api/obsidian/notes",
+                params={"vault": "Panthro", "status": "verificado"},
+            )
+            assert notes.status_code == 200
+            assert notes.json()["notes"][0]["project"] == "Animus"
+            assert "content" not in notes.json()["notes"][0]
+
+            page = client.get("/admin/obsidian")
+            assert page.status_code == 200
+            assert "Arquitetura Animus" in page.text
+        finally:
+            app.dependency_overrides.pop(require_admin, None)
+
+    def test_obsidian_apis_require_admin(self, client):
+        response = client.get("/admin/api/obsidian/stats")
+        assert response.status_code == 401
 
 
 class TestRecentEndpoint:

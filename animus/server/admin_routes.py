@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -102,11 +102,160 @@ async def dashboard(request: Request, session: AdminSession = Depends(require_ad
 
 # ── Memories ──
 
+def _json_object(value: Any) -> dict[str, Any]:
+    """Decode a SQLite JSON field without letting one malformed row break the UI."""
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        decoded = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _obsidian_record(row: dict[str, Any]) -> dict[str, Any]:
+    """Return the safe, read-only projection used by Obsidian admin views."""
+    metadata = _json_object(row.get("metadata"))
+    frontmatter = metadata.get("frontmatter")
+    if not isinstance(frontmatter, dict):
+        frontmatter = {}
+    return {
+        "id": row.get("id", ""),
+        "title": row.get("title", ""),
+        "workspace": row.get("workspace", ""),
+        "timestamp": row.get("timestamp", ""),
+        "source_node": row.get("source_node", ""),
+        "vault": str(metadata.get("vault") or "unknown"),
+        "relative_path": str(metadata.get("relative_path") or ""),
+        "project": str(
+            frontmatter.get("projeto")
+            or frontmatter.get("project")
+            or frontmatter.get("workspace")
+            or row.get("workspace")
+            or "Geral"
+        ),
+        "status": str(frontmatter.get("status") or "unclassified"),
+        "sensitivity": str(
+            frontmatter.get("sensibilidade")
+            or frontmatter.get("sensitivity")
+            or "internal"
+        ),
+        "missing": bool(metadata.get("missing", False)),
+        "managed": bool(metadata.get("exported_by_animus", False)),
+    }
+
+
+def _obsidian_catalog() -> list[dict[str, Any]]:
+    engine = get_engine()
+    rows = engine.conn.execute(
+        "SELECT id, title, workspace, timestamp, source_node, metadata "
+        "FROM memories WHERE type = ? ORDER BY timestamp DESC",
+        ("obsidian_note",),
+    ).fetchall()
+    return [_obsidian_record(dict(row)) for row in rows]
+
+
+def _filter_obsidian(
+    notes: list[dict[str, Any]],
+    *,
+    vault: str = "",
+    project: str = "",
+    status: str = "",
+    sensitivity: str = "",
+    q: str = "",
+) -> list[dict[str, Any]]:
+    query = q.casefold().strip()
+    return [
+        note
+        for note in notes
+        if (not vault or note["vault"] == vault)
+        and (not project or note["project"] == project)
+        and (not status or note["status"] == status)
+        and (not sensitivity or note["sensitivity"] == sensitivity)
+        and (
+            not query
+            or query in note["title"].casefold()
+            or query in note["relative_path"].casefold()
+            or query in note["workspace"].casefold()
+        )
+    ]
+
+
+def _obsidian_stats(notes: list[dict[str, Any]]) -> dict[str, Any]:
+    def counts(field: str) -> dict[str, int]:
+        result: dict[str, int] = {}
+        for note in notes:
+            value = str(note[field])
+            result[value] = result.get(value, 0) + 1
+        return dict(sorted(result.items()))
+
+    active = [note for note in notes if not note["missing"]]
+    return {
+        "total": len(notes),
+        "active": len(active),
+        "missing": len(notes) - len(active),
+        "managed": sum(1 for note in active if note["managed"]),
+        "verified": sum(1 for note in active if note["status"] == "verificado"),
+        "by_vault": counts("vault"),
+        "by_project": counts("project"),
+        "by_status": counts("status"),
+        "by_sensitivity": counts("sensitivity"),
+    }
+
+
+@router.get("/admin/obsidian", response_class=HTMLResponse, name="admin_obsidian")
+async def obsidian_page(
+    request: Request,
+    page: int = 1,
+    vault: str = "",
+    project: str = "",
+    status: str = "",
+    sensitivity: str = "",
+    q: str = "",
+    session: AdminSession = Depends(require_admin),
+):
+    page = max(1, page)
+    per_page = 50
+    catalog = _obsidian_catalog()
+    notes = _filter_obsidian(
+        catalog,
+        vault=vault,
+        project=project,
+        status=status,
+        sensitivity=sensitivity,
+        q=q,
+    )
+    total_pages = max(1, (len(notes) + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+    return templates.TemplateResponse(request, "obsidian.html", {
+        "session": session,
+        "stats": get_engine().get_stats(),
+        "obsidian_stats": _obsidian_stats(catalog),
+        "notes": notes[offset:offset + per_page],
+        "total": len(notes),
+        "page": page,
+        "total_pages": total_pages,
+        "vaults": sorted({note["vault"] for note in catalog}),
+        "projects": sorted({note["project"] for note in catalog}),
+        "statuses": sorted({note["status"] for note in catalog}),
+        "sensitivities": sorted({note["sensitivity"] for note in catalog}),
+        "filters": {
+            "vault": vault,
+            "project": project,
+            "status": status,
+            "sensitivity": sensitivity,
+            "q": q,
+        },
+    })
+
 @router.get("/admin/memories", response_class=HTMLResponse, name="admin_memories")
 async def memories_page(
     request: Request,
     page: int = 1,
-    mem_type: str = "",
+    mem_type: str = Query("", alias="type"),
     workspace: str = "",
     q: str = "",
     session: AdminSession = Depends(require_admin),
@@ -824,6 +973,34 @@ async def settings_page(
 
 
 # ── Admin API endpoints ──
+
+@router.get("/admin/api/obsidian/stats")
+async def admin_obsidian_stats(session: AdminSession = Depends(require_admin)):
+    return _obsidian_stats(_obsidian_catalog())
+
+
+@router.get("/admin/api/obsidian/notes")
+async def admin_obsidian_notes(
+    offset: int = 0,
+    limit: int = 50,
+    vault: str = "",
+    project: str = "",
+    status: str = "",
+    sensitivity: str = "",
+    q: str = "",
+    session: AdminSession = Depends(require_admin),
+):
+    offset = max(0, offset)
+    limit = min(max(1, limit), 200)
+    notes = _filter_obsidian(
+        _obsidian_catalog(),
+        vault=vault,
+        project=project,
+        status=status,
+        sensitivity=sensitivity,
+        q=q,
+    )
+    return {"total": len(notes), "offset": offset, "limit": limit, "notes": notes[offset:offset + limit]}
 
 @router.get("/admin/api/stats")
 async def admin_stats(session: AdminSession = Depends(require_admin)):
