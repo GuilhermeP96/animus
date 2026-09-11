@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set active_page = "obsidian" %}
+
+{% block title %}Obsidian Knowledge OS{% endblock %}
+{% block breadcrumb %}<span>⟁</span> Knowledge OS / Obsidian{% endblock %}
+
+{% block content %}
+<div class="page-title">Obsidian Knowledge OS</div>
+<div class="page-subtitle">Visão somente leitura das notas sincronizadas pelos peers. Escrita, organização e rollback permanecem locais ao vault.</div>
+
+<div class="stats-grid" style="margin-top: 20px;">
+    <div class="stat-card"><div class="stat-label">Notas ativas</div><div class="stat-value">{{ obsidian_stats.active }}</div><div class="stat-detail">{{ obsidian_stats.total }} registros históricos</div></div>
+    <div class="stat-card green"><div class="stat-label">Verificadas</div><div class="stat-value" style="color: var(--animus-green)">{{ obsidian_stats.verified }}</div><div class="stat-detail">Camada Gold</div></div>
+    <div class="stat-card gold"><div class="stat-label">Gerenciadas</div><div class="stat-value" style="color: var(--animus-gold)">{{ obsidian_stats.managed }}</div><div class="stat-detail">Exportadas pelo Animus</div></div>
+    <div class="stat-card red"><div class="stat-label">Ausentes</div><div class="stat-value" style="color: var(--animus-red)">{{ obsidian_stats.missing }}</div><div class="stat-detail">Preservadas para auditoria</div></div>
+</div>
+
+<div class="card" style="margin-bottom: 16px;"><div class="card-body" style="padding: 16px;">
+    <form method="GET" action="/admin/obsidian" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+        <div style="flex: 1; min-width: 180px;"><label class="form-label">Busca</label><input class="form-input" name="q" value="{{ filters.q }}" placeholder="Título, caminho ou workspace"></div>
+        {% for field, options, label in [('vault', vaults, 'Vault'), ('project', projects, 'Projeto'), ('status', statuses, 'Status'), ('sensitivity', sensitivities, 'Sensibilidade')] %}
+        <div style="min-width: 150px;"><label class="form-label">{{ label }}</label><select class="form-input" name="{{ field }}"><option value="">Todos</option>{% for option in options %}<option value="{{ option }}" {% if filters[field] == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
+        {% endfor %}
+        <button class="btn btn-primary" type="submit">Filtrar</button>
+        <a class="btn" href="/admin/obsidian">Limpar</a>
+    </form>
+</div></div>
+
+<div class="card"><div class="card-body" style="padding: 0;">
+{% if notes %}
+<table class="animus-table"><thead><tr><th>Nota</th><th>Vault / projeto</th><th>Status</th><th>Sensibilidade</th><th>Peer</th><th></th></tr></thead><tbody>
+{% for note in notes %}
+<tr>
+    <td><div style="color: var(--animus-text-bright); font-weight: 600;">{{ note.title }}</div><div style="font-size: 11px; color: var(--animus-text-dim); font-family: monospace;">{{ note.relative_path }}</div></td>
+    <td><span class="tag">{{ note.vault }}</span><div style="font-size: 11px; margin-top: 4px;">{{ note.project }}</div></td>
+    <td><span class="tag">{{ note.status }}</span>{% if note.missing %}<div style="color: var(--animus-red); font-size: 11px;">ausente</div>{% endif %}</td>
+    <td><span class="tag">{{ note.sensitivity }}</span></td>
+    <td style="font-family: monospace; font-size: 11px;">{{ note.source_node[:12] }}</td>
+    <td><a class="btn" href="/admin/memories/{{ note.id }}">Ver</a></td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty-state"><div class="empty-icon">💎</div><div class="empty-text">Nenhuma nota Obsidian sincronizada</div><div class="empty-sub">Configure um vault em um peer v0.8 e habilite a coleta explicitamente.</div></div>{% endif %}
+</div></div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+{% for p in range(1, total_pages + 1) %}
+{% if p == page %}<span class="page-btn active">{{ p }}</span>{% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}<a class="page-btn" href="?page={{ p }}&vault={{ filters.vault }}&project={{ filters.project }}&status={{ filters.status }}&sensitivity={{ filters.sensitivity }}&q={{ filters.q }}">{{ p }}</a>{% endif %}
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

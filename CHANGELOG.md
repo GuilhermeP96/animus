@@ -4,6 +4,19 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-09-11 — Obsidian Web visibility
+
+### Added
+- Read-only Obsidian dashboard and protected JSON endpoints in the Hub admin,
+  including vault, project, lifecycle, sensitivity, verification, and missing-note filters.
+
+### Fixed
+- Archive filtering now accepts the `type` query parameter emitted by its template.
+
+### Security
+- Removed the unused `sqlitedict` dependency, which has an unresolved unsafe
+  deserialization advisory.
+
 ## [0.8.0] — 2026-09-11 — Obsidian Knowledge OS
 
 ### Added
