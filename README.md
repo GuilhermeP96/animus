@@ -28,13 +28,16 @@ animus obsidian status
 animus obsidian collect
 animus obsidian export --vault pessoal --id <memory-id> --dry-run
 animus obsidian export --vault pessoal --id <memory-id>
-animus obsidian catalog --vault pessoal
+animus obsidian catalog --vault pessoal --install-style
+animus obsidian search "termo" --vault pessoal
+animus obsidian dataset --vault pessoal --kind rag
+animus obsidian dataset --vault pessoal --kind sft
 animus obsidian organize --vault pessoal --id <memory-id>
 animus obsidian organize --vault pessoal --id <memory-id> --apply --approve
 animus obsidian rollback --vault pessoal
 ```
 
-Notas humanas nunca sao sobrescritas. Edicoes divergentes em notas gerenciadas geram uma copia em `.animus/quarantine/`; atualizacoes geram backup e registro em `.animus/audit.jsonl`. O desenho e as regras completas estao em [PLANO-INTEGRACAO-OBSIDIAN.md](docs/PLANO-INTEGRACAO-OBSIDIAN.md).
+Notas exportadas começam como candidatas: somente conhecimento verificado entra no corpus RAG, e fine-tuning exige ainda um par instrução/resposta aprovado explicitamente. Notas humanas nunca são sobrescritas. Edicoes divergentes em notas gerenciadas geram uma copia em `.animus/quarantine/`; atualizacoes geram backup e registro em `.animus/audit.jsonl`. Consulte o [guia da camada de conhecimento](docs/CAMADA-CONHECIMENTO-OBSIDIAN.md) e o [plano de integração](docs/PLANO-INTEGRACAO-OBSIDIAN.md).
 
 ## Arquitetura
 
@@ -191,18 +194,19 @@ animus daemon
 
 ## MCP — consumir as memórias no Copilot / Claude Code
 
-Cada peer expõe um **servidor MCP** (`animus-mcp`) sobre stdio com 13
+Cada peer expõe um **servidor MCP** (`animus-mcp`) sobre stdio com 16
 ferramentas (`animus_search`, `animus_recall`, `animus_session`,
 `animus_session_list`, `animus_related`, `animus_neural_map`,
 `animus_remember`, `animus_stats`, `animus_collect`, `animus_context`,
-`animus_timeline`, `animus_obsidian_export`, `animus_obsidian_organize`). Qualquer host MCP-aware — Copilot Chat (VS Code),
+`animus_timeline`, `animus_obsidian_guide`, `animus_obsidian_search`, `animus_obsidian_export`,
+`animus_obsidian_organize`, `animus_obsidian_dataset`). Qualquer host MCP-aware — Copilot Chat (VS Code),
 Claude Code, ou outro — passa a ler/escrever na sua memória sincronizada.
 
 ### Claude Code
 
 A partir de v0.5.0 o `install-peer.{sh,ps1}` detecta `~/.claude.json` e
 registra o MCP automaticamente. Resultado: ao reiniciar o Claude Code, as
-13 ferramentas aparecem.
+16 ferramentas aparecem.
 
 Override via env:
 
@@ -390,7 +394,9 @@ animus config-set K V # Alterar configuração
 animus obsidian status # Estado dos vaults e da coleta
 animus obsidian collect # Coletar somente notas do Obsidian
 animus obsidian export  # Exportar memorias para a area gerenciada
-animus obsidian catalog # Gerar indice navegavel das memorias exportadas
+animus obsidian catalog # Gerar a entrada única, mapas e Canvas
+animus obsidian search  # Consultar a camada verificada (Gold)
+animus obsidian dataset # Validar/gerar corpus RAG ou fine-tuning
 animus obsidian organize # Propor/aplicar organizacao auditada
 animus obsidian rollback # Restaurar a ultima alteracao com backup
 ```

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
@@ -71,12 +70,12 @@ def init():
     """Initialize Animus on this machine — enter the Animus for the first time."""
     config = AnimusConfig.load()
     config.save()
-    console.print(f"\n[bold green]⟁[/] Animus initialized")
+    console.print("\n[bold green]⟁[/] Animus initialized")
     console.print(f"  Node ID:   [cyan]{config.node_id}[/]")
     console.print(f"  Node Name: [cyan]{config.node_name}[/]")
     console.print(f"  Data dir:  [dim]{config.data_dir}[/]")
     console.print(f"  Config:    [dim]{config.config_path}[/]")
-    console.print(f"\n  Run [bold]animus collect[/] to start gathering memories.")
+    console.print("\n  Run [bold]animus collect[/] to start gathering memories.")
 
 
 @app.command()
@@ -328,15 +327,77 @@ def obsidian_rollback(vault: str = typer.Option(..., "--vault")):
 
 
 @obsidian_app.command("catalog")
-def obsidian_catalog(vault: str = typer.Option(..., "--vault")):
-    """Build a linked index for all managed notes visible in Obsidian."""
+def obsidian_catalog(
+    vault: str = typer.Option(..., "--vault"),
+    install_style: bool = typer.Option(False, "--install-style"),
+):
+    """Build project maps, dashboard, Canvas, guide, and curated metadata."""
     from .indexer.engine import IndexEngine
     from .obsidian import ObsidianManager
 
     cfg = AnimusConfig.load()
     engine = IndexEngine(cfg.db_path)
     try:
-        console.print_json(data=ObsidianManager(cfg, engine).build_catalog(vault))
+        console.print_json(
+            data=ObsidianManager(cfg, engine).build_catalog(
+                vault, install_style=install_style
+            )
+        )
+    finally:
+        engine.close()
+
+
+@obsidian_app.command("dataset")
+def obsidian_dataset(
+    vault: str = typer.Option(..., "--vault"),
+    kind: str = typer.Option("rag", "--kind", help="rag or sft"),
+    apply: bool = typer.Option(False, "--apply", help="Write JSONL and manifest"),
+    include_internal: bool = typer.Option(False, "--include-internal"),
+):
+    """Build a gated RAG or supervised fine-tuning dataset."""
+    from .indexer.engine import IndexEngine
+    from .obsidian import ObsidianManager
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    try:
+        console.print_json(
+            data=ObsidianManager(cfg, engine).export_dataset(
+                vault, kind=kind, dry_run=not apply,
+                include_internal=include_internal, actor="cli-dataset-curator",
+            )
+        )
+    except (ValueError, PermissionError) as exc:
+        console.print(f"[red]Error:[/] {exc}")
+        raise typer.Exit(1)
+    finally:
+        engine.close()
+
+
+@obsidian_app.command("search")
+def obsidian_search(
+    query: str = typer.Argument(...),
+    vault: str = typer.Option(..., "--vault"),
+    project: str = typer.Option("", "--project"),
+    include_candidates: bool = typer.Option(False, "--include-candidates"),
+    limit: int = typer.Option(10, "--limit", min=1, max=50),
+):
+    """Search verified knowledge, optionally including flagged candidates."""
+    from .indexer.engine import IndexEngine
+    from .obsidian import ObsidianManager
+
+    cfg = AnimusConfig.load()
+    engine = IndexEngine(cfg.db_path)
+    try:
+        console.print_json(
+            data=ObsidianManager(cfg, engine).search_knowledge(
+                vault, query, project=project,
+                include_candidates=include_candidates, limit=limit,
+            )
+        )
+    except (ValueError, PermissionError) as exc:
+        console.print(f"[red]Error:[/] {exc}")
+        raise typer.Exit(1)
     finally:
         engine.close()
 
@@ -517,7 +578,7 @@ def serve(
     _setup_logging(verbose)
     import uvicorn
 
-    console.print(f"[bold]⟁ Animus Hub starting...[/]")
+    console.print("[bold]⟁ Animus Hub starting...[/]")
     console.print(f"  Listening: {host}:{port}")
     console.print(f"  Docs:      http://{host}:{port}/docs\n")
 
@@ -672,7 +733,7 @@ def service_install(
     exe = animus_exe or svc.default_animus_exe()
     log = log_file or svc.default_log_path(config.data_dir)
 
-    console.print(f"[bold]⟁ Installing Animus service[/]")
+    console.print("[bold]⟁ Installing Animus service[/]")
     console.print(f"  exe:     {exe}")
     console.print(f"  logs:    {log}")
     console.print()
@@ -776,7 +837,7 @@ def tunnel(
     try:
         info = asyncio.run(tm.start())
         if info:
-            console.print(f"  [green]✓ Tunnel active[/]")
+            console.print("  [green]✓ Tunnel active[/]")
             console.print(f"  Mode:   {info.mode}")
             console.print(f"  Local:  localhost:{info.local_port}")
             console.print(f"  Remote: {info.remote_host}:{info.remote_port}")
@@ -830,7 +891,7 @@ def context(
     console.print(f"[bold]⟁ Generating context for:[/] {root.name}\n")
     ctx_file = injector.write_workspace_context(root)
     console.print(f"  [green]✓[/] Written: {ctx_file}")
-    console.print(f"  Copilot will auto-include this as workspace context.")
+    console.print("  Copilot will auto-include this as workspace context.")
     injector.close()
 
 

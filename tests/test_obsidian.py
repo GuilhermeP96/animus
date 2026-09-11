@@ -7,7 +7,12 @@ import pytest
 from animus.collector.models import Memory, MemoryType
 from animus.collector.obsidian import ObsidianCollector, extract_links, parse_frontmatter
 from animus.config import ObsidianVaultConfig
-from animus.obsidian import ObsidianManager, sanitize_title
+from animus.obsidian import (
+    ObsidianManager,
+    _sensitive_findings,
+    _yaml_frontmatter,
+    sanitize_title,
+)
 
 
 @pytest.fixture
@@ -193,6 +198,10 @@ def test_helpers_cover_plain_notes_and_safe_names():
         "Pasta/B.md",
     ]
     assert sanitize_title('A<B>:C/"D"') == "A-B--C--D"
+    assert sanitize_title("Prioridade [HIGH] #1 ^bloco") == "Prioridade -HIGH- -1 -bloco"
+    assert _sensitive_findings("API_KEY=sk_test_abcdefghijklmnop")
+    assert _sensitive_findings("-----BEGIN PRIVATE KEY-----")
+    assert not _sensitive_findings("Read HOSTINGER_API_TOKEN from .env without copying it")
 
 
 def test_config_roundtrip_and_created_note_rollback(obsidian_config, engine):
@@ -218,14 +227,14 @@ def test_config_roundtrip_and_created_note_rollback(obsidian_config, engine):
     assert target.is_file()
     assert manager.rollback_last("knowledge") == result.created[0]
     assert not target.exists()
-    assert list((vault / ".animus" / "backups").rglob(target.name))
+    assert list((vault / ".animus" / "backups").rglob(f"{target.name}.bak"))
 
 
 def test_vault_layout_metadata_is_non_destructive(obsidian_config):
     config, vault = obsidian_config
     from animus.obsidian import initialize_vault
 
-    marker = vault / ".animus" / "README.md"
+    marker = vault / ".animus" / "README.txt"
     initialize_vault(config.obsidian_vaults[0])
     assert (vault / ".animus" / "exported").is_dir()
     assert (
@@ -237,9 +246,90 @@ def test_vault_layout_metadata_is_non_destructive(obsidian_config):
     assert marker.read_text(encoding="utf-8") == "custom"
 
 
+def test_catalog_builds_project_workspace_and_marks_exports_as_candidates(
+    obsidian_config, engine
+):
+    config, vault = obsidian_config
+    (vault / ".obsidian").mkdir()
+    (vault / ".obsidian" / "appearance.json").write_text("{}\n", encoding="utf-8")
+    memory = Memory(
+        type=MemoryType.USER_NOTE,
+        source_node=config.node_id,
+        title="Animus knowledge architecture",
+        content="# Animus Knowledge OS\n\nDecision about the Obsidian layer.",
+    )
+    engine.index_memory(memory)
+    manager = ObsidianManager(config, engine)
+    manager.export("knowledge", [memory.id])
+
+    result = manager.build_catalog("knowledge", install_style=True)
+
+    assert result["notes"] == 1
+    assert result["projects"] == 1
+    assert result["statuses"] == {"candidato": 1}
+    assert (vault / result["home"]).is_file()
+    assert (vault / result["guide"]).is_file()
+    canvas = json.loads((vault / result["canvas"]).read_text(encoding="utf-8"))
+    assert len(canvas["nodes"]) == 3
+    migrated = next((vault / ".animus" / "exported" / "Conhecimento").rglob(f"*--{memory.id[:8]}.md"))
+    metadata, _, _ = parse_frontmatter(migrated.read_text(encoding="utf-8"))
+    assert metadata["projeto"] == "Animus"
+    assert metadata["status"] == "candidato"
+    assert metadata["sensibilidade"] == "interno"
+    assert (vault / ".obsidian" / "snippets" / "animus.css").is_file()
+    appearance = json.loads((vault / ".obsidian" / "appearance.json").read_text(encoding="utf-8"))
+    assert "animus" in appearance["enabledCssSnippets"]
+
+
+def test_dataset_requires_verified_notes_and_explicit_sft_approval(obsidian_config, engine):
+    config, vault = obsidian_config
+    memory = Memory(
+        type=MemoryType.USER_NOTE,
+        source_node=config.node_id,
+        title="Procedure",
+        content="A durable procedure.",
+    )
+    engine.index_memory(memory)
+    manager = ObsidianManager(config, engine)
+    manager.export("knowledge", [memory.id])
+    manager.build_catalog("knowledge")
+    note = next((vault / ".animus" / "exported" / "Conhecimento").rglob(f"*--{memory.id[:8]}.md"))
+
+    assert manager.export_dataset("knowledge", kind="rag")["records"] == 0
+    metadata, body, _ = parse_frontmatter(note.read_text(encoding="utf-8"))
+    metadata["status"] = "verificado"
+    metadata["sensibilidade"] = "publico"
+    note.write_text(_yaml_frontmatter(metadata) + "\n" + body.lstrip(), encoding="utf-8")
+
+    found = manager.search_knowledge("knowledge", "durable procedure")
+    assert found[0]["memory_id"] == memory.id
+    assert found[0]["warning"] == ""
+    rag = manager.export_dataset("knowledge", kind="rag", dry_run=False)
+    assert rag["records"] == 1
+    assert (vault / rag["output"]).is_file()
+    assert manager.export_dataset("knowledge", kind="sft")["records"] == 0
+
+    metadata, body, _ = parse_frontmatter(note.read_text(encoding="utf-8"))
+    metadata["treino"] = {
+        "aprovado": True,
+        "instrucao": "How should this be done?",
+        "resposta": "Follow the durable procedure.",
+    }
+    note.write_text(_yaml_frontmatter(metadata) + "\n" + body.lstrip(), encoding="utf-8")
+    sft = manager.export_dataset("knowledge", kind="sft", dry_run=False)
+    assert sft["records"] == 1
+    record = json.loads((vault / sft["output"]).read_text(encoding="utf-8"))
+    assert [message["role"] for message in record["messages"]] == ["user", "assistant"]
+
+
 def test_mcp_definitions_expose_obsidian_operations():
     from animus.mcp import AnimusMCPServer
 
     names = {tool["name"] for tool in AnimusMCPServer.TOOL_DEFINITIONS}
+    assert "animus_obsidian_guide" in names
+    assert "animus_obsidian_search" in names
     assert "animus_obsidian_export" in names
     assert "animus_obsidian_organize" in names
+    assert "animus_obsidian_dataset" in names
+    resources = {resource["uri"] for resource in AnimusMCPServer.RESOURCE_DEFINITIONS}
+    assert "animus://obsidian/guide" in resources
