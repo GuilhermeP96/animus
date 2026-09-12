@@ -249,5 +249,5 @@ def check_and_apply(
         return False, info
     if dry_run:
         return True, info
-    ok = apply_update(info)
+    ok = apply_update(info, allow_pre=config.update_allow_pre)
     return (ok, info)

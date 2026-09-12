@@ -1,9 +1,11 @@
-# Animus Peer — Installer Kit
+# Animus Peer — Install / Update / Repair Kit
 
 A self-contained installer for joining this machine to the Animus hub at
 **{{HUB_URL}}** as node **`{{NODE_ID}}`** (`{{NODE_NAME}}`).
 
 Everything you need is in this folder — no manual secret pasting.
+The kit is idempotent: running it again updates the source/package, preserves
+the node identity and repairs the background service definition.
 
 ## What's inside
 
@@ -65,7 +67,8 @@ The agent will run the installation step by step and verify each phase.
 
 ## Regenerating
 
-Open **{{HUB_URL}}/admin/peers** → **Generate Installer ZIP** to produce a
-fresh kit with a new `node_id` (or override the name field first).
+Open **{{HUB_URL}}/admin/peers**. Generate a fresh ID for a new peer, or use
+an existing peer's **ZIP** action to build an update/repair kit from its
+registered alias, hostname and operating system.
 
 Generated: {{GENERATED_AT}}

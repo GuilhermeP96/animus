@@ -187,7 +187,9 @@ def test_windows_install_invokes_powershell(monkeypatch, tmp_path):
     # Install script mentioned the daemon command + log file
     install_script = captured["scripts"][0]
     assert "Register-ScheduledTask" in install_script
-    assert "daemon --log-file" in install_script
+    assert "python.exe" in install_script
+    assert "-m animus.cli daemon --log-file" in install_script
+    assert "-Execute '" + str(tmp_path / "animus.exe") + "'" not in install_script
     assert info.installed is True
     assert info.running is True
 

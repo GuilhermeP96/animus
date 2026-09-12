@@ -214,6 +214,19 @@ class TestObsidianAdmin:
         response = client.get("/admin/api/obsidian/stats")
         assert response.status_code == 401
 
+    def test_memory_detail_has_safe_markdown_and_mermaid_renderer(self, client, auth_headers):
+        self._push_note(client, auth_headers)
+        app.dependency_overrides[require_admin] = self._admin_override
+        try:
+            page = client.get("/admin/memories/obsidian-test-note")
+            assert page.status_code == 200
+            assert "mermaid@11.12.2" in page.text
+            assert "securityLevel: 'strict'" in page.text
+            assert "typeof DOMPurify === 'undefined'" in page.text
+            assert "pre code.language-mermaid" in page.text
+        finally:
+            app.dependency_overrides.pop(require_admin, None)
+
 
 class TestRecentEndpoint:
     def test_recent(self, client, auth_headers):
@@ -229,6 +242,43 @@ class TestPeersEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data["peers"], list)
+
+    def test_peer_identity_uses_hostname_without_alias(self, client, auth_headers):
+        payload = {
+            "type": "PUSH", "node_id": "panthro-id", "node_name": "",
+            "node_version": "0.8.3", "hostname": "Panthro",
+            "os_name": "Windows", "os_version": "11", "memories": [],
+        }
+        assert client.post("/api/sync/push", json=payload, headers=auth_headers).status_code == 200
+        peers = client.get("/api/peers", headers=auth_headers).json()["peers"]
+        peer = next(item for item in peers if item["node_id"] == "panthro-id")
+        assert peer["display_name"] == "Panthro"
+        assert peer["hostname"] == "Panthro"
+        assert peer["os_name"] == "Windows"
+        assert peer["node_version"] == "0.8.3"
+
+    def test_registered_peer_can_download_own_update_kit(self, client, hub_config):
+        import io
+        import zipfile
+        from animus.network.crypto import create_auth_header, _replay_cache_clear
+
+        _replay_cache_clear()
+        hub_config.server_secret = "test-shared-secret"
+        server_module._note_peer_activity(
+            "panthro-id", hostname="Panthro", os_name="Windows", node_version="0.8.3"
+        )
+        headers = create_auth_header(
+            hub_config.server_secret, "panthro-id", body=None, secure=True
+        )
+        response = client.get("/api/peers/update-kit.zip", headers=headers)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            env_name = next(name for name in archive.namelist() if name.endswith("/peer.env"))
+            peer_env = archive.read(env_name).decode()
+        assert "ANIMUS_NODE_ID=panthro-id" in peer_env
+        assert "ANIMUS_NODE_NAME=Panthro" in peer_env
+        assert "ANIMUS_OS_HINT=Windows" in peer_env
 
 class TestSecureAuth:
     """v0.4.6 — body-bound HMAC + replay protection at the HTTP layer."""

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import platform
+import socket
 from datetime import datetime, timezone
 from typing import Any
 
 from ..collector.models import Memory, MemoryBatch, MemoryType
+from .. import __version__
 
 logger = logging.getLogger("animus.sync")
 
@@ -52,7 +55,10 @@ class SyncProtocol:
             "node_id": node_id,
             "node_name": node_name,
             "capabilities": capabilities or ["push", "pull", "query"],
-            "version": "0.1.0",
+            "version": __version__,
+            "hostname": socket.gethostname(),
+            "os_name": platform.system(),
+            "os_version": platform.release(),
             "timestamp": ts,
         }
         if shared_secret:
@@ -78,6 +84,10 @@ class SyncProtocol:
             "type": "PUSH",
             "node_id": batch.node_id,
             "node_name": batch.node_name,
+            "node_version": batch.node_version,
+            "hostname": batch.hostname,
+            "os_name": batch.os_name,
+            "os_version": batch.os_version,
             "count": len(batch.memories),
             "memories": [m.model_dump(mode="json") for m in batch.memories],
             "timestamp": batch.batch_timestamp.isoformat(),

@@ -128,7 +128,7 @@ function Initial-Sync($dir) {
 # ── 6. Scheduled Task — `animus daemon` no logon ───────────────────────
 function Install-Task($dir, $enabled) {
     if ($enabled -ne 'yes') { return }
-    $animus = Join-Path $dir '.venv\Scripts\animus.exe'
+    $python = Join-Path $dir '.venv\Scripts\python.exe'
     $name   = 'AnimusPeerDaemon'
 
     Write-Step "Registrando Scheduled Task '$name' no logon..."
@@ -136,7 +136,9 @@ function Install-Task($dir, $enabled) {
     # detecta uma versão nova, faz `pip install --upgrade` e cai com exit
     # code 75 (EX_TEMPFAIL); o Task Scheduler restarta dentro de 1 minuto e
     # a nova versão entra no lugar — sem janela manual.
-    $action  = New-ScheduledTaskAction  -Execute $animus -Argument 'daemon'
+    # Do not execute animus.exe directly: Windows may lock that console
+    # launcher while pip needs to replace it during an automatic update.
+    $action  = New-ScheduledTaskAction -Execute $python -Argument '-m animus.cli daemon'
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
                   -DontStopIfGoingOnBatteries `

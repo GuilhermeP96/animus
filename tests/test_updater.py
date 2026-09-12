@@ -114,6 +114,14 @@ class TestCheckAndApply:
             # daemon can skip the restart on failure and try again next cycle.
             assert restart is False
 
+    def test_pre_release_preference_reaches_pip(self, config):
+        config.update_allow_pre = True
+        info = VersionInfo(latest="99.0.0")
+        with patch("animus.network.updater.fetch_latest", return_value=info), \
+             patch("animus.network.updater.apply_update", return_value=True) as apply:
+            assert check_and_apply(config)[0] is True
+            apply.assert_called_once_with(info, allow_pre=True)
+
 
 # ── apply_update guards ─────────────────────────────────────────────────
 
