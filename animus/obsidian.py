@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 import yaml
 
-from .collector.obsidian import parse_frontmatter
+from .collector.obsidian import note_id, parse_frontmatter
 from .config import AnimusConfig, ObsidianVaultConfig
 from .indexer.engine import IndexEngine
 
@@ -682,7 +682,7 @@ Explique o padrão reutilizável. Fatos mutáveis pertencem ao RAG, não ao fine
         self, vault_name: str, query: str, *, project: str = "",
         include_candidates: bool = False, limit: int = 10,
     ) -> list[dict[str, Any]]:
-        """Search the governed vault layer without re-indexing managed exports."""
+        """Search verified human notes and governed managed exports in one vault."""
         vault = self.vault(vault_name)
         terms = [term for term in re.findall(r"[\wÀ-ÿ.-]+", query.casefold()) if len(term) > 1]
         if not terms:
@@ -691,15 +691,31 @@ Explique o padrão reutilizável. Fatos mutáveis pertencem ao RAG, não ao fine
         if include_candidates:
             allowed.update({"candidato", "curado"})
         results: list[dict[str, Any]] = []
-        for note in (vault.path / ".animus" / "exported").rglob("*.md"):
+        managed_root = (vault.path / ".animus" / "exported").resolve()
+        notes: list[Path] = []
+        for note in vault.path.rglob("*.md"):
+            relative = note.relative_to(vault.path)
+            if relative.parts and relative.parts[0] == ".animus":
+                try:
+                    note.resolve().relative_to(managed_root)
+                except ValueError:
+                    continue
+            if any(part in {".obsidian", "attachments", "node_modules"} for part in relative.parts):
+                continue
+            notes.append(note)
+
+        for note in notes:
             try:
-                metadata, body, warning = parse_frontmatter(note.read_text(encoding="utf-8"))
+                raw = note.read_text(encoding="utf-8")
+                metadata, body, warning = parse_frontmatter(raw)
             except (OSError, UnicodeError):
                 continue
             marker = metadata.get("animus", {}) if isinstance(metadata, dict) else {}
-            memory_id = marker.get("memory_id") if isinstance(marker, dict) else None
+            managed_id = marker.get("memory_id") if isinstance(marker, dict) else None
+            relative = note.relative_to(vault.path)
+            memory_id = managed_id or note_id(vault.name, relative.as_posix())
             status = str(metadata.get("status") or "candidato")
-            if warning or not memory_id or status not in allowed:
+            if warning or status not in allowed or _sensitive_findings(raw):
                 continue
             note_project = str(metadata.get("projeto") or "")
             if project and project.casefold() not in note_project.casefold():
@@ -708,8 +724,12 @@ Explique o padrão reutilizável. Fatos mutáveis pertencem ao RAG, não ao fine
             if not isinstance(alias_values, list):
                 alias_values = [alias_values]
             aliases = " ".join(str(item) for item in alias_values)
-            title = str(alias_values[0]) if alias_values else note.stem.rsplit("--", 1)[0]
-            header = f"{aliases} {note_project} {' '.join(metadata.get('tags', []))}".casefold()
+            title = str(metadata.get("title") or (alias_values[0] if alias_values else ""))
+            title = title or note.stem.rsplit("--", 1)[0]
+            tag_values = metadata.get("tags", [])
+            if not isinstance(tag_values, list):
+                tag_values = [tag_values]
+            header = f"{title} {aliases} {note_project} {' '.join(str(tag) for tag in tag_values)}".casefold()
             searchable = f"{header} {body.casefold()}"
             matched = [term for term in terms if term in searchable]
             if not matched:
@@ -722,7 +742,7 @@ Explique o padrão reutilizável. Fatos mutáveis pertencem ao RAG, não ao fine
                 "memory_id": str(memory_id), "title": title,
                 "project": note_project, "status": status,
                 "sensitivity": metadata.get("sensibilidade", "interno"),
-                "path": note.relative_to(vault.path).as_posix(),
+                "path": relative.as_posix(),
                 "score": score, "excerpt": excerpt,
                 "warning": "UNVERIFIED" if status != "verificado" else "",
             })
