@@ -104,10 +104,11 @@ unzip animus-peer-<id>.zip && cd animus-peer-<id>
 ./install.sh
 
 # Windows
-# extrair o ZIP, então duplo-clique em install.bat (UAC)
+# extrair o ZIP, então duplo-clique em install.bat (sem UAC)
 ```
 
-Sem prompts — o kit já sabe tudo. Inclui `COPILOT.md`: passo-a-passo para o
+Sem prompts — o kit já sabe tudo e instala Python 3.13/Git no escopo do usuário
+quando necessário. Inclui `COPILOT.md`: passo-a-passo para o
 GitHub Copilot fazer a instalação manual em VS Code quando o shell estiver
 restrito.
 
