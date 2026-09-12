@@ -280,10 +280,12 @@ class TestPeersEndpoint:
             installer_bytes = archive.read("install.ps1")
             assert installer_bytes.startswith(b"\xef\xbb\xbf")
             installer = installer_bytes.decode("utf-8-sig")
+            batch = archive.read("install.bat").decode()
             assert "Get-ScheduledTask -TaskName 'AnimusPeerDaemon'" in installer
             assert "Test-Path $installedSource" in installer
             assert "git -C $installDir fetch" in installer
             assert "exit $installExitCode" in installer
+            assert "-Verb RunAs" not in batch
             peer_env = archive.read("peer.env").decode()
         assert "ANIMUS_NODE_ID=panthro-id" in peer_env
         assert "ANIMUS_NODE_NAME=Panthro" in peer_env

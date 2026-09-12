@@ -16,7 +16,7 @@ when Windows Explorer uses **Extract All**.
 | `peer.env`    | Pre-baked config: hub URL, HMAC secret, node id, node name.      |
 | `install.sh`  | Linux / macOS one-shot installer.                                |
 | `install.ps1` | Windows installer (PowerShell).                                  |
-| `install.bat` | Windows double-click entry point (self-elevates, runs `.ps1`).   |
+| `install.bat` | Windows double-click entry point; no administrator access needed. |
 | `COPILOT.md`  | Step-by-step manual install for GitHub Copilot in VS Code.       |
 | `README.md`   | This file.                                                       |
 
@@ -31,7 +31,8 @@ chmod +x install.sh
 
 ### Windows (preferred)
 
-Double-click **`install.bat`**. Approve the UAC prompt.
+Double-click **`install.bat`**. It installs Python 3.13 and Git for the current
+user when needed, without a UAC prompt.
 
 ### Windows (alternative)
 
