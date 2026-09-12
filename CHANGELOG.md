@@ -4,6 +4,16 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-09-12 — Curated Obsidian search
+
+### Fixed
+- Governed Obsidian search and MCP access now include verified human-authored
+  notes alongside managed Animus exports, with stable vault/path identifiers.
+
+### Security
+- Human-authored search excludes private application directories and rejects
+  notes that match the sensitive-data scanner before returning any content.
+
 ## [0.8.1] — 2026-09-11 — Obsidian Web visibility
 
 ### Added
