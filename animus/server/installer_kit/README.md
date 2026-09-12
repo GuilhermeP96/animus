@@ -5,7 +5,9 @@ A self-contained installer for joining this machine to the Animus hub at
 
 Everything you need is in this folder — no manual secret pasting.
 The kit is idempotent: running it again updates the source/package, preserves
-the node identity and repairs the background service definition.
+the node identity and repairs the background service definition. The ZIP keeps
+its files at the archive root, avoiding duplicate `animus-peer-...` folders
+when Windows Explorer uses **Extract All**.
 
 ## What's inside
 
@@ -52,10 +54,12 @@ The agent will run the installation step by step and verify each phase.
 
 1. Install missing prerequisites (Python ≥3.11, Git) via the system package manager.
 2. `git clone` the canonical Animus repo (URL from `peer.env`).
-3. Create a virtualenv and `pip install -e .` the package.
+3. Stop the existing peer safely, create/reuse its virtualenv, and run
+   `pip install -e .` without Windows executable-lock conflicts.
 4. Apply the pre-baked config (hub URL, secret, node id, node name).
 5. Run an initial `collect` + `sync` as a smoke test.
-6. Register a background daemon (systemd unit on Linux; Scheduled Task on Windows).
+6. Register and start the background daemon (systemd unit on Linux; Scheduled
+   Task on Windows). If an update fails, the previous Windows task is restored.
 
 ## Security
 
