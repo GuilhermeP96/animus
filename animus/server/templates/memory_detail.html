@@ -51,9 +51,13 @@
         .md-body th { background: var(--animus-surface-2); }
         .md-body hr { border: none; border-top: 1px solid var(--animus-border); margin: 1em 0; }
         .md-body img { max-width: 100%; border-radius: 4px; }
+        .md-body .mermaid { background: #f8fafc; color: #111827; padding: 18px; border-radius: 8px; overflow-x: auto; text-align: center; }
+        .md-body .mermaid svg { max-width: 100%; height: auto; }
+        .md-render-error { color: var(--animus-gold); border-left: 3px solid var(--animus-gold); padding: 8px 12px; margin: 8px 0; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha256-Ffq85bZYmLMrA/XtJen4kacprUwNbYdxEKd0SqhHqJQ=" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" integrity="sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11.12.2/dist/mermaid.min.js" integrity="sha384-1ggI9FC3CkghppRD/XCR4aD+jp4DxwXlJIW0wxhyTLNKuiZEW3c4BwcjKXl0iVAJ" crossorigin="anonymous"></script>
     <script>
         (function () {
             const raw = document.getElementById('memory-content-source').value;
@@ -91,18 +95,46 @@
             // Update the Raw view too — what people copy should already be readable.
             document.getElementById('memory-content-raw').textContent = cleaned;
 
-            if (typeof marked === 'undefined') {
-                // CDN unreachable / SRI mismatch / offline — degrade gracefully.
+            if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+                // Rendering without the sanitizer is unsafe; fail closed to text.
                 target.textContent = cleaned;
                 target.style.whiteSpace = 'pre-wrap';
                 target.style.fontFamily = "'Cascadia Code', 'Fira Code', monospace";
-                console.warn('[animus] marked.js unavailable — showing raw text');
+                console.warn('[animus] Markdown renderer unavailable — showing safe text');
                 return;
             }
             try {
                 marked.setOptions({ breaks: true, gfm: true });
                 const html = marked.parse(cleaned);
-                target.innerHTML = (window.DOMPurify ? DOMPurify.sanitize(html) : html);
+                target.innerHTML = DOMPurify.sanitize(html, {USE_PROFILES: {html: true}});
+
+                // Promote fenced ```mermaid blocks only after sanitization.
+                for (const code of target.querySelectorAll('pre code.language-mermaid')) {
+                    const diagram = document.createElement('div');
+                    diagram.className = 'mermaid';
+                    diagram.textContent = code.textContent;
+                    code.parentElement.replaceWith(diagram);
+                }
+                if (target.querySelector('.mermaid')) {
+                    if (window.mermaid) {
+                        mermaid.initialize({
+                            startOnLoad: false,
+                            securityLevel: 'strict',
+                            theme: 'neutral',
+                            suppressErrorRendering: true
+                        });
+                        mermaid.run({nodes: target.querySelectorAll('.mermaid')}).catch((e) => {
+                            console.error('[animus] Mermaid render failed:', e);
+                            for (const node of target.querySelectorAll('.mermaid:not([data-processed])')) {
+                                node.classList.add('md-render-error');
+                            }
+                        });
+                    } else {
+                        for (const node of target.querySelectorAll('.mermaid')) {
+                            node.classList.add('md-render-error');
+                        }
+                    }
+                }
             } catch (e) {
                 target.textContent = cleaned;
                 target.style.whiteSpace = 'pre-wrap';

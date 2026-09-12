@@ -81,8 +81,9 @@
             <div class="recruit-pane" data-pane="zip" style="display:none;">
                 <p style="margin-top: 12px; font-size: 13px; color: var(--animus-text-dim);">
                     Generate a <strong>self-contained installer kit</strong> with the hub URL, HMAC
-                    secret and a fresh <code>node_id</code> already baked in. No source code — just
-                    the wrapper scripts. Works for shells <em>and</em> for GitHub Copilot in VS Code
+                    secret and a <code>node_id</code> already baked in. Reusing a known ID makes the
+                    same ZIP an idempotent update/repair kit, with alias or hostname resolved from
+                    the peer registry. No source code — just the wrapper scripts. Works for shells <em>and</em> for GitHub Copilot in VS Code
                     (read <code>COPILOT.md</code> inside the ZIP).
                 </p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0;">
@@ -242,9 +243,13 @@ async function downloadInstallerZip() {
                 <tr>
                     <th>Status</th>
                     <th>Node ID</th>
-                    <th>Node Name</th>
+                    <th>Alias / Name</th>
+                    <th>Hostname</th>
+                    <th>OS</th>
+                    <th>Animus</th>
                     <th>Transport</th>
                     <th>Last Seen</th>
+                    <th>Repair</th>
                 </tr>
             </thead>
             <tbody>
@@ -260,13 +265,17 @@ async function downloadInstallerZip() {
                     <td>
                         <span style="font-family: monospace; font-size: 12px;">{{ peer.node_id }}</span>
                     </td>
-                    <td>{{ peer.node_name or '—' }}</td>
+                    <td>{{ peer.display_name }}</td>
+                    <td><span style="font-family: monospace; font-size: 12px;">{{ peer.hostname or '—' }}</span></td>
+                    <td>{{ peer.os_name or '—' }}{% if peer.os_version %} {{ peer.os_version }}{% endif %}</td>
+                    <td><span style="font-family: monospace; font-size: 12px;">{{ ('v' + peer.node_version) if peer.node_version else '—' }}</span></td>
                     <td>
                         <span style="font-size: 12px;">{{ peer.transport or '—' }}</span>
                     </td>
                     <td>
                         <span style="font-family: monospace; font-size: 12px;">{{ (peer.last_seen or peer.connected_at or '—')[:19] }}</span>
                     </td>
+                    <td><a class="btn btn-sm" href="/admin/api/peers/installer.zip?node_id={{ peer.node_id }}">ZIP</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -15,7 +15,9 @@ class TestHandshake:
         assert data["type"] == "HANDSHAKE"
         assert data["node_id"] == "node-1"
         assert data["node_name"] == "test-machine"
-        assert "version" in data
+        assert data["version"] != "0.1.0"
+        assert data["hostname"]
+        assert data["os_name"]
         assert "timestamp" in data
 
     def test_default_capabilities(self):
@@ -40,6 +42,9 @@ class TestPush:
         data = json.loads(raw)
         assert data["type"] == "PUSH"
         assert data["count"] == len(sample_memories)
+        assert "node_version" in data
+        assert "hostname" in data
+        assert "os_name" in data
         assert len(data["memories"]) == len(sample_memories)
 
     def test_memory_roundtrip(self, sample_memory):

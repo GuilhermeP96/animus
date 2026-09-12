@@ -4,6 +4,30 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] — 2026-09-12 — Reliable peer updates and identity
+
+### Added
+- Peers report Animus version, hostname, operating system and OS release on
+  HTTP sync and WebSocket handshakes; the Hub falls back from alias to hostname.
+- Registered peers can download their own authenticated install/update/repair
+  ZIP, and the admin peer table generates a pre-filled repair kit per node.
+- Memory Content renders sanitized GitHub-flavored Markdown and strict Mermaid
+  diagrams, while retaining a raw view and safe-text fallback.
+
+### Changed
+- Automatic update checks now converge within 15 minutes (and still run on
+  daemon startup), including peers with the former six-hour value persisted.
+- Windows Scheduled Tasks launch through `python -m animus.cli` so the running
+  console launcher does not block pip from replacing it during upgrades.
+
+### Fixed
+- Daemon-driven updates now honor the configured pre-release preference.
+
+### Security
+- Peer-derived ZIP names and environment values are sanitized; update kits are
+  HMAC/admin protected and sent with `Cache-Control: no-store`.
+- Markdown rendering fails closed to plain text when DOMPurify is unavailable.
+
 ## [0.8.2] — 2026-09-12 — Curated Obsidian search
 
 ### Fixed
