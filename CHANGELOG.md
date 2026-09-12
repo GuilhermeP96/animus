@@ -4,6 +4,22 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] — 2026-09-12 — Hub-hosted peer packages
+
+### Added
+- Hub Docker images build and retain the wheel for their own Animus version.
+- Authenticated peers can download that wheel from
+  `/api/peers/package.whl`, with version and SHA-256 metadata.
+
+### Changed
+- Auto-update now prefers the package served by the configured VPS over the
+  peer's existing HMAC connection. Git installation remains compatible with
+  older hubs that do not advertise a package endpoint.
+
+### Security
+- Package downloads are restricted to the configured Hub origin and verified
+  against the Hub version and SHA-256 digest before installation.
+
 ## [0.8.6] — 2026-09-12 — Authenticated installer source
 
 ### Fixed

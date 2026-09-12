@@ -15,6 +15,8 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir . 2>/dev/null || true
 COPY . .
 RUN pip install --no-cache-dir .
+RUN mkdir -p /opt/animus-packages \
+    && pip wheel --no-cache-dir --no-deps --wheel-dir /opt/animus-packages .
 
 # Data volume
 RUN mkdir -p /data/animus
@@ -22,6 +24,7 @@ VOLUME /data/animus
 
 # Environment
 ENV ANIMUS_DATA_DIR=/data/animus \
+    ANIMUS_PACKAGE_DIR=/opt/animus-packages \
     ANIMUS_NODE_ROLE=hub \
     ANIMUS_SERVER_HOST=0.0.0.0 \
     ANIMUS_SERVER_PORT=8314

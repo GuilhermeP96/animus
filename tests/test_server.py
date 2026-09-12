@@ -1,13 +1,10 @@
 """Tests for animus.server.app (FastAPI endpoints)."""
 
-import json
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 
-from animus.collector.models import MemoryType
-from animus.config import AnimusConfig
 from animus.indexer.engine import IndexEngine
 import animus.server.app as server_module
 from animus.server.app import app
@@ -291,6 +288,29 @@ class TestPeersEndpoint:
         assert "ANIMUS_NODE_ID=panthro-id" in peer_env
         assert "ANIMUS_NODE_NAME=Panthro" in peer_env
         assert "ANIMUS_OS_HINT=Windows" in peer_env
+
+    def test_registered_peer_can_download_hub_wheel(
+        self, client, hub_config, tmp_path, monkeypatch
+    ):
+        import hashlib
+        from animus import __version__
+        from animus.network.crypto import create_auth_header, _replay_cache_clear
+
+        package = tmp_path / f"animus-{__version__}-py3-none-any.whl"
+        package.write_bytes(b"current-hub-wheel")
+        monkeypatch.setenv("ANIMUS_PACKAGE_DIR", str(tmp_path))
+        _replay_cache_clear()
+        hub_config.server_secret = "test-shared-secret"
+        headers = create_auth_header(
+            hub_config.server_secret, "panthro-id", body=None, secure=True
+        )
+        response = client.get("/api/peers/package.whl", headers=headers)
+        assert response.status_code == 200
+        assert response.content == b"current-hub-wheel"
+        assert response.headers["x-animus-version"] == __version__
+        assert response.headers["x-animus-package-sha256"] == hashlib.sha256(
+            response.content
+        ).hexdigest()
 
 class TestSecureAuth:
     """v0.4.6 — body-bound HMAC + replay protection at the HTTP layer."""
