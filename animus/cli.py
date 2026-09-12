@@ -27,7 +27,7 @@ from .config import AnimusConfig
 
 app = typer.Typer(
     name="animus",
-    help="🦅 Animus — Copilot Memory Synchronization Network",
+    help="🦅 Animus — AI Memory Synchronization Network",
     no_args_is_help=True,
 )
 console = Console()

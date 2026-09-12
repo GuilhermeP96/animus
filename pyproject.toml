@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animus"
-version = "0.8.3"
-description = "Animus — Copilot + Claude Code Memory Synchronization Network"
+version = "0.8.4"
+description = "Animus — AI Memory Synchronization Network"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
