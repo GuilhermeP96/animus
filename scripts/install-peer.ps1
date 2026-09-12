@@ -20,6 +20,7 @@
 #   $env:ANIMUS_INSTALL_DIR      Default: $env:LOCALAPPDATA\animus
 #   $env:ANIMUS_REPO_URL         Default: https://github.com/GuilhermeP96/animus.git
 #   $env:ANIMUS_BRANCH           Default: master
+#   $env:ANIMUS_PYTHON          Caminho opcional para Python 3.11+
 #   $env:ANIMUS_INSTALL_TASK     yes|no  (default: yes)
 #   $env:ANIMUS_INSTALL_CLAUDE_MCP yes|no (default: yes se houver %USERPROFILE%\.claude.json)
 #     Quando 'yes', acrescenta o servidor MCP 'animus' ao .claude.json para
@@ -40,6 +41,56 @@ function Write-Err  ($m) { Write-Host "X  $m" -ForegroundColor Red; throw $m }
 
 function Test-Cmd($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 
+function Refresh-ProcessPath {
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = "$machinePath;$userPath"
+}
+
+function Test-PythonCandidate($candidate) {
+    if ([string]::IsNullOrWhiteSpace($candidate) -or -not (Test-Path $candidate)) { return $null }
+    try {
+        $result = @(& $candidate -c "import sys; print(sys.executable if sys.version_info >= (3, 11) else '')" 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $result.Count -gt 0) {
+            $resolved = [string]$result[-1]
+            if (-not [string]::IsNullOrWhiteSpace($resolved) -and (Test-Path $resolved)) {
+                return [IO.Path]::GetFullPath($resolved)
+            }
+        }
+    } catch { }
+    return $null
+}
+
+function Find-CompatiblePython($dir) {
+    $candidates = @(
+        $env:ANIMUS_PYTHON,
+        (Join-Path $dir '.venv\Scripts\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe')
+    )
+    $commands = @(Get-Command python.exe -CommandType Application -All -ErrorAction SilentlyContinue)
+    $candidates += @($commands | ForEach-Object { $_.Source })
+
+    foreach ($candidate in $candidates) {
+        $resolved = Test-PythonCandidate $candidate
+        if ($resolved) { return $resolved }
+    }
+
+    if (Test-Cmd py.exe) {
+        foreach ($selector in @('-3.13', '-3.12', '-3.11')) {
+            try {
+                $result = @(& py.exe $selector -c 'import sys; print(sys.executable)' 2>$null)
+                if ($LASTEXITCODE -eq 0 -and $result.Count -gt 0) {
+                    $resolved = Test-PythonCandidate ([string]$result[-1])
+                    if ($resolved) { return $resolved }
+                }
+            } catch { }
+        }
+    }
+    return $null
+}
+
 function Assert-NativeSuccess($operation) {
     if ($LASTEXITCODE -ne 0) {
         Write-Err "$operation falhou (codigo $LASTEXITCODE)"
@@ -47,36 +98,40 @@ function Assert-NativeSuccess($operation) {
 }
 
 # -- 1. Dependencias (Python 3.11+, git) --------------------------------
-function Install-Deps {
+function Install-Deps($dir) {
     Write-Step 'Verificando dependencias...'
 
-    $pythonOk = $false
-    if (Test-Cmd python) {
-        $verOut = (& python --version 2>&1) -join ' '
-        if ($verOut -match '(\d+)\.(\d+)') {
-            $major = [int]$Matches[1]; $minor = [int]$Matches[2]
-            if ($major -gt 3 -or ($major -eq 3 -and $minor -ge 11)) { $pythonOk = $true }
-        }
-    }
-
-    if (-not $pythonOk) {
+    $script:PythonExe = Find-CompatiblePython $dir
+    if (-not $script:PythonExe) {
         if (Test-Cmd winget) {
-            Write-Step 'Instalando Python 3.13 via winget...'
-            winget install --id Python.Python.3.13 --silent --accept-source-agreements --accept-package-agreements | Out-Null
+            Write-Step 'Instalando Python 3.13 para o usuario atual via winget...'
+            winget install --id Python.Python.3.13 --exact --scope user --silent `
+                --accept-source-agreements --accept-package-agreements | Out-Null
+            Assert-NativeSuccess 'winget install Python 3.13'
+            Refresh-ProcessPath
+            $script:PythonExe = Find-CompatiblePython $dir
         } else {
             Write-Err 'Python 3.11+ ausente e winget indisponivel - instale https://www.python.org/'
         }
     }
+    if (-not $script:PythonExe) {
+        Write-Err 'Python 3.13 foi instalado, mas o executavel nao foi localizado.'
+    }
 
     if (-not (Test-Cmd git)) {
         if (Test-Cmd winget) {
-            Write-Step 'Instalando Git via winget...'
-            winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements | Out-Null
+            Write-Step 'Instalando Git para o usuario atual via winget...'
+            winget install --id Git.Git --exact --scope user --silent `
+                --accept-source-agreements --accept-package-agreements | Out-Null
+            Assert-NativeSuccess 'winget install Git'
+            Refresh-ProcessPath
         } else {
             Write-Err 'Git ausente - instale https://git-scm.com/'
         }
     }
-    Write-Ok 'Dependencias OK'
+    if (-not (Test-Cmd git)) { Write-Err 'Git foi instalado, mas nao entrou no PATH do usuario.' }
+    $pythonVersion = (& $script:PythonExe --version 2>&1) -join ' '
+    Write-Ok "Dependencias OK - $pythonVersion em $script:PythonExe"
 }
 
 # -- 2. Clonar / atualizar repo -----------------------------------------
@@ -101,13 +156,42 @@ function Clone-Repo($dir, $url, $branch) {
 # -- 3. venv + pip install -e . -----------------------------------------
 function New-VenvAndInstall($dir) {
     $venv = Join-Path $dir '.venv'
+    if (Test-Path $venv) {
+        $venvPython = Test-PythonCandidate (Join-Path $venv 'Scripts\python.exe')
+        if (-not $venvPython) {
+            Write-Warn 'O virtualenv existente usa Python abaixo de 3.11; ele sera recriado.'
+            Remove-Item -LiteralPath $venv -Recurse -Force
+        }
+    }
     if (-not (Test-Path $venv)) {
         Write-Step 'Criando virtualenv...'
-        & python -m venv $venv
+        & $script:PythonExe -m venv $venv
+        Assert-NativeSuccess 'python -m venv'
     }
     $py  = Join-Path $venv 'Scripts\python.exe'
     & $py -m pip install --quiet --upgrade pip
     Assert-NativeSuccess 'pip upgrade'
+
+    # Atualizacoes Windows interrompidas podem deixar o pacote real e diretorios
+    # temporarios (~nimus*) no site-packages. Eles ganham precedencia sobre a
+    # instalacao editable e produzem uma mistura de modulos de versoes diferentes.
+    & $py -m pip uninstall --yes animus 2>$null | Out-Null
+    $sitePackages = (& $py -c 'import site; print(site.getsitepackages()[0])').Trim()
+    $venvRoot = [IO.Path]::GetFullPath($venv).TrimEnd('\') + '\'
+    $siteRoot = [IO.Path]::GetFullPath($sitePackages).TrimEnd('\') + '\'
+    if (-not $siteRoot.StartsWith($venvRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Err "site-packages inesperado fora do virtualenv: $sitePackages"
+    }
+    $stalePackages = @((Join-Path $sitePackages 'animus'))
+    $stalePackages += @(Get-ChildItem -LiteralPath $sitePackages -Force -Filter '~*' `
+        -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    foreach ($stalePackage in $stalePackages) {
+        if ($stalePackage -and (Test-Path -LiteralPath $stalePackage)) {
+            Write-Step "Removendo residuo de instalacao: $(Split-Path $stalePackage -Leaf)"
+            Remove-Item -LiteralPath $stalePackage -Recurse -Force
+        }
+    }
+
     Write-Step 'Instalando animus (editable)...'
     & $py -m pip install --quiet -e $dir
     Assert-NativeSuccess 'pip install'
@@ -285,13 +369,16 @@ if ([string]::IsNullOrWhiteSpace($secret)) {
 if ([string]::IsNullOrWhiteSpace($secret)) { Write-Err 'server_secret e obrigatorio' }
 if ([string]::IsNullOrWhiteSpace($nodeNm)) { $nodeNm = Read-DefaultedHost 'Node name' $env:COMPUTERNAME }
 if ([string]::IsNullOrWhiteSpace($nodeId)) {
-    $nodeId = (& python -c 'import uuid; print(str(uuid.uuid4())[:12])').Trim()
+    # Resolvido depois de Install-Deps para nao depender do alias `python` do PATH.
+    $nodeId = $null
 }
 
+Install-Deps $dir
+if ([string]::IsNullOrWhiteSpace($nodeId)) {
+    $nodeId = (& $script:PythonExe -c 'import uuid; print(str(uuid.uuid4())[:12])').Trim()
+}
 Write-Step "Plano:  install_dir=$dir  hub=$hub  node_id=$nodeId  service=$task  claude-mcp=$mcp"
 Write-Host ''
-
-Install-Deps
 $maintenance = Enter-PeerMaintenance $dir
 $installCompleted = $false
 try {
@@ -318,3 +405,4 @@ Write-Host "  Ativar venv:   & '$dir\.venv\Scripts\Activate.ps1'"
 Write-Host '  Comandos:      animus stats  /  animus search "..." '
 Write-Host "  Daemon status: Get-ScheduledTask AnimusPeerDaemon"
 Write-Host ''
+exit 0

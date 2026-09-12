@@ -15,6 +15,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Auto-update now prefers the package served by the configured VPS over the
   peer's existing HMAC connection. Git installation remains compatible with
   older hubs that do not advertise a package endpoint.
+- Windows batch installation now runs without elevation, installs Python 3.13
+  and Git for the current user when needed, selects a compatible interpreter
+  explicitly, and removes interrupted-package remnants from the peer venv.
 
 ### Security
 - Package downloads are restricted to the configured Hub origin and verified
