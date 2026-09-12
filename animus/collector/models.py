@@ -67,6 +67,10 @@ class MemoryBatch(BaseModel):
 
     node_id: str
     node_name: str
+    node_version: str = ""
+    hostname: str = ""
+    os_name: str = ""
+    os_version: str = ""
     memories: list[Memory]
     batch_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import platform
+import socket
 from typing import Optional
 
 import httpx
@@ -25,6 +27,14 @@ from .crypto import create_auth_header
 from .sync import SyncProtocol
 
 logger = logging.getLogger("animus.peer")
+
+MIN_UPDATE_CHECK_SECONDS = 60
+MAX_UPDATE_CHECK_SECONDS = 900
+
+
+def effective_update_check_interval(configured: int) -> int:
+    """Clamp update polling to a reliable 1–15 minute operational window."""
+    return max(MIN_UPDATE_CHECK_SECONDS, min(MAX_UPDATE_CHECK_SECONDS, int(configured)))
 
 
 class AnimusPeer:
@@ -95,6 +105,10 @@ class AnimusPeer:
         batch = MemoryBatch(
             node_id=self.config.node_id,
             node_name=self.config.node_name,
+            node_version=__version__,
+            hostname=socket.gethostname(),
+            os_name=platform.system(),
+            os_version=platform.release(),
             memories=memories,
         )
 
@@ -128,7 +142,15 @@ class AnimusPeer:
             return 0
 
         try:
-            body_str = json.dumps({"node_id": self.config.node_id, "limit": 200})
+            body_str = json.dumps({
+                "node_id": self.config.node_id,
+                "node_name": self.config.node_name,
+                "node_version": __version__,
+                "hostname": socket.gethostname(),
+                "os_name": platform.system(),
+                "os_version": platform.release(),
+                "limit": 200,
+            })
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
             async with httpx.AsyncClient(timeout=30) as client:
@@ -180,7 +202,9 @@ class AnimusPeer:
             return
         import time as _time
         now = _time.monotonic()
-        interval = max(60, int(self.config.update_check_interval_seconds))
+        interval = effective_update_check_interval(
+            self.config.update_check_interval_seconds
+        )
         if now - self._last_update_check_monotonic < interval:
             return
         self._last_update_check_monotonic = now
@@ -192,6 +216,11 @@ class AnimusPeer:
         except Exception as exc:
             logger.warning("Self-update check failed: %s", exc)
             return
+        if info is not None:
+            logger.info(
+                "Self-update check: current=v%s latest=v%s restart=%s",
+                __version__, info.latest, restart_required,
+            )
         if restart_required and info is not None:
             logger.info(
                 "Self-update installed v%s (was %s) — re-execing now",
@@ -204,12 +233,16 @@ class AnimusPeer:
         """Run the peer as a background daemon — collect, index, sync on interval."""
         self._running = True
         logger.info(
-            "Animus peer %s (%s) v%s starting — interval=%ds (auto-update=%s)",
+            "Animus peer %s (%s) v%s starting — interval=%ds "
+            "(auto-update=%s, update-check=%ds)",
             self.config.node_id,
             self.config.node_name,
             __version__,
             self.config.collect_interval_seconds,
             self.config.auto_update_enabled,
+            effective_update_check_interval(
+                self.config.update_check_interval_seconds
+            ),
         )
 
         # Check for updates immediately on startup — picks up releases that

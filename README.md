@@ -152,6 +152,10 @@ animus sync
 animus stats
 ```
 
+Cada sync anuncia versão do Animus, hostname e SO ao Hub. Em
+`/admin/peers`, a identificação usa alias configurado, depois hostname e,
+por último, `node_id`.
+
 > ⚠️ **`hub_url` precisa ser alcançável de onde o peer roda.** Se o peer
 > está no host (ou em outra máquina), aponte para a URL pública (HTTPS via
 > Nginx). IPs `172.x` / `10.x` do bridge Docker só funcionam para peers
@@ -262,6 +266,13 @@ Windows (Scheduled Task).
 3. Peer faz `os.execv` (re-exec in-place) ou sai com código `75` (EX_TEMPFAIL);
    o supervisor (systemd `Restart=always` + `SuccessExitStatus=75`, ou
    Scheduled Task com `RestartCount 999`) respawna em segundos.
+4. O check roda no startup e em até 15 minutos. Valores antigos de 6 horas
+   são limitados em runtime para que peers existentes também convirjam.
+
+O ZIP em `/admin/peers` é idempotente: usando o ID de um peer existente ele
+reaproveita sua identidade registrada e serve como pacote de update/reparo.
+O próprio peer também pode obter seu ZIP em `/api/peers/update-kit.zip` usando
+a autenticação HMAC já configurada.
 
 ### Comandos
 
@@ -277,7 +288,7 @@ animus self-update --no-restart
 
 # Desligar o auto-update no daemon
 animus config-set auto_update_enabled false
-animus config-set update_check_interval_seconds 21600   # 6h (default)
+animus config-set update_check_interval_seconds 900     # 15 min (default/max)
 animus config-set update_allow_pre false                # opt-in a --pre
 ```
 

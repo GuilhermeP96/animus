@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -25,7 +26,10 @@ from .admin_auth import (
     set_session_cookie,
     validate_credentials,
 )
-from .app import get_config, get_engine, _connected_peers, _peer_is_online, _peers_with_status
+from .app import (
+    get_config, get_engine, _connected_peers, _peer_is_online,
+    _peers_with_status,
+)
 
 logger = logging.getLogger("animus.admin")
 
@@ -876,6 +880,73 @@ _INSTALLER_KIT_FILES = (
 _INSTALLER_KIT_EXEC = {"install.sh"}
 
 
+def _safe_peer_value(value: str | None, fallback: str) -> str:
+    """Keep peer-derived values safe for env files, ZIP paths and filenames."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", (value or "").strip())
+    return cleaned.strip(".-")[:80] or fallback
+
+
+def _installer_response(
+    request: Request, node_id: str, node_name: str, os_name: str = ""
+) -> StreamingResponse:
+    """Render the idempotent install/update kit for one resolved peer."""
+    config = get_config()
+    secret = config.server_secret or ""
+    if not secret:
+        raise HTTPException(
+            status_code=409,
+            detail="Hub has no ANIMUS_SERVER_SECRET configured — set it in .env first.",
+        )
+    if not _INSTALLER_KIT_DIR.is_dir():
+        raise HTTPException(status_code=500, detail="installer_kit templates missing")
+
+    hub_url = config.hub_url or f"https://{request.url.netloc}"
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    substitutions = {
+        "{{HUB_URL}}": hub_url,
+        "{{SECRET}}": secret,
+        "{{NODE_ID}}": node_id,
+        "{{NODE_NAME}}": node_name,
+        "{{OS_NAME}}": _safe_peer_value(os_name, "unknown"),
+        "{{REPO_URL}}": "https://github.com/GuilhermeP96/animus.git",
+        "{{BRANCH}}": "master",
+        "{{GENERATED_AT}}": generated_at,
+    }
+
+    def render(body: str) -> str:
+        for key, val in substitutions.items():
+            body = body.replace(key, val)
+        return body
+
+    buf = io.BytesIO()
+    folder = f"animus-peer-{node_id}"
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fname in _INSTALLER_KIT_FILES:
+            src = _INSTALLER_KIT_DIR / fname
+            if not src.is_file():
+                logger.warning("installer_kit: missing %s", src)
+                continue
+            info = zipfile.ZipInfo(f"{folder}/{fname}")
+            info.compress_type = zipfile.ZIP_DEFLATED
+            now = datetime.now(timezone.utc).timetuple()
+            info.date_time = (
+                now.tm_year, now.tm_mon, now.tm_mday,
+                now.tm_hour, now.tm_min, now.tm_sec,
+            )
+            mode = 0o755 if fname in _INSTALLER_KIT_EXEC else 0o644
+            info.external_attr = (mode & 0xFFFF) << 16
+            zf.writestr(info, render(src.read_text(encoding="utf-8")))
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="animus-peer-{node_id}.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get("/admin/api/peers/installer.zip", name="admin_installer_zip")
 async def installer_zip(
     request: Request,
@@ -884,70 +955,13 @@ async def installer_zip(
     session: AdminSession = Depends(require_admin),
 ):
     """Build a customized peer installer ZIP with pre-baked hub URL, HMAC
-    secret, node id and node name. Admin-only."""
-    config = get_config()
-    secret = config.server_secret or ""
-    if not secret:
-        raise HTTPException(
-            status_code=409,
-            detail="Hub has no ANIMUS_SERVER_SECRET configured — set it in .env first.",
-        )
-
-    if not _INSTALLER_KIT_DIR.is_dir():
-        raise HTTPException(
-            status_code=500,
-            detail=f"installer_kit templates missing at {_INSTALLER_KIT_DIR}",
-        )
-
-    hub_url = config.hub_url or f"https://{request.url.netloc}"
-    repo_url = "https://github.com/GuilhermeP96/animus.git"
-    branch = "master"
-    nid = (node_id or str(uuid.uuid4())[:12]).strip()
-    nname = (node_name or f"peer-{nid}").strip()
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    substitutions = {
-        "{{HUB_URL}}": hub_url,
-        "{{SECRET}}": secret,
-        "{{NODE_ID}}": nid,
-        "{{NODE_NAME}}": nname,
-        "{{REPO_URL}}": repo_url,
-        "{{BRANCH}}": branch,
-        "{{GENERATED_AT}}": generated_at,
-    }
-
-    def render(text: str) -> str:
-        for key, val in substitutions.items():
-            text = text.replace(key, val)
-        return text
-
-    buf = io.BytesIO()
-    folder = f"animus-peer-{nid}"
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for fname in _INSTALLER_KIT_FILES:
-            src = _INSTALLER_KIT_DIR / fname
-            if not src.is_file():
-                logger.warning("installer_kit: missing %s", src)
-                continue
-            content = render(src.read_text(encoding="utf-8"))
-            arcname = f"{folder}/{fname}"
-            info = zipfile.ZipInfo(arcname)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            now = datetime.now(timezone.utc).timetuple()
-            info.date_time = (now.tm_year, now.tm_mon, now.tm_mday,
-                              now.tm_hour, now.tm_min, now.tm_sec)
-            # POSIX file mode in upper 16 bits of external_attr.
-            mode = 0o755 if fname in _INSTALLER_KIT_EXEC else 0o644
-            info.external_attr = (mode & 0xFFFF) << 16
-            zf.writestr(info, content)
-
-    buf.seek(0)
-    filename = f"animus-peer-{nid}.zip"
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Cache-Control": "no-store",
-    }
-    return StreamingResponse(buf, media_type="application/zip", headers=headers)
+    secret, node id and node name. Known IDs reuse their registered identity."""
+    raw_id = node_id or str(uuid.uuid4())[:12]
+    nid = _safe_peer_value(raw_id, str(uuid.uuid4())[:12])
+    known = _connected_peers.get(nid, {})
+    raw_name = node_name or known.get("node_name") or known.get("hostname")
+    nname = _safe_peer_value(raw_name, f"peer-{nid}")
+    return _installer_response(request, nid, nname, str(known.get("os_name") or ""))
 
 
 # ── Settings ──
