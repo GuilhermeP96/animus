@@ -2,8 +2,8 @@
 REM ============================================================================
 REM Animus Peer Installer Kit — Windows double-click entry point
 REM ----------------------------------------------------------------------------
-REM Self-elevates (UAC) and runs install.ps1 sitting next to it. peer.env in
-REM the same folder provides hub_url + secret + node_id automatically.
+REM Runs install.ps1 without administrator privileges. Python 3.13 and Git are
+REM installed for the current user when needed. peer.env provides configuration.
 REM ============================================================================
 setlocal
 cd /d "%~dp0"
@@ -20,14 +20,6 @@ if not exist "%PS1_FILE%" (
     echo precisam ficar na MESMA pasta.
     pause
     exit /b 1
-)
-
-REM ── Self-elevate (UAC) ─────────────────────────────────────────────
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [INFO] Solicitando privilegios de administrador (UAC)...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -WorkingDirectory '%~dp0' -Verb RunAs"
-    exit /b 0
 )
 
 echo.
