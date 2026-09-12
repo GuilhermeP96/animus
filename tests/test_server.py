@@ -274,8 +274,18 @@ class TestPeersEndpoint:
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store"
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            env_name = next(name for name in archive.namelist() if name.endswith("/peer.env"))
-            peer_env = archive.read(env_name).decode()
+            names = archive.namelist()
+            assert names == [
+                "peer.env", "install.sh", "install.ps1", "install.bat",
+                "COPILOT.md", "README.md",
+            ]
+            assert all("/" not in name for name in names)
+            installer_bytes = archive.read("install.ps1")
+            assert installer_bytes.startswith(b"\xef\xbb\xbf")
+            installer = installer_bytes.decode("utf-8-sig")
+            assert "Get-ScheduledTask -TaskName 'AnimusPeerDaemon'" in installer
+            assert "exit $installExitCode" in installer
+            peer_env = archive.read("peer.env").decode()
         assert "ANIMUS_NODE_ID=panthro-id" in peer_env
         assert "ANIMUS_NODE_NAME=Panthro" in peer_env
         assert "ANIMUS_OS_HINT=Windows" in peer_env

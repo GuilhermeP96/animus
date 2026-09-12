@@ -14,18 +14,17 @@ The flow is intentionally tiny:
        }
 
 2. The peer compares ``latest`` against :mod:`animus.__version__`. If the
-   hub is newer, the peer runs
+   hub is newer, it prepares
 
        pip install --upgrade --quiet <install_url>@<git_ref>
 
-   into the same interpreter (``sys.executable`` → ``…/.venv/bin/pip``).
-   ``pip`` is invoked as a subprocess because importing it inside the
-   running process is unsupported.
+   for the same interpreter. On POSIX, ``pip`` runs synchronously. On Windows,
+   a detached helper waits for the daemon to exit, closes legacy Animus console
+   launchers that still hold the venv, and only then invokes pip.
 
-3. On success, the peer re-execs itself with ``os.execv(sys.executable,
-   sys.argv)``. Under systemd / launchd / Scheduled Task the unit's restart
-   policy is what eventually brings the new code online — re-exec is just
-   the fast path that avoids waiting for the supervisor.
+3. On POSIX success, the peer re-execs itself with ``os.execv``. A Windows
+   peer exits with code 75 so the helper can replace locked files; its Scheduled
+   Task restarts the daemon with the new package.
 
 The module is conservative on purpose:
 
@@ -43,10 +42,12 @@ The module is conservative on purpose:
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -64,6 +65,11 @@ logger = logging.getLogger("animus.updater")
 RESTART_EXIT_CODE = 75  # EX_TEMPFAIL — "try again later"
 
 DEFAULT_REPO = "git+https://github.com/GuilhermeP96/animus.git"
+
+# On Windows pip cannot replace a console launcher while that launcher is the
+# running daemon (or an MCP process). The update is therefore handed to a
+# detached PowerShell helper and the caller exits with RESTART_EXIT_CODE.
+_deferred_update_pending = False
 
 
 @dataclass
@@ -172,6 +178,64 @@ def _is_writable_install() -> bool:
         return False
 
 
+def update_is_deferred() -> bool:
+    """Whether this process must exit so a Windows update helper can proceed."""
+    return _deferred_update_pending
+
+
+def _ps_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _defer_windows_update(cmd: list[str], latest: str) -> bool:
+    """Launch an updater that waits for this process and releases EXE locks."""
+    global _deferred_update_pending
+
+    scripts_dir = Path(sys.executable).parent
+    log_path = Path(tempfile.gettempdir()) / "animus-self-update.log"
+    command = " ".join(_ps_quote(part) for part in cmd)
+    script = f"""
+$ErrorActionPreference = 'Continue'
+$sourcePid = {os.getpid()}
+while (Get-Process -Id $sourcePid -ErrorAction SilentlyContinue) {{
+    Start-Sleep -Milliseconds 200
+}}
+Start-Sleep -Milliseconds 500
+$scriptsDir = {_ps_quote(str(scripts_dir))}
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {{
+        $_.ExecutablePath -and
+        $_.ExecutablePath.StartsWith($scriptsDir, [StringComparison]::OrdinalIgnoreCase) -and
+        $_.Name -like 'animus*.exe'
+    }} | ForEach-Object {{
+        & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null
+    }}
+& {command} *>> {_ps_quote(str(log_path))}
+$rc = $LASTEXITCODE
+Add-Content -LiteralPath {_ps_quote(str(log_path))} -Value ({_ps_quote(f'update v{latest} exit=')} + $rc)
+exit $rc
+"""
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+        subprocess, "DETACHED_PROCESS", 0
+    )
+    try:
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
+        )
+    except OSError as exc:
+        logger.error("Could not launch deferred Windows updater: %s", exc)
+        return False
+    _deferred_update_pending = True
+    logger.info("Windows self-update staged; helper log: %s", log_path)
+    return True
+
+
 def apply_update(info: VersionInfo, *, allow_pre: bool = False) -> bool:
     """Run ``pip install --upgrade`` for the new version. Returns success."""
     if not _is_writable_install():
@@ -187,10 +251,13 @@ def apply_update(info: VersionInfo, *, allow_pre: bool = False) -> bool:
         return False
 
     target = f"{info.install_url}@{info.git_ref}" if "@" not in info.install_url else info.install_url
-    cmd = [str(pip), "install", "--upgrade", "--quiet", "--disable-pip-version-check", target]
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet",
+           "--disable-pip-version-check", target]
     if allow_pre:
         cmd.insert(-1, "--pre")
     logger.info("Self-update → %s", target)
+    if os.name == "nt":
+        return _defer_windows_update(cmd, info.latest)
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=600, check=False,
@@ -217,6 +284,9 @@ def restart_in_place() -> None:
     restarts us via its own policy if execv refuses (Windows + frozen
     bundles do this; venv installs do not).
     """
+    if update_is_deferred():
+        logger.info("Exiting with %d so the Windows update helper can run", RESTART_EXIT_CODE)
+        sys.exit(RESTART_EXIT_CODE)
     try:
         os.execv(sys.executable, [sys.executable, *sys.argv])
     except OSError as exc:

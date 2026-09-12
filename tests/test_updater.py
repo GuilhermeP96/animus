@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -147,8 +146,13 @@ class TestApplyUpdateGuards:
         fake_pip.write_text("#!/bin/sh\nexit 1\n")
         fake_pip.chmod(0o755)
         with patch.object(updater, "_is_writable_install", return_value=True), \
-             patch.object(updater, "_pip_exe", return_value=fake_pip):
-            assert updater.apply_update(info) is False
+             patch.object(updater, "_pip_exe", return_value=fake_pip), \
+             patch.object(
+                 updater.subprocess, "run",
+                 return_value=type("Result", (), {"returncode": 1, "stderr": "failed", "stdout": ""})(),
+             ):
+            with patch.object(updater.os, "name", "posix"):
+                assert updater.apply_update(info) is False
 
     def test_subprocess_success_returns_true(self, tmp_path):
         from animus.network import updater
@@ -157,11 +161,50 @@ class TestApplyUpdateGuards:
         fake_pip.write_text("#!/bin/sh\nexit 0\n")
         fake_pip.chmod(0o755)
         with patch.object(updater, "_is_writable_install", return_value=True), \
-             patch.object(updater, "_pip_exe", return_value=fake_pip):
+             patch.object(updater, "_pip_exe", return_value=fake_pip), \
+             patch.object(
+                 updater.subprocess, "run",
+                 return_value=type("Result", (), {"returncode": 0, "stderr": "", "stdout": ""})(),
+             ):
+            with patch.object(updater.os, "name", "posix"):
+                assert updater.apply_update(info) is True
+
+    def test_windows_update_is_deferred_until_process_exits(self, tmp_path):
+        import base64
+        from animus.network import updater
+
+        info = VersionInfo(latest="99.0.0")
+        fake_pip = tmp_path / "pip.exe"
+        fake_pip.write_text("")
+        updater._deferred_update_pending = False
+        with patch.object(updater, "_is_writable_install", return_value=True), \
+             patch.object(updater, "_pip_exe", return_value=fake_pip), \
+             patch.object(updater.os, "name", "nt"), \
+             patch.object(updater.subprocess, "Popen") as popen:
             assert updater.apply_update(info) is True
+
+        args = popen.call_args.args[0]
+        script = base64.b64decode(args[-1]).decode("utf-16le")
+        assert args[:3] == ["powershell.exe", "-NoProfile", "-NonInteractive"]
+        assert "Get-Process -Id" in script
+        assert "animus*.exe" in script
+        assert "-m' 'pip' 'install" in script
+        assert updater.update_is_deferred() is True
+        updater._deferred_update_pending = False
 
 
 class TestRestartInPlace:
+    def test_deferred_windows_update_exits_without_exec(self):
+        from animus.network import updater
+        updater._deferred_update_pending = True
+        try:
+            with patch("os.execv") as execv, pytest.raises(SystemExit) as exc:
+                updater.restart_in_place()
+            assert exc.value.code == RESTART_EXIT_CODE
+            execv.assert_not_called()
+        finally:
+            updater._deferred_update_pending = False
+
     def test_falls_back_to_exit_when_execv_fails(self):
         from animus.network import updater
         with patch("os.execv", side_effect=OSError("nope")), \

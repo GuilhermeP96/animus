@@ -4,6 +4,17 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] — 2026-09-12 — Reliable Windows peer upgrades
+
+### Fixed
+- Windows install/update kits now extract without a duplicate peer directory,
+  emit PowerShell scripts with compatible encoding, preserve installer failure
+  exit codes, release venv executable locks, and restore the prior daemon when
+  an update fails.
+- Windows auto-update now hands package replacement to a detached helper after
+  the daemon exits, avoiding locks from legacy `animus.exe` tasks and MCP
+  launchers.
+
 ## [0.8.4] — 2026-09-12 — Product identity
 
 ### Changed

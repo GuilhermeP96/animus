@@ -261,12 +261,15 @@ Windows (Scheduled Task).
      "notes": ""
    }
    ```
-2. Peer compara `latest` com `animus.__version__`. Se for mais nova, roda
+2. Peer compara `latest` com `animus.__version__`. Se for mais nova, prepara
    `pip install --upgrade <install_url>@<git_ref>` no mesmo venv.
-3. Peer faz `os.execv` (re-exec in-place) ou sai com código `75` (EX_TEMPFAIL);
-   o supervisor (systemd `Restart=always` + `SuccessExitStatus=75`, ou
-   Scheduled Task com `RestartCount 999`) respawna em segundos.
-4. O check roda no startup e em até 15 minutos. Valores antigos de 6 horas
+3. Em Linux/macOS o upgrade roda diretamente e o peer faz `os.execv`. No
+   Windows, um helper desacoplado espera o daemon sair, libera launchers
+   legados/MCP que estejam bloqueando o venv, executa o `pip` e registra o
+   resultado em `%TEMP%\animus-self-update.log`.
+4. O peer sai com código `75` (EX_TEMPFAIL) quando precisa do supervisor;
+   systemd ou a Scheduled Task inicia a versão nova.
+5. O check roda no startup e em até 15 minutos. Valores antigos de 6 horas
    são limitados em runtime para que peers existentes também convirjam.
 
 O ZIP em `/admin/peers` é idempotente: usando o ID de um peer existente ele
@@ -283,7 +286,7 @@ animus self-update --check
 # Forçar reinstalação (mesmo já estando na versão atual — útil pós-corrupção)
 animus self-update --force
 
-# Atualizar sem reiniciar (scripts)
+# Atualizar sem reiniciar (scripts; no Windows a saída breve é obrigatória)
 animus self-update --no-restart
 
 # Desligar o auto-update no daemon

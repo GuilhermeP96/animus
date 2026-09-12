@@ -919,14 +919,16 @@ def _installer_response(
         return body
 
     buf = io.BytesIO()
-    folder = f"animus-peer-{node_id}"
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for fname in _INSTALLER_KIT_FILES:
             src = _INSTALLER_KIT_DIR / fname
             if not src.is_file():
                 logger.warning("installer_kit: missing %s", src)
                 continue
-            info = zipfile.ZipInfo(f"{folder}/{fname}")
+            # Explorer already creates a directory from the ZIP filename when
+            # using "Extract All". Keep the archive flat to avoid producing
+            # animus-peer-ID/animus-peer-ID on Windows.
+            info = zipfile.ZipInfo(fname)
             info.compress_type = zipfile.ZIP_DEFLATED
             now = datetime.now(timezone.utc).timetuple()
             info.date_time = (
@@ -935,7 +937,11 @@ def _installer_response(
             )
             mode = 0o755 if fname in _INSTALLER_KIT_EXEC else 0o644
             info.external_attr = (mode & 0xFFFF) << 16
-            zf.writestr(info, render(src.read_text(encoding="utf-8")))
+            body = render(src.read_text(encoding="utf-8"))
+            # Windows PowerShell 5 treats UTF-8 without a BOM as an ANSI code
+            # page. A BOM prevents accented text from corrupting PS syntax.
+            encoding = "utf-8-sig" if src.suffix.lower() == ".ps1" else "utf-8"
+            zf.writestr(info, body.encode(encoding))
     buf.seek(0)
     return StreamingResponse(
         buf,

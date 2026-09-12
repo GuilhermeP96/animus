@@ -657,6 +657,7 @@ def self_update_cmd(
     from . import __version__
     from .network.updater import (
         apply_update, fetch_latest, is_newer, restart_in_place,
+        update_is_deferred,
     )
 
     config = AnimusConfig.load()
@@ -686,8 +687,14 @@ def self_update_cmd(
     ok = apply_update(info, allow_pre=config.update_allow_pre)
     if not ok:
         raise typer.Exit(4)
-    console.print(f"[green]✓ Updated to v{info.latest}[/]")
-    if not no_restart:
+    deferred = update_is_deferred()
+    if deferred:
+        console.print(f"[green]✓ Update to v{info.latest} staged.[/]")
+    else:
+        console.print(f"[green]✓ Updated to v{info.latest}[/]")
+    if not no_restart or deferred:
+        if no_restart and deferred:
+            console.print("[yellow]Windows must exit briefly to release executable locks.[/]")
         console.print("[dim]Restarting…[/]")
         restart_in_place()
 
