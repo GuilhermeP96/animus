@@ -63,7 +63,8 @@ de tokens, senhas, chaves de API e chaves privadas, independentemente dos metada
 
 1. Abrir a única entrada `00 - Início`.
 2. Escolher o mapa do projeto.
-3. Usar `animus_obsidian_search`, que retorna apenas `verificado` por padrão.
+3. Usar `animus_obsidian_search`, que pesquisa notas humanas e exportações
+   gerenciadas, retornando apenas `verificado` por padrão.
 4. Incluir candidatos somente como pista explícita; depois usar `animus_search` para evidência bruta.
 5. Comparar origem e data; registrar conflitos em vez de escolher silenciosamente.
 6. Citar o título ou `memory_id` que sustentou a ação.

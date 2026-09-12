@@ -322,6 +322,40 @@ def test_dataset_requires_verified_notes_and_explicit_sft_approval(obsidian_conf
     assert [message["role"] for message in record["messages"]] == ["user", "assistant"]
 
 
+def test_search_knowledge_includes_verified_human_notes(obsidian_config, engine):
+    config, vault = obsidian_config
+    project = vault / "Projetos"
+    project.mkdir()
+    human = project / "Datano.md"
+    human.write_text(
+        "---\n"
+        "title: Datano\n"
+        "projeto: Datano\n"
+        "status: verificado\n"
+        "sensibilidade: interno\n"
+        "tags: [postgresql, arquitetura]\n"
+        "---\n"
+        "O banco canônico é PostgreSQL local.\n",
+        encoding="utf-8",
+    )
+    hidden = vault / ".obsidian"
+    hidden.mkdir()
+    (hidden / "Interna.md").write_text(
+        "---\nstatus: verificado\n---\nPostgreSQL oculto\n", encoding="utf-8"
+    )
+
+    expected_id = ObsidianCollector(config).collect_all()[0].id
+    found = ObsidianManager(config, engine).search_knowledge(
+        "knowledge", "PostgreSQL local", project="Datano"
+    )
+
+    assert len(found) == 1
+    assert found[0]["memory_id"] == expected_id
+    assert found[0]["title"] == "Datano"
+    assert found[0]["path"] == "Projetos/Datano.md"
+    assert found[0]["warning"] == ""
+
+
 def test_mcp_definitions_expose_obsidian_operations():
     from animus.mcp import AnimusMCPServer
 
