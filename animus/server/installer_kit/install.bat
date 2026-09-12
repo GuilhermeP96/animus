@@ -9,6 +9,11 @@ setlocal
 cd /d "%~dp0"
 
 set "PS1_FILE=%~dp0install.ps1"
+REM Older ZIPs contained an extra animus-peer-* directory. Prefer the complete
+REM nested kit when Explorer extracted one ZIP-named folder into another.
+for /d %%D in ("%~dp0animus-peer-*") do (
+    if exist "%%~fD\install.ps1" if exist "%%~fD\peer.env" set "PS1_FILE=%%~fD\install.ps1"
+)
 if not exist "%PS1_FILE%" (
     echo [ERROR] install.ps1 nao encontrado em "%PS1_FILE%".
     echo Voce extraiu o ZIP por completo? install.bat, install.ps1 e peer.env
@@ -21,7 +26,7 @@ REM ── Self-elevate (UAC) ────────────────�
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [INFO] Solicitando privilegios de administrador (UAC)...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -WorkingDirectory '%~dp0' -Verb RunAs"
     exit /b 0
 )
 
