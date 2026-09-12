@@ -4,6 +4,12 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] — 2026-09-12 — Product identity
+
+### Changed
+- Canonical product description is now **Animus — AI Memory Synchronization
+  Network**, reflecting support beyond any single assistant provider.
+
 ## [0.8.3] — 2026-09-12 — Reliable peer updates and identity
 
 ### Added
@@ -641,4 +647,4 @@ Security hardening, test suite expansion & quality improvements.
 
 ## [0.1.0]
 
-Initial release — Animus: Copilot Memory Synchronization Network.
+Initial release — Animus: AI Memory Synchronization Network.

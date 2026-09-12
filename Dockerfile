@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 LABEL maintainer="datano" \
-    description="Animus Hub — Copilot Memory Synchronization Server"
+    description="Animus Hub — AI Memory Synchronization Server"
 
 WORKDIR /app
 
