@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import hashlib
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -49,11 +51,13 @@ class TestVersionInfo:
             "channel": "beta",
             "install_url": "git+https://example.com/repo.git",
             "git_ref": "v0.6.0-rc.1",
+            "package_url": "/api/peers/package.whl",
             "min_compat": "0.5.0",
             "notes": "Big release",
         })
         assert v.channel == "beta"
         assert v.git_ref == "v0.6.0-rc.1"
+        assert v.package_url == "/api/peers/package.whl"
         assert v.min_compat == "0.5.0"
 
 
@@ -119,7 +123,57 @@ class TestCheckAndApply:
         with patch("animus.network.updater.fetch_latest", return_value=info), \
              patch("animus.network.updater.apply_update", return_value=True) as apply:
             assert check_and_apply(config)[0] is True
-            apply.assert_called_once_with(info, allow_pre=True)
+            apply.assert_called_once_with(info, allow_pre=True, config=config)
+
+
+class TestHubPackageDownload:
+    def test_downloads_over_authenticated_peer_channel(self, config):
+        from animus.network import updater
+
+        config.hub_url = "https://hub.example"
+        content = b"wheel-content"
+        response = SimpleNamespace(
+            status_code=200,
+            content=content,
+            headers={
+                "X-Animus-Package-Filename": "animus-9.0.0-py3-none-any.whl",
+                "X-Animus-Package-SHA256": hashlib.sha256(content).hexdigest(),
+                "X-Animus-Version": "9.0.0",
+            },
+        )
+        client = MagicMock()
+        client.__enter__.return_value.get.return_value = response
+        with patch.object(updater.httpx, "Client", return_value=client):
+            result = updater.download_hub_package(
+                config,
+                VersionInfo(latest="9.0.0", package_url="/api/peers/package.whl"),
+            )
+        assert result is not None
+        assert result.read_bytes() == content
+        _, kwargs = client.__enter__.return_value.get.call_args
+        assert kwargs["headers"]["X-Animus-Node"] == config.node_id
+        assert "X-Animus-Signature" in kwargs["headers"]
+
+    def test_rejects_checksum_mismatch(self, config):
+        from animus.network import updater
+
+        config.hub_url = "https://hub.example"
+        response = SimpleNamespace(
+            status_code=200,
+            content=b"tampered",
+            headers={
+                "X-Animus-Package-Filename": "animus-9.0.0-py3-none-any.whl",
+                "X-Animus-Package-SHA256": "0" * 64,
+                "X-Animus-Version": "9.0.0",
+            },
+        )
+        client = MagicMock()
+        client.__enter__.return_value.get.return_value = response
+        with patch.object(updater.httpx, "Client", return_value=client):
+            assert updater.download_hub_package(
+                config,
+                VersionInfo(latest="9.0.0", package_url="/api/peers/package.whl"),
+            ) is None
 
 
 # ── apply_update guards ─────────────────────────────────────────────────
@@ -243,6 +297,7 @@ class TestVersionEndpoint:
         assert data["channel"] == "stable"
         assert data["install_url"].startswith("git+")
         assert data["git_ref"] in {"main", "master"}
+        assert data["package_url"] == "/api/peers/package.whl"
 
     def test_env_overrides(self, version_client, monkeypatch):
         monkeypatch.setenv("ANIMUS_PIN_VERSION", "0.4.99")
@@ -255,3 +310,4 @@ class TestVersionEndpoint:
         assert data["channel"] == "beta"
         assert data["git_ref"] == "v0.4.99"
         assert data["notes"] == "Pin for QA"
+        assert data["package_url"] == ""

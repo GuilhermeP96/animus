@@ -14,7 +14,9 @@ The flow is intentionally tiny:
        }
 
 2. The peer compares ``latest`` against :mod:`animus.__version__`. If the
-   hub is newer, it prepares
+   hub is newer, it downloads the Hub's authenticated ``package_url``, verifies
+   its version and SHA-256 metadata, and prepares that wheel for installation.
+   Older hubs fall back to
 
        pip install --upgrade --quiet <install_url>@<git_ref>
 
@@ -43,19 +45,24 @@ The module is conservative on purpose:
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from .. import __version__ as CURRENT_VERSION
 from ..config import AnimusConfig
+from .crypto import create_auth_header
 
 logger = logging.getLogger("animus.updater")
 
@@ -79,6 +86,7 @@ class VersionInfo:
     channel: str = "stable"
     install_url: str = DEFAULT_REPO
     git_ref: str = "main"
+    package_url: str = ""
     notes: str = ""
 
     @classmethod
@@ -89,6 +97,7 @@ class VersionInfo:
             channel=str(data.get("channel") or "stable").strip(),
             install_url=str(data.get("install_url") or DEFAULT_REPO).strip(),
             git_ref=str(data.get("git_ref") or "main").strip(),
+            package_url=str(data.get("package_url") or "").strip(),
             notes=str(data.get("notes") or "").strip(),
         )
 
@@ -178,6 +187,52 @@ def _is_writable_install() -> bool:
         return False
 
 
+def download_hub_package(config: AnimusConfig, info: VersionInfo) -> Path | None:
+    """Download and verify the Hub's current wheel over the peer HMAC channel."""
+    if not info.package_url or not config.hub_url or not config.server_secret:
+        return None
+    hub = config.hub_url.rstrip("/") + "/"
+    url = urljoin(hub, info.package_url)
+    hub_origin = urlparse(hub)
+    package_origin = urlparse(url)
+    if (package_origin.scheme, package_origin.netloc) != (hub_origin.scheme, hub_origin.netloc):
+        logger.error("Refusing package URL outside the configured Hub origin")
+        return None
+    headers = create_auth_header(config.server_secret, config.node_id, body=None)
+    try:
+        with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+            response = client.get(url, headers=headers)
+        if response.status_code != 200:
+            logger.error("Hub package download failed: HTTP %d", response.status_code)
+            return None
+    except Exception as exc:
+        logger.error("Hub package download failed: %s", exc)
+        return None
+
+    filename = response.headers.get("X-Animus-Package-Filename", "")
+    served_version = response.headers.get("X-Animus-Version", "")
+    if served_version != info.latest:
+        logger.error("Hub package version mismatch: expected=%s got=%s", info.latest, served_version)
+        return None
+    if not re.fullmatch(r"animus-[A-Za-z0-9_.+-]+\.whl", filename):
+        logger.error("Hub returned an invalid package filename")
+        return None
+    expected = response.headers.get("X-Animus-Package-SHA256", "").lower()
+    actual = hashlib.sha256(response.content).hexdigest()
+    if not expected or not hmac.compare_digest(expected, actual):
+        logger.error("Hub package checksum mismatch")
+        return None
+
+    update_dir = config.data_dir / "updates"
+    update_dir.mkdir(parents=True, exist_ok=True)
+    destination = update_dir / filename
+    temporary = update_dir / f".{filename}.tmp"
+    temporary.write_bytes(response.content)
+    temporary.replace(destination)
+    logger.info("Downloaded signed Hub package: %s", destination)
+    return destination
+
+
 def update_is_deferred() -> bool:
     """Whether this process must exit so a Windows update helper can proceed."""
     return _deferred_update_pending
@@ -236,7 +291,12 @@ exit $rc
     return True
 
 
-def apply_update(info: VersionInfo, *, allow_pre: bool = False) -> bool:
+def apply_update(
+    info: VersionInfo,
+    *,
+    allow_pre: bool = False,
+    config: AnimusConfig | None = None,
+) -> bool:
     """Run ``pip install --upgrade`` for the new version. Returns success."""
     if not _is_writable_install():
         logger.error(
@@ -250,7 +310,19 @@ def apply_update(info: VersionInfo, *, allow_pre: bool = False) -> bool:
         logger.error("Refusing self-update: no pip alongside %s", sys.executable)
         return False
 
-    target = f"{info.install_url}@{info.git_ref}" if "@" not in info.install_url else info.install_url
+    if info.package_url:
+        if config is None:
+            logger.error("Hub package update requires peer configuration")
+            return False
+        package = download_hub_package(config, info)
+        if package is None:
+            return False
+        target = str(package)
+    else:
+        target = (
+            f"{info.install_url}@{info.git_ref}"
+            if "@" not in info.install_url else info.install_url
+        )
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet",
            "--disable-pip-version-check", target]
     if allow_pre:
@@ -319,5 +391,5 @@ def check_and_apply(
         return False, info
     if dry_run:
         return True, info
-    ok = apply_update(info, allow_pre=config.update_allow_pre)
+    ok = apply_update(info, allow_pre=config.update_allow_pre, config=config)
     return (ok, info)
