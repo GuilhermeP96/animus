@@ -67,13 +67,14 @@ $repo   = if ($env:ANIMUS_REPO_URL) { $env:ANIMUS_REPO_URL } else { 'https://git
 $branch = if ($env:ANIMUS_BRANCH)   { $env:ANIMUS_BRANCH }   else { 'master' }
 $rawBase = ($repo -replace '\.git$', '') -replace 'github\.com', 'raw.githubusercontent.com'
 $url    = "$rawBase/$branch/scripts/install-peer.ps1"
+$installedSource = Join-Path $installDir 'scripts\install-peer.ps1'
 
 Write-Host ''
 Write-Host 'Animus Peer - self-install (Windows)' -ForegroundColor Magenta
 Write-Host "    hub:     $env:ANIMUS_HUB_URL"
 Write-Host "    node_id: $env:ANIMUS_NODE_ID"
 Write-Host "    name:    $env:ANIMUS_NODE_NAME"
-Write-Host "    source:  $url"
+Write-Host "    source:  local checkout (fallback: $url)"
 Write-Host ''
 
 # Download and run the canonical installer with env vars already set. Preserve
@@ -81,10 +82,23 @@ Write-Host ''
 $tmp = Join-Path $env:TEMP "install-peer-$([guid]::NewGuid().Guid).ps1"
 $installExitCode = 1
 try {
-    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+    if ((Test-Path (Join-Path $installDir '.git')) -and (Test-Path $installedSource)) {
+        # Existing peers already have an authenticated clone. Prefer it because
+        # private GitHub repositories return 404 from raw.githubusercontent.com.
+        & git -C $installDir fetch --quiet origin $branch
+        if ($LASTEXITCODE -ne 0) { throw "git fetch failed (code $LASTEXITCODE)" }
+        & git -C $installDir checkout --quiet $branch
+        if ($LASTEXITCODE -ne 0) { throw "git checkout failed (code $LASTEXITCODE)" }
+        & git -C $installDir pull --quiet --ff-only origin $branch
+        if ($LASTEXITCODE -ne 0) { throw "git pull failed (code $LASTEXITCODE)" }
+        $source = $installedSource
+    } else {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+        $source = $tmp
+    }
     # GitHub raw serves UTF-8 without BOM. Normalize it for Windows PowerShell
     # 5, which otherwise decodes non-ASCII script text using the ANSI codepage.
-    $body = [IO.File]::ReadAllText($tmp, [Text.Encoding]::UTF8)
+    $body = [IO.File]::ReadAllText($source, [Text.Encoding]::UTF8)
     [IO.File]::WriteAllText($tmp, $body, (New-Object Text.UTF8Encoding($true)))
     & powershell -NoProfile -ExecutionPolicy Bypass -File $tmp
     $installExitCode = $LASTEXITCODE
