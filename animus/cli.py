@@ -684,7 +684,7 @@ def self_update_cmd(
         console.print("[green]✓ Already up-to-date.[/]")
         return
 
-    ok = apply_update(info, allow_pre=config.update_allow_pre)
+    ok = apply_update(info, allow_pre=config.update_allow_pre, config=config)
     if not ok:
         raise typer.Exit(4)
     deferred = update_is_deferred()

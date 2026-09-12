@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import re
 import time
 from collections import defaultdict
@@ -14,11 +16,9 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from ..collector.models import Memory, MemoryType
 from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
 from ..network.crypto import verify_auth_header
@@ -373,7 +373,6 @@ async def api_version():
     older release (``ANIMUS_PIN_VERSION=0.4.15``) or stage a roll-out
     (``ANIMUS_PIN_GIT_REF=v0.5.0-rc.1``) without rebuilding the image.
     """
-    import os
     from .. import __version__
 
     latest = os.environ.get("ANIMUS_PIN_VERSION", __version__)
@@ -386,6 +385,7 @@ async def api_version():
             "git+https://github.com/GuilhermeP96/animus.git",
         ),
         "git_ref": os.environ.get("ANIMUS_GIT_REF", "main"),
+        "package_url": "/api/peers/package.whl" if latest == __version__ else "",
         "notes": os.environ.get("ANIMUS_RELEASE_NOTES", ""),
     }
 
@@ -518,6 +518,36 @@ async def peer_update_kit(
     nname = _safe_peer_value(raw_name, f"peer-{nid}")
     return _installer_response(
         request, nid, nname, str(known.get("os_name") or "")
+    )
+
+
+@app.get("/api/peers/package.whl", name="peer_update_package")
+async def peer_update_package(
+    authenticated_node_id: str = Depends(verify_peer),
+):
+    """Serve the exact wheel baked into this Hub image to an authenticated peer."""
+    from .. import __version__
+
+    package_dir = Path(os.environ.get("ANIMUS_PACKAGE_DIR", "/opt/animus-packages"))
+    normalized = __version__.replace("-", "_")
+    candidates = sorted(package_dir.glob(f"animus-{normalized}-*.whl"))
+    if not candidates:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Hub package for Animus {__version__} is not available",
+        )
+    package = candidates[-1]
+    digest = hashlib.sha256(package.read_bytes()).hexdigest()
+    return FileResponse(
+        package,
+        media_type="application/octet-stream",
+        filename=package.name,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Animus-Version": __version__,
+            "X-Animus-Package-Filename": package.name,
+            "X-Animus-Package-SHA256": digest,
+        },
     )
 
 

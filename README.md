@@ -256,13 +256,16 @@ Windows (Scheduled Task).
      "latest": "0.5.0",
      "min_compat": "",
      "channel": "stable",
+     "package_url": "/api/peers/package.whl",
      "install_url": "git+https://github.com/GuilhermeP96/animus.git",
      "git_ref": "main",
      "notes": ""
    }
    ```
-2. Peer compara `latest` com `animus.__version__`. Se for mais nova, prepara
-   `pip install --upgrade <install_url>@<git_ref>` no mesmo venv.
+2. Peer compara `latest` com `animus.__version__`. Se for mais nova, autentica
+   com o HMAC já configurado e baixa `/api/peers/package.whl` da própria VPS.
+   Versão, origem e SHA-256 são validados antes do `pip install`. Hubs antigos
+   continuam usando `install_url`/`git_ref` como fallback.
 3. Em Linux/macOS o upgrade roda diretamente e o peer faz `os.execv`. No
    Windows, um helper desacoplado espera o daemon sair, libera launchers
    legados/MCP que estejam bloqueando o venv, executa o `pip` e registra o
@@ -275,7 +278,9 @@ Windows (Scheduled Task).
 O ZIP em `/admin/peers` é idempotente: usando o ID de um peer existente ele
 reaproveita sua identidade registrada e serve como pacote de update/reparo.
 O próprio peer também pode obter seu ZIP em `/api/peers/update-kit.zip` usando
-a autenticação HMAC já configurada.
+a autenticação HMAC já configurada. A imagem Docker do Hub mantém em
+`/opt/animus-packages` o wheel da versão que está executando, portanto o pacote
+servido e o `latest` permanecem alinhados a cada deploy.
 
 ### Comandos
 
