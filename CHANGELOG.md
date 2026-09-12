@@ -4,6 +4,14 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] — 2026-09-12 — Authenticated installer source
+
+### Fixed
+- Existing Windows peers now update the installer from their authenticated
+  local Git checkout instead of depending on unauthenticated GitHub Raw, which
+  returns HTTP 404 for private repositories. New installs retain the Raw
+  fallback.
+
 ## [0.8.5] — 2026-09-12 — Reliable Windows peer upgrades
 
 ### Fixed
