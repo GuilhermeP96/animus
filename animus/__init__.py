@@ -1,4 +1,4 @@
-"""Animus — Copilot + Claude Code Memory Synchronization Network.
+"""Animus — AI Memory Synchronization Network.
 
 Inspired by the Animus from Assassin's Creed: relive, search, and synchronize
 the "genetic memories" of your AI coding sessions across all your machines.
@@ -9,4 +9,4 @@ that one; the updater uses this one to compare against the hub's declared
 ``latest``).
 """
 
-__version__ = "0.8.3"
+__version__ = "0.8.4"
