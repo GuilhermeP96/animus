@@ -217,10 +217,9 @@ class AnimusConfig(BaseSettings):
 
     # ── Self-update ──
     auto_update_enabled: bool = True
-    # How often the daemon asks the hub "anything new?". Defaults to 6h —
-    # short enough that a release rolls out within a workday, long enough
-    # that a chatty daemon doesn't hammer the hub.
-    update_check_interval_seconds: int = 21_600
+    # How often the daemon asks the hub "anything new?". Runtime clamps old
+    # or custom values to 60–900s so existing peers also converge promptly.
+    update_check_interval_seconds: int = 900
     update_allow_pre: bool = False  # opt-in to ``--pre`` releases
 
     @property

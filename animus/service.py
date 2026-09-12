@@ -105,7 +105,11 @@ def _windows_install(animus_exe: Path, log_path: Path) -> ServiceInfo:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # The task action must be an executable + arguments. We pass the log
     # path explicitly via the daemon's own flag.
-    args = f'daemon --log-file "{log_path}"'
+    # Run through Python, not the generated ``animus.exe`` launcher. Windows
+    # locks a running executable, which can prevent pip from replacing that
+    # console entry point during a self-update.
+    python_exe = animus_exe.parent / "python.exe"
+    args = f'-m animus.cli daemon --log-file "{log_path}"'
     # ``RestartCount 999`` + ``IgnoreNew`` underwrites the self-update flow:
     # when the daemon detects a new version it exits with code 75; the
     # Scheduled Task respawns it within a minute and the new code goes live
@@ -113,7 +117,7 @@ def _windows_install(animus_exe: Path, log_path: Path) -> ServiceInfo:
     # double-launching us while pip is still mid-install.
     script = f"""
 $ErrorActionPreference = 'Stop'
-$action = New-ScheduledTaskAction -Execute '{animus_exe}' -Argument '{args}'
+$action = New-ScheduledTaskAction -Execute '{python_exe}' -Argument '{args}'
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $set = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `

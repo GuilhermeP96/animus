@@ -8,7 +8,14 @@ import pytest
 from animus.collector.models import Memory, MemoryType
 from animus.config import AnimusConfig
 from animus.indexer.engine import IndexEngine
-from animus.network.peer import AnimusPeer
+from animus.network.peer import AnimusPeer, effective_update_check_interval
+
+
+@pytest.mark.parametrize(
+    "configured,expected", [(1, 60), (60, 60), (300, 300), (900, 900), (21_600, 900)]
+)
+def test_effective_update_check_interval(configured, expected):
+    assert effective_update_check_interval(configured) == expected
 
 
 @pytest.fixture

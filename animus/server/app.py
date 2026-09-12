@@ -37,7 +37,16 @@ _connected_peers: dict[str, dict] = {}  # node_id -> presence info
 _PEER_ONLINE_TTL_SECONDS = 900
 
 
-def _note_peer_activity(node_id: str, node_name: str = "", transport: str = "http") -> None:
+def _note_peer_activity(
+    node_id: str,
+    node_name: str = "",
+    transport: str = "http",
+    *,
+    node_version: str = "",
+    hostname: str = "",
+    os_name: str = "",
+    os_version: str = "",
+) -> None:
     """Upsert a presence entry for a peer.
 
     Most peers sync over plain HTTP (``/api/sync/push|pull``) and never open
@@ -58,6 +67,14 @@ def _note_peer_activity(node_id: str, node_name: str = "", transport: str = "htt
         _connected_peers[node_id] = info
     if node_name:
         info["node_name"] = node_name
+    for key, value in (
+        ("node_version", node_version),
+        ("hostname", hostname),
+        ("os_name", os_name),
+        ("os_version", os_version),
+    ):
+        if value:
+            info[key] = value
     info["last_seen"] = now
     info["transport"] = transport
 
@@ -77,7 +94,11 @@ def _peer_is_online(info: dict) -> bool:
 
 def _peers_with_status() -> list[dict]:
     return [
-        {**info, "online": _peer_is_online(info)}
+        {
+            **info,
+            "display_name": info.get("node_name") or info.get("hostname") or info["node_id"],
+            "online": _peer_is_online(info),
+        }
         for info in _connected_peers.values()
     ]
 
@@ -298,6 +319,10 @@ class PushRequest(BaseModel):
     type: str = "PUSH"
     node_id: str
     node_name: str = ""
+    node_version: str = ""
+    hostname: str = ""
+    os_name: str = ""
+    os_version: str = ""
     count: int = 0
     memories: list[dict[str, Any]]
     timestamp: str = ""
@@ -305,6 +330,11 @@ class PushRequest(BaseModel):
 
 class PullRequest(BaseModel):
     node_id: str
+    node_name: str = ""
+    node_version: str = ""
+    hostname: str = ""
+    os_name: str = ""
+    os_version: str = ""
     since: str | None = None
     limit: int = 100
     include_self: bool = False  # If True, also return memories from the requesting node
@@ -382,7 +412,11 @@ async def stats(node_id: str = Depends(verify_peer)):
 async def sync_push(req: PushRequest, node_id: str = Depends(verify_peer)):
     """Receive memories from a peer."""
     engine = get_engine()
-    _note_peer_activity(req.node_id, req.node_name, transport="http")
+    _note_peer_activity(
+        req.node_id, req.node_name, transport="http",
+        node_version=req.node_version, hostname=req.hostname,
+        os_name=req.os_name, os_version=req.os_version,
+    )
     data = req.model_dump()
     memories, skipped = SyncProtocol.memories_from_push(data)
     # Hub is the destination — there is nowhere to push these onward,
@@ -412,7 +446,11 @@ async def sync_pull(req: PullRequest, node_id: str = Depends(verify_peer)):
     local DB was lost / rebuilt and needs to re-hydrate from the hub).
     """
     engine = get_engine()
-    _note_peer_activity(req.node_id, getattr(req, "node_name", ""), transport="http")
+    _note_peer_activity(
+        req.node_id, req.node_name, transport="http",
+        node_version=req.node_version, hostname=req.hostname,
+        os_name=req.os_name, os_version=req.os_version,
+    )
 
     conditions: list[str] = []
     params: list[Any] = []
@@ -464,6 +502,23 @@ async def recent_memories(limit: int = 20, node_id: str = Depends(verify_peer)):
 @app.get("/api/peers")
 async def list_peers(node_id: str = Depends(verify_peer)):
     return {"peers": _peers_with_status()}
+
+
+@app.get("/api/peers/update-kit.zip", name="peer_update_kit")
+async def peer_update_kit(
+    request: Request,
+    authenticated_node_id: str = Depends(verify_peer),
+):
+    """Let an authenticated peer download its own install/update/repair kit."""
+    from .admin_routes import _installer_response, _safe_peer_value
+
+    nid = _safe_peer_value(authenticated_node_id, "peer")
+    known = _connected_peers.get(authenticated_node_id, {})
+    raw_name = known.get("node_name") or known.get("hostname")
+    nname = _safe_peer_value(raw_name, f"peer-{nid}")
+    return _installer_response(
+        request, nid, nname, str(known.get("os_name") or "")
+    )
 
 
 # ── WebSocket for realtime sync ──
@@ -532,7 +587,11 @@ async def websocket_sync(ws: WebSocket):
                 await ws.close(code=4003, reason="Invalid auth signature")
                 return
 
-        _note_peer_activity(peer_node_id, msg.get("node_name", ""), transport="ws")
+        _note_peer_activity(
+            peer_node_id, msg.get("node_name", ""), transport="ws",
+            node_version=msg.get("version", ""), hostname=msg.get("hostname", ""),
+            os_name=msg.get("os_name", ""), os_version=msg.get("os_version", ""),
+        )
         _connected_peers[peer_node_id]["capabilities"] = msg.get("capabilities", [])
         logger.info("Peer connected: %s (%s)", peer_node_id, msg.get("node_name"))
 
