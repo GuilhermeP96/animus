@@ -4,6 +4,20 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.8] — 2026-09-16 — Markdown export integrity
+
+### Fixed
+- Obsidian exports now convert accidentally serialized whole Markdown documents
+  from literal `\\n` sequences to real line breaks.
+- Raw structured payloads and prose/code that merely mention `\\n` remain
+  unchanged.
+- Deferred Windows updates now build helper paths without selecting a host-
+  incompatible `pathlib` implementation during cross-platform validation.
+
+### Changed
+- Documented that curated Markdown must be ingested from a UTF-8 file or
+  standard input with real line breaks.
+
 ## [0.8.7] — 2026-09-12 — Hub-hosted peer packages
 
 ### Added

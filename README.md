@@ -39,6 +39,11 @@ animus obsidian rollback --vault pessoal
 
 Notas exportadas começam como candidatas: somente conhecimento verificado entra no corpus RAG, e fine-tuning exige ainda um par instrução/resposta aprovado explicitamente. Notas humanas nunca são sobrescritas. Edicoes divergentes em notas gerenciadas geram uma copia em `.animus/quarantine/`; atualizacoes geram backup e registro em `.animus/audit.jsonl`. Consulte o [guia da camada de conhecimento](docs/CAMADA-CONHECIMENTO-OBSIDIAN.md) e o [plano de integração](docs/PLANO-INTEGRACAO-OBSIDIAN.md).
 
+Conteúdo Markdown curado deve entrar por arquivo ou `stdin`, com quebras de
+linha reais. Na exportação, o Animus corrige documentos inteiros que tenham
+sido serializados por engano com `\\n` literais, sem alterar JSON bruto nem
+exemplos de código que apenas mencionem `\\n`.
+
 ## Arquitetura
 
 ```mermaid
