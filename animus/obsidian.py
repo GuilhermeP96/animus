@@ -129,6 +129,38 @@ def _yaml_frontmatter(data: dict[str, Any]) -> str:
     return f"---\n{dumped}\n---\n"
 
 
+def normalize_export_markdown(content: str) -> str:
+    """Normalize serialized Markdown without changing raw structured payloads.
+
+    Some callers accidentally persist an entire Markdown document as one line
+    containing literal ``\\n`` sequences. Decode that narrow shape for human-
+    readable Obsidian exports. Content that already has real line breaks, and
+    prose/code that merely mentions ``\\n``, remains byte-for-byte meaningful.
+    """
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    stripped = normalized.strip()
+
+    # A complete JSON string is unambiguous and safe to decode once.
+    if len(stripped) > 1 and stripped.startswith('"') and stripped.endswith('"'):
+        try:
+            decoded = json.loads(stripped)
+        except (TypeError, ValueError):
+            pass
+        else:
+            if isinstance(decoded, str):
+                return decoded.replace("\r\n", "\n").replace("\r", "\n")
+
+    escaped_breaks = normalized.count("\\n") + normalized.count("\\r\\n")
+    real_breaks = normalized.count("\n")
+    looks_like_markdown = re.search(
+        r"(?:^|\\n)(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)", normalized
+    )
+    if real_breaks <= 1 and escaped_breaks >= 2 and looks_like_markdown:
+        return normalized.replace("\\r\\n", "\n").replace("\\n", "\n")
+
+    return normalized
+
+
 def _display_title(row: dict[str, Any], body: str, fallback: str) -> str:
     lowered_body = body.casefold()
     if "verbatins jan 2026" in lowered_body:
@@ -314,7 +346,7 @@ class ObsidianManager:
                         target = candidate
                         relative = candidate.relative_to(root)
                         break
-            body = (row.get("content") or "").strip() + "\n"
+            body = normalize_export_markdown(row.get("content") or "").strip() + "\n"
             body_hash = _hash(body)
             frontmatter = {
                 "animus": {
