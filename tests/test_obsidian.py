@@ -11,6 +11,7 @@ from animus.obsidian import (
     ObsidianManager,
     _sensitive_findings,
     _yaml_frontmatter,
+    normalize_export_markdown,
     sanitize_title,
 )
 
@@ -202,6 +203,19 @@ def test_helpers_cover_plain_notes_and_safe_names():
     assert _sensitive_findings("API_KEY=sk_test_abcdefghijklmnop")
     assert _sensitive_findings("-----BEGIN PRIVATE KEY-----")
     assert not _sensitive_findings("Read HOSTINGER_API_TOKEN from .env without copying it")
+
+
+def test_export_markdown_normalizes_serialized_line_breaks_only():
+    escaped = "## Release\\n\\n- Adds `POST /upload`\\n- Keeps compatibility"
+    assert normalize_export_markdown(escaped) == (
+        "## Release\n\n- Adds `POST /upload`\n- Keeps compatibility"
+    )
+
+    json_string = json.dumps("# Decision\n\nReal Markdown", ensure_ascii=False)
+    assert normalize_export_markdown(json_string) == "# Decision\n\nReal Markdown"
+
+    literal_example = r"Use `\\n` in Python strings; do not decode this prose."
+    assert normalize_export_markdown(literal_example) == literal_example
 
 
 def test_config_roundtrip_and_created_note_rollback(obsidian_config, engine):

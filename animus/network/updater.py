@@ -246,8 +246,10 @@ def _defer_windows_update(cmd: list[str], latest: str) -> bool:
     """Launch an updater that waits for this process and releases EXE locks."""
     global _deferred_update_pending
 
-    scripts_dir = Path(sys.executable).parent
-    log_path = Path(tempfile.gettempdir()) / "animus-self-update.log"
+    # Keep these as strings: pathlib chooses WindowsPath from os.name at call
+    # time, which also makes cross-platform validation of this branch fail.
+    scripts_dir = os.path.dirname(sys.executable)
+    log_path = os.path.join(tempfile.gettempdir(), "animus-self-update.log")
     command = " ".join(_ps_quote(part) for part in cmd)
     script = f"""
 $ErrorActionPreference = 'Continue'
@@ -256,7 +258,7 @@ while (Get-Process -Id $sourcePid -ErrorAction SilentlyContinue) {{
     Start-Sleep -Milliseconds 200
 }}
 Start-Sleep -Milliseconds 500
-$scriptsDir = {_ps_quote(str(scripts_dir))}
+$scriptsDir = {_ps_quote(scripts_dir)}
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {{
         $_.ExecutablePath -and
@@ -265,9 +267,9 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     }} | ForEach-Object {{
         & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null
     }}
-& {command} *>> {_ps_quote(str(log_path))}
+& {command} *>> {_ps_quote(log_path)}
 $rc = $LASTEXITCODE
-Add-Content -LiteralPath {_ps_quote(str(log_path))} -Value ({_ps_quote(f'update v{latest} exit=')} + $rc)
+Add-Content -LiteralPath {_ps_quote(log_path)} -Value ({_ps_quote(f'update v{latest} exit=')} + $rc)
 exit $rc
 """
     encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
