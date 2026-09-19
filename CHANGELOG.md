@@ -4,6 +4,20 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.9] — 2026-09-19 — Datano licensing control plane
+
+### Added
+- The Hub validates every authenticated peer `node_id` against the central
+  Datano product-license service, including HTTP and WebSocket connections.
+- Short-lived decision caching and a bounded offline grace period keep an
+  already-authorized peer operational during a temporary control-plane outage.
+
+### Security
+- A signed request whose body declares a different `node_id` is rejected.
+- Suspended, revoked, expired, or missing licenses fail closed when licensing
+  is configured. Local development remains compatible when no licensing URL
+  and secret are configured.
+
 ## [0.8.8] — 2026-09-16 — Markdown export integrity
 
 ### Fixed
