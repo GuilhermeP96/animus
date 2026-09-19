@@ -23,6 +23,7 @@ from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
 from ..network.crypto import verify_auth_header
 from ..network.sync import SyncProtocol
+from .licensing import require_peer_license
 
 logger = logging.getLogger("animus.server")
 
@@ -310,7 +311,22 @@ async def verify_peer(request: Request) -> str:
 
     if not verify_auth_header(config.server_secret, dict(request.headers), body=body):
         raise HTTPException(status_code=401, detail="Invalid authentication")
-    return request.headers["x-animus-node"]
+    node_id = request.headers["x-animus-node"]
+    metadata: dict[str, Any] = {}
+    if body:
+        try:
+            metadata = json.loads(body)
+        except (TypeError, ValueError):
+            metadata = {}
+    if metadata.get("node_id") and metadata["node_id"] != node_id:
+        raise HTTPException(status_code=403, detail="Authenticated node does not match request body")
+    await require_peer_license(
+        node_id,
+        node_name=str(metadata.get("node_name") or ""),
+        hostname=str(metadata.get("hostname") or ""),
+        client_version=str(metadata.get("node_version") or metadata.get("version") or ""),
+    )
+    return node_id
 
 
 # ── Request/Response Models ──
@@ -616,6 +632,17 @@ async def websocket_sync(ws: WebSocket):
             ):
                 await ws.close(code=4003, reason="Invalid auth signature")
                 return
+
+        try:
+            await require_peer_license(
+                peer_node_id,
+                node_name=str(msg.get("node_name") or ""),
+                hostname=str(msg.get("hostname") or ""),
+                client_version=str(msg.get("version") or ""),
+            )
+        except HTTPException as exc:
+            await ws.close(code=4403 if exc.status_code == 403 else 1013, reason=str(exc.detail))
+            return
 
         _note_peer_activity(
             peer_node_id, msg.get("node_name", ""), transport="ws",
