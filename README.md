@@ -434,6 +434,21 @@ animus obsidian rollback # Restaurar a ultima alteracao com backup
 - HTTPS/WSS em produção (via nginx + certbot)
 - Sem dados sensíveis no conteúdo (tokens, passwords são filtrados)
 - Outbound-only connections (sem necessidade de abrir portas no peer)
+- Licença por `node_id` aplicada pelo Hub através do plano de controle Datano;
+  suspensão e revogação são efetivas em HTTP e WebSocket após o cache curto.
+
+### Plano de controle de licenças
+
+Em produção, o Hub recebe `ANIMUS_LICENSE_API_URL` e
+`ANIMUS_LICENSE_API_SECRET`. O segredo é exclusivo da comunicação interna
+entre containers e nunca é enviado aos peers. O primeiro contato de um peer
+HMAC autenticado pode provisionar uma licença `community`; depois disso o
+status, plano, grupo e vigência são administrados no dashboard da Datano.
+
+`ANIMUS_LICENSE_CACHE_SECONDS` controla o cache de decisão (60 segundos por
+padrão) e `ANIMUS_LICENSE_OFFLINE_GRACE_SECONDS` limita por quanto tempo uma
+concessão previamente validada sobrevive a uma indisponibilidade transitória
+do plano de controle (24 horas por padrão).
 
 ## Stack
 

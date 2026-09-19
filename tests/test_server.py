@@ -377,3 +377,14 @@ class TestSecureAuth:
             headers={**headers, "Content-Type": "application/json"},
         )
         assert resp.status_code == 401
+
+    def test_authenticated_node_must_match_body(self, secured_client):
+        from animus.network.crypto import create_auth_header
+        body = b'{"node_id":"n2","limit":5}'
+        headers = create_auth_header("test-shared-secret", "n1", body=body, secure=True)
+        resp = secured_client.post(
+            "/api/sync/pull",
+            content=body,
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 403
