@@ -53,7 +53,7 @@ def format_markdown(results: list[dict], detailed: bool = False) -> str:
         lines.append(f"#### {i}. [{mem_type}] {title}")
         lines.append(f"- **Workspace:** `{ws}` | **Timestamp:** {ts} | **Score:** {score:.2f}{tag_str}")
         lines.append("")
-        
+
         if detailed or len(content) <= 500:
             lines.append("```text")
             lines.append(content)

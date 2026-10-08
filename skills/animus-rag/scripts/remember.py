@@ -90,7 +90,7 @@ def main():
                 break
 
     engine = IndexEngine(db_path)
-    
+
     mem_type = MemoryType(args.type)
     memory = Memory(
         type=mem_type,
