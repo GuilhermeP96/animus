@@ -27,5 +27,5 @@ class HelperConfigTests(unittest.TestCase):
 
     def test_validation_hides_input(self):
         with self.assertRaises(ValidationError) as raised:
-            module.HelperConfig(node_role='CANARY_DO_NOT_EXPOSE')
+            module.HelperConfig(server_port='CANARY_DO_NOT_EXPOSE')
         self.assertNotIn('CANARY_DO_NOT_EXPOSE', str(raised.exception))
