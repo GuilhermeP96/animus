@@ -1,0 +1,6 @@
+ARG BASE_RUNTIME=vps-hub-animus:rollback-20261008
+FROM ${BASE_RUNTIME}
+ARG SOURCE_COMMIT
+LABEL org.opencontainers.image.revision=${SOURCE_COMMIT}
+COPY animus/server/app.py /app/animus/server/app.py
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD curl -fsS --max-time 3 http://localhost:8314/health/live || exit 1

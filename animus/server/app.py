@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -406,10 +407,16 @@ async def api_version():
     }
 
 
+@app.get("/health/live")
+async def health_live():
+    """Process liveness; statistics/readiness remain on /health."""
+    return {"status": "alive"}
+
+
 @app.get("/health")
 async def health():
     engine = get_engine()
-    stats = engine.get_stats()
+    stats = await asyncio.to_thread(engine.get_stats)
     return {
         "status": "healthy",
         "memories": stats["total_memories"],
