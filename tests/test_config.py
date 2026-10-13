@@ -29,6 +29,21 @@ class TestDefaultPaths:
 
 
 class TestAnimusConfig:
+    def test_cloudflare_access_requires_complete_https_credentials(self, config):
+        assert config.cloudflare_access_headers() == {}
+        config.cf_access_client_id = "test-client-id"
+        with pytest.raises(ValueError, match="both"):
+            config.cloudflare_access_headers()
+        config.cf_access_client_secret = "test-client-secret"
+        config.hub_url = "http://localhost:8314"
+        with pytest.raises(ValueError, match="HTTPS"):
+            config.cloudflare_access_headers()
+        config.hub_url = "https://hub.example.com"
+        assert config.cloudflare_access_headers() == {
+            "CF-Access-Client-Id": "test-client-id",
+            "CF-Access-Client-Secret": "test-client-secret",
+        }
+
     def test_default_values(self):
         cfg = AnimusConfig()
         assert cfg.node_role == "peer"

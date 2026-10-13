@@ -406,8 +406,15 @@ async def api_version():
     }
 
 
+@app.get("/health/live")
+def liveness():
+    """Cheap process health; detailed index counts live at /health."""
+    get_engine()
+    return {"status": "alive"}
+
+
 @app.get("/health")
-async def health():
+def health():
     engine = get_engine()
     stats = engine.get_stats()
     return {

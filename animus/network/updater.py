@@ -141,7 +141,7 @@ def fetch_latest(config: AnimusConfig, timeout: float = 10.0) -> Optional[Versio
     url = base.rstrip("/") + "/api/version"
     try:
         with httpx.Client(timeout=timeout) as client:
-            resp = client.get(url)
+            resp = client.get(url, headers=config.cloudflare_access_headers())
             if resp.status_code != 200:
                 logger.warning("Version probe failed: HTTP %d", resp.status_code)
                 return None
@@ -200,6 +200,7 @@ def download_hub_package(config: AnimusConfig, info: VersionInfo) -> Path | None
         return None
     headers = create_auth_header(config.server_secret, config.node_id, body=None)
     try:
+        headers.update(config.cloudflare_access_headers())
         with httpx.Client(timeout=120.0, follow_redirects=True) as client:
             response = client.get(url, headers=headers)
         if response.status_code != 200:

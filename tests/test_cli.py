@@ -43,6 +43,12 @@ class TestConfigShow:
 
 
 class TestConfigSet:
+    def test_secret_is_saved_without_printing_it(self, mock_config):
+        result = runner.invoke(app, ["config-set", "cf_access_client_secret", "sensitive-test-value"])
+        assert result.exit_code == 0
+        assert "sensitive-test-value" not in result.output
+        assert mock_config.cf_access_client_secret == "sensitive-test-value"
+
     def test_set_known_key(self, mock_config):
         result = runner.invoke(app, ["config-set", "node_name", "new-name"])
         assert result.exit_code == 0
