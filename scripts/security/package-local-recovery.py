@@ -15,9 +15,16 @@ def package(destination):
     destination = Path(destination).absolute()
     if destination.resolve() != destination or destination.exists():
         raise ValueError('Require a new non-link output path')
-    entries = {name: (ROOT / 'scripts/security/windows-local-recovery' / name).read_bytes() for name in FILES}
-    entries['credential_rotation.py'] = (ROOT / 'animus/network/credential_rotation.py').read_bytes()
     revision = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
+    paths = {name: 'scripts/security/windows-local-recovery/' + name for name in FILES}
+    paths['credential_rotation.py'] = 'animus/network/credential_rotation.py'
+    entries = {}
+    for name, relative in paths.items():
+        tracked = subprocess.check_output(['git', '-C', str(ROOT), 'show', revision + ':' + relative], stderr=subprocess.DEVNULL)
+        source = ROOT / relative
+        if source.resolve() != source or source.read_bytes() != tracked:
+            raise ValueError('Package source must exactly match committed tracked blobs')
+        entries[name] = tracked
     manifest = {'version': 1, 'source_commit': revision, 'expires_when': 'runtime_prepare_plus_60_to_3600_seconds',
                 'files': {name: hashlib.sha256(data).hexdigest() for name, data in entries.items()}}
     entries['manifest.json'] = (json.dumps(manifest, indent=2) + '\n').encode()

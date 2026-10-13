@@ -152,3 +152,22 @@ def test_cli_end_to_end_uses_existing_installed_native_config(prepared, tmp_path
     assert json.loads(config.read_text()) == original
     call('commit','--work-dir',str(work))
     assert json.loads(config.read_text()) == {**original,'server_secret':fresh}
+
+
+def test_packager_refuses_source_drift_in_real_git_fixture(tmp_path):
+    spec = importlib.util.spec_from_file_location('package_fixture', ROOT / 'scripts/security/package-local-recovery.py')
+    pack = importlib.util.module_from_spec(spec); spec.loader.exec_module(pack)
+    repo = tmp_path / 'fixture-repo'; repo.mkdir()
+    subprocess.run(['git','init','-q',str(repo)],check=True)
+    for name in pack.FILES:
+        path = repo / 'scripts/security/windows-local-recovery' / name
+        path.parent.mkdir(parents=True,exist_ok=True); path.write_text('fixture committed source')
+    crypto = repo / 'animus/network/credential_rotation.py'
+    crypto.parent.mkdir(parents=True); crypto.write_text('fixture canonical crypto')
+    subprocess.run(['git','-C',str(repo),'add','.'],check=True)
+    subprocess.run(['git','-C',str(repo),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture'],check=True)
+    pack.ROOT = repo
+    pack.package(tmp_path / 'before.zip')
+    crypto.write_text('altered uncommitted crypto')
+    with pytest.raises(ValueError): pack.package(tmp_path / 'after.zip')
+    assert not (tmp_path / 'after.zip').exists()
