@@ -92,6 +92,8 @@ try {
         $task=Get-ScheduledTask -TaskName $spec.task_name -TaskPath $spec.task_path
         if ($task.Actions.Count -ne 1 -or (Sid $task.Principal.UserId) -ne $owner -or $task.Actions[0].Execute -ne $spec.python -or $task.Actions[0].Arguments -notmatch '^\s*-m\s+animus\.cli\s+daemon(?:\s|$)') { throw 'Current-user direct native task required' }
         $source=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$spec.source_pid)
+        $sourceOwner=Invoke-CimMethod -InputObject $source -MethodName GetOwnerSid
+        if ($sourceOwner.ReturnValue -ne 0 -or $sourceOwner.Sid -ne $owner) { throw 'Source process belongs to another principal' }
         if ($source.ExecutablePath -ne $spec.python -or -not $source.CommandLine.Trim().EndsWith($task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)) { throw 'Daemon task/process attribution mismatch' }
         Parent $spec.data_dir $owner
         Parent (Split-Path $spec.config_path -Parent) $owner
@@ -166,7 +168,9 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($version -join '').Trim() -cne $plan.expected_version) { throw 'Installed version mismatch' }
     $script:InstalledVerified=$true
     $script:Gate='native_dependency_integrity'
-    $check=Start-Process -FilePath $plan.python -ArgumentList '-m pip check' -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
+    $checkOut=Join-Path (Split-Path $PlanPath -Parent) 'dependency.stdout'; $checkErr=Join-Path (Split-Path $PlanPath -Parent) 'dependency.stderr'
+    foreach ($file in @($checkOut,$checkErr)) { [IO.File]::WriteAllBytes($file,[byte[]]@()); Private $file $plan.owner_sid }
+    $check=Start-Process -FilePath $plan.python -ArgumentList '-m pip check' -RedirectStandardOutput $checkOut -RedirectStandardError $checkErr -PassThru -WindowStyle Hidden
     if (-not $check.WaitForExit(30000)) { $check.Kill(); throw 'Exact dependency-check child timed out' }
     if ($check.ExitCode -ne 0) { throw 'Native package dependency constraints are not satisfied' }
     Validate-Plan $plan
@@ -186,6 +190,8 @@ try {
     $process=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$pidValue) -ErrorAction SilentlyContinue
     if ($null -eq $process -or $process.CreationDate.ToUniversalTime().Ticks -ne $creation -or $process.ExecutablePath -ne $plan.python) { throw 'Native restarted process did not remain alive' }
     $task=Validate-Task $plan
+    $processOwner=Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid
+    if ($processOwner.ReturnValue -ne 0 -or $processOwner.Sid -ne $plan.owner_sid) { throw 'Restart process principal mismatch' }
     Assert-VerifiedRestartEvidence $plan.expected_version (($version -join '').Trim()) $pidValue $creation ($process.CreationDate.ToUniversalTime().Ticks) ($task.State -eq 'Running') ($null -ne $process)
     Write-PrivateJson $receipt @{status='completed';installed=$true;restart_verified=$true;version=$plan.expected_version;node_id=$plan.node_id;pid=$pidValue;creation_ticks=$creation;server_reconnection_verified=$false} $plan.owner_sid
     # Keep private receipt/runner/logs for verified corporate offsite retention.
