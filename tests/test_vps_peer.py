@@ -29,10 +29,7 @@ from animus.indexer.engine import IndexEngine
 
 VSCODE_USER_DIR = Path("/root/.vscode-server/data/User")
 HUB_INTERNAL_URL = "http://127.0.0.1:8314"
-SERVER_SECRET = os.environ.get(
-    "ANIMUS_SERVER_SECRET",
-    "REVOKED-CREDENTIAL-CONFIGURE-LOCALLY",
-)
+SERVER_SECRET = os.environ.get("ANIMUS_SERVER_SECRET", "")
 
 # Expected data sources found during audit
 EXPECTED_WORKSPACES = {
@@ -469,6 +466,8 @@ def test_sync_loop() -> bool:
 # ═══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    if not SERVER_SECRET:
+        sys.exit("ANIMUS_SERVER_SECRET must be provided securely; no production-secret fallback")
     print("⟁ Animus VPS Peer — Validation Tests")
     print(f"  VS Code dir: {VSCODE_USER_DIR}")
     print(f"  Hub URL:     {HUB_INTERNAL_URL}")
