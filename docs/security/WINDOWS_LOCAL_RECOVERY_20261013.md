@@ -70,3 +70,12 @@ task/path/config and current node before stage/stop. Old runtime metadata lackin
 node binding requires fresh preparation. Separate PowerShell pure selection
 regressions: `pwsh -NoProfile -File tests/security/Test-RecoverySelection.ps1`.
 PowerShell AST/tests are distinct from actual Windows ACL/task/native smoke.
+
+The registry preparation helper consumes each independently approved record's
+exact enrollment `rotation_id` and integer `expires_at` (60–3600 seconds of
+remaining validity). It never resets the packet deadline or substitutes the
+global administrative batch ID. Each encrypted envelope matches its recipient's
+local state; registry `rotation_id` and returned metadata describe the batch.
+Expired/extended/too-short/mismatched records are rejected before creating any
+credential artifact. Approved input must be owner-private and a regular non-link
+file. This preserves kit Stage's strict node/rotation/expiration gate.

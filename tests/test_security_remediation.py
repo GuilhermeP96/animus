@@ -122,7 +122,8 @@ def test_offline_rotation_artifacts_private_and_not_activated(tmp_path):
     raw = public_bytes(recipient.public_key())
     approval = tmp_path / 'approved.json'
     approval.write_text(json.dumps({'node-one': {'public_key': base64.b64encode(raw).decode(),
-        'verified_sha256': fingerprint(raw), 'independent_channel': {'method': 'existing-ssh-publickey', 'evidence_id': 'disposable-fixture-key-verification'}}}))
+        'verified_sha256': fingerprint(raw), 'rotation_id':'fixture-rotation', 'expires_at':int(time.time())+300, 'independent_channel': {'method': 'existing-ssh-publickey', 'evidence_id': 'disposable-fixture-key-verification'}}}))
+    approval.chmod(0o600)
     output = tmp_path / 'prepared'
     receipt = module.prepare(approval, output, 'fixture-rotation')
     assert receipt['activated'] is False

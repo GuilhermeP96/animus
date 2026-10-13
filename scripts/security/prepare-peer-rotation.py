@@ -16,6 +16,11 @@ from animus.network.credential_rotation import seal, envelope_digest
 
 
 def prepare(approved: Path, output: Path, rotation_id: str):
+    approved=Path(approved).absolute(); output=Path(output).absolute()
+    if approved.resolve()!=approved or not approved.is_file() or approved.stat().st_uid!=os.geteuid() or approved.stat().st_mode & 0o077:
+        raise ValueError('Approved enrollment must be a private owned non-link file')
+    if output.resolve()!=output:
+        raise ValueError('Private output symlinks forbidden')
     if approved.stat().st_size > 65536:
         raise ValueError('Recipient approval input is too large')
     recipients = json.loads(approved.read_text())
@@ -26,9 +31,18 @@ def prepare(approved: Path, output: Path, rotation_id: str):
     # Validate every approval before creating any private credential artifact.
     allowed_methods = {'existing-ssh-publickey', 'verified-native-admin',
                        'verified-device-license-credential', 'verified-cloudflare-access'}
+    now=time.time()
     for node, record in recipients.items():
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', node) or not isinstance(record, dict):
             raise ValueError('Every recipient requires a valid independently approved identity')
+        per_node_rotation=record.get('rotation_id')
+        expires=record.get('expires_at')
+        if not isinstance(per_node_rotation,str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',per_node_rotation):
+            raise ValueError('Every recipient requires its exact enrollment rotation identity')
+        if type(expires) is not int or not 60 <= expires-now <= 3600:
+            raise ValueError('Every enrollment needs60–3600 seconds of remaining approved validity')
+        if record.get('node_id',node)!=node:
+            raise ValueError('Enrollment identity differs from independently approved node')
         channel = record.get('independent_channel')
         if not isinstance(channel, dict) or channel.get('method') not in allowed_methods or not channel.get('evidence_id'):
             raise ValueError('Every recipient requires a supported independent verification method and evidence')
@@ -36,14 +50,14 @@ def prepare(approved: Path, output: Path, rotation_id: str):
         if len(key) != 32 or hashlib.sha256(key).hexdigest() != record['verified_sha256']:
             raise ValueError('Independent recipient approval mismatch')
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
-    registry = {'version': 1, 'peers': {}}
-    expires_at = int(time.time()) + 3600
+    registry = {'version': 1, 'rotation_id':rotation_id, 'peers': {}}
+    expires_at = min(record['expires_at'] for record in recipients.values())
     hashes = {}
     for node, record in recipients.items():
         secret = secrets.token_urlsafe(48)
         registry['peers'][node] = {'enabled': True, 'secret': secret}
         envelope = seal(node, secret, base64.b64decode(record['public_key']),
-                        record['verified_sha256'], rotation_id, expires_at)
+                        record['verified_sha256'], record['rotation_id'], record['expires_at'])
         hashes[node] = envelope_digest(envelope)
         path = output / f'{node}.rotation.json'
         path.write_text(json.dumps(envelope, sort_keys=True) + '\n')
@@ -53,7 +67,8 @@ def prepare(approved: Path, output: Path, rotation_id: str):
     path.chmod(0o600)
     # Only metadata is returned; never display credentials or encrypted payloads.
     return {'rotation_id': rotation_id, 'peer_count': len(recipients), 'expires_at': expires_at,
-            'activated': False, 'output': str(output), 'envelope_sha256': hashes}
+            'activated': False, 'output': str(output), 'envelope_sha256': hashes,
+            'enrollments':{node:{'rotation_id':record['rotation_id'],'expires_at':record['expires_at']} for node,record in recipients.items()}}
 
 
 if __name__ == '__main__':
