@@ -218,3 +218,19 @@ def test_all_counts_share_one_snapshot_during_commit(populated_engine, monkeypat
         assert populated_engine.get_stats()['unsynced'] == 0
     finally:
         writer.close()
+
+
+def test_published_snapshot_keeps_generation_bound_to_its_counts(populated_engine):
+    before = populated_engine.get_stats()
+    captured = populated_engine._stats_cache
+    assert '_index_generation' not in before
+    assert '_cached_monotonic' not in before
+    row = populated_engine.get_recent(1)[0]
+    populated_engine.delete_memory(row['id'])
+    # The snapshot's generation cannot be reset by a parallel refresh flag.
+    assert captured['_index_generation'] != populated_engine._stats_generation
+    assert populated_engine._stats_cache is captured
+    assert populated_engine.cached_stats()['stats_reason'] == 'index_changed'
+    populated_engine._stats_cached_at -= 31
+    assert populated_engine.get_stats()['total_memories'] == before['total_memories'] - 1
+    assert populated_engine.cached_stats()['stats_status'] == 'fresh'
