@@ -223,8 +223,8 @@ class AnimusPeer:
             )
         if restart_required and info is not None:
             logger.info(
-                "Self-update installed v%s (was %s) — re-execing now",
-                info.latest, __version__,
+                "Self-update %s v%s (was %s) — initiating qualified restart",
+                "staged" if updater.update_is_deferred() else "installed", info.latest, __version__,
             )
             # ``restart_in_place`` does not return on success.
             updater.restart_in_place()
