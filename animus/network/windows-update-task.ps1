@@ -3,6 +3,7 @@ param([ValidateSet('Register','Run')][string]$Mode='Register',[string]$PlanPath)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $script:Gate='input'
+$script:InstalledVerified=$false
 function Sid([string]$Value) {
     if ($Value -match '^S-1-[0-9-]+$') { return ([Security.Principal.SecurityIdentifier]::new($Value)).Value }
     return ([Security.Principal.NTAccount]::new($Value)).Translate([Security.Principal.SecurityIdentifier]).Value
@@ -163,6 +164,11 @@ try {
     $script:Gate='installed_version_and_config'
     $version=@(& $plan.python -c 'import animus;print(animus.__version__)' 2>&1)
     if ($LASTEXITCODE -ne 0 -or ($version -join '').Trim() -cne $plan.expected_version) { throw 'Installed version mismatch' }
+    $script:InstalledVerified=$true
+    $script:Gate='native_dependency_integrity'
+    $check=Start-Process -FilePath $plan.python -ArgumentList '-m pip check' -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
+    if (-not $check.WaitForExit(30000)) { $check.Kill(); throw 'Exact dependency-check child timed out' }
+    if ($check.ExitCode -ne 0) { throw 'Native package dependency constraints are not satisfied' }
     Validate-Plan $plan
     $script:Gate='verify_actual_native_restart'
     $started=[DateTime]::UtcNow
@@ -187,7 +193,7 @@ try {
     exit 0
 } catch {
     if ($Mode -eq 'Run' -and (Get-Variable plan -ErrorAction SilentlyContinue) -and $plan) {
-        try { Write-PrivateJson (Join-Path (Split-Path $PlanPath -Parent) 'receipt.json') @{status='blocked';gate=$script:Gate;owner='agent';restart_verified=$false;secret_disclosed=$false} $plan.owner_sid } catch {}
+        try { Write-PrivateJson (Join-Path (Split-Path $PlanPath -Parent) 'receipt.json') @{status='blocked';gate=$script:Gate;owner='agent';installed=$script:InstalledVerified;restart_verified=$false;secret_disclosed=$false} $plan.owner_sid } catch {}
     }
     Write-Output (@{status='blocked';gate=$script:Gate;restart_verified=$false;secret_disclosed=$false} | ConvertTo-Json -Compress)
     exit 1
