@@ -11,6 +11,10 @@ function Full-Path([string]$Path) {
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse path forbidden' }
     return $item.FullName
 }
+function Resolve-Sid([string]$Identity) {
+    if ($Identity -match '^S-1-[0-9-]+$') { return ([Security.Principal.SecurityIdentifier]::new($Identity)).Value }
+    return ([Security.Principal.NTAccount]::new($Identity)).Translate([Security.Principal.SecurityIdentifier]).Value
+}
 function Hash-Text([string]$Value) {
     $sha=[Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value)))).Replace('-','').ToLowerInvariant() }
@@ -22,7 +26,7 @@ function Invoke-Helper([string[]]$Arguments) {
     return ($captured -join "`n") | ConvertFrom-Json
 }
 function Verify-Native {
-    if ($script:PythonExe -match '(?i)(\\\.codex\\|\\codex\\|vscode|claude|antigravity|\\agy\\)') { throw 'Use only the existing native Animus interpreter' }
+    if ($script:PythonExe -match '(?i)([\/]\.codex[\/]|[\/]codex[\/]|vscode|claude|antigravity|[\/]agy[\/])') { throw 'Use only the existing native Animus interpreter' }
     $probe=@(& $script:PythonExe -c 'import sys,cryptography; from animus.config import AnimusConfig; from animus.network.crypto import create_auth_header; assert sys.version_info >= (3,10); assert create_auth_header("recovery-preflight","temporary-probe-credential-never-used") .get("X-Animus-Nonce"); print("native-ok")' 2>&1)
     if ($LASTEXITCODE -ne 0 -or ($probe -join '') -ne 'native-ok') { throw 'Existing native Python/Animus/cryptography or strict nonce support unavailable' }
     foreach ($scope in @('Process','User','Machine')) {
@@ -50,7 +54,7 @@ function Get-SelectedTask([string]$Name,[string]$Path) {
     }
     $exe=Full-Path $action.Execute
     if ([IO.Path]::GetFileName($exe) -notmatch '^python(w)?\.exe$') { throw 'Wrapper/service tasks need separate administrator qualification; no guessed restarts' }
-    $runtimeSid=(New-Object Security.Principal.NTAccount($task.Principal.UserId)).Translate([Security.Principal.SecurityIdentifier]).Value
+    $runtimeSid=Resolve-Sid $task.Principal.UserId
     return @{Task=$task; Action=$action; Python=$exe; Sid=$runtimeSid;
              Fingerprint=(Hash-Text ($exe+"`n"+$action.Arguments+"`n"+$action.WorkingDirectory+"`n"+$runtimeSid))}
 }
@@ -97,7 +101,7 @@ try {
             $ConfigPath=$candidates[$index]
         } else { $ConfigPath=$candidates[0] }
         $acl=Get-Acl -LiteralPath $ConfigPath
-        $configOwner=($acl.Owner | ForEach-Object {New-Object Security.Principal.NTAccount($_)}).Translate([Security.Principal.SecurityIdentifier]).Value
+        $configOwner=Resolve-Sid $acl.Owner
         if ($selected.Sid -notin @($configOwner,'S-1-5-18')) { throw 'Runtime principal cannot read the protected replacement; administrator must qualify ownership' }
         $identity=Invoke-Helper @('inspect','--config',$ConfigPath)
         Write-Host ('Selected node {0}; task {1}{2}; config {3}' -f $identity.node_id,$TaskPath,$TaskName,$ConfigPath)
@@ -119,7 +123,7 @@ try {
         if ($selected.Fingerprint -ne $runtime.runtime_fingerprint) { throw 'Native runtime changed; do not stop or activate' }
         $PythonExe=$selected.Python; Verify-Native
         if ((Verify-TaskEnvironment $selected) -ne $runtime.environment_fingerprint) { throw 'Task .env/DataDir changed; prepare a fresh owner-confirmed enrollment' }
-        $configOwner=((Get-Acl -LiteralPath $runtime.config_path).Owner | ForEach-Object {New-Object Security.Principal.NTAccount($_)}).Translate([Security.Principal.SecurityIdentifier]).Value
+        $configOwner=Resolve-Sid ((Get-Acl -LiteralPath $runtime.config_path).Owner)
         if ($configOwner -ne $runtime.config_owner_sid) { throw 'Config ownership changed' }
         if ((Read-Host ('Type APPLY to replace only server_secret and restart task '+$runtime.task_name)) -cne 'APPLY') { throw 'Owner application not confirmed' }
         $running=@(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $PythonExe -and $_.CommandLine -and $_.CommandLine.Trim().EndsWith($selected.Action.Arguments.Trim(),[StringComparison]::Ordinal)})
