@@ -44,10 +44,10 @@ network, Docker, DB access or live config/credential changes:
 /opt/animus-peer/bin/python -m pytest tests/security/test_windows_local_recovery.py -q --disable-warnings
 ```
 
-17 tests passed in 4.86 seconds: real seal/unseal and full CLI, one-bit AEAD failure,
+18 kit tests plus 28 crypto tests passed together in 4.94 seconds: real seal/unseal and full CLI, one-bit AEAD failure,
 independent digest, wrong node/rotation/recipient, expiry/window, traversal/symlink,
 size limit, drift, POSIX private mode, staging without activation, only-secret
-replacement, source-only ZIP manifest and no CLI/validation secret disclosure.
+replacement, source-only ZIP manifest, real Git source-drift refusal and no CLI/validation secret disclosure. Packager reads committed blobs and refuses different worktree bytes.
 Fixtures derive compatible fields from the installed older native Config outside
 the source checkout and prove its load accepts the replacement without ValidationError
 logging. New-source defaults include CF Access fields absent from that older model;
