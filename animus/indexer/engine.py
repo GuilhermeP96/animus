@@ -6,6 +6,8 @@ import json
 import logging
 import sqlite3
 import threading
+import time
+import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -28,6 +30,8 @@ class IndexEngine:
         self.db_path = db_path
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
+        self._stats_cache: dict | None = None
+        self._stats_cached_at = 0.0
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -161,6 +165,8 @@ class IndexEngine:
                         ),
                     )
                 self.conn.commit()
+                if cursor.rowcount > 0:
+                    self._stats_cache = None
                 return cursor.rowcount > 0
             except sqlite3.IntegrityError:
                 return False
@@ -378,6 +384,8 @@ class IndexEngine:
                 )
                 changed += 1
             self.conn.commit()
+            if changed:
+                self._stats_cache = None
             return changed
 
     def mark_synced(self, memory_ids: list[str]) -> None:
@@ -389,28 +397,64 @@ class IndexEngine:
                 memory_ids,
             )
             self.conn.commit()
+            self._stats_cache = None
+
+    def delete_memory(self, memory_id: str) -> None:
+        with self._lock:
+            self.conn.execute('DELETE FROM memories WHERE id = ?', (memory_id,))
+            self.conn.commit()
+            self._stats_cache = None
+
+    def check_health(self) -> None:
+        """Read the real DB without waiting for the index writer/count lock."""
+        uri = self.db_path.resolve().as_uri() + '?mode=ro'
+        with sqlite3.connect(uri, uri=True, timeout=0.25) as connection:
+            connection.execute('SELECT 1 FROM sqlite_schema LIMIT 1').fetchone()
+            connection.execute('SELECT 1').fetchone()
+
+    def cached_stats(self) -> dict | None:
+        """Never trigger counts from a health request; expose TTL and nulls."""
+        cached = self._stats_cache
+        age = time.monotonic() - self._stats_cached_at
+        if cached is None or age >= 30:
+            return None
+        result = copy.deepcopy(cached)
+        result['stats_age_seconds'] = round(age, 3)
+        return result
 
     def get_stats(self) -> dict:
-        """Get index statistics."""
-        with self._lock:
-            row = self.conn.execute(
-                """SELECT
-                    COUNT(*) as total,
-                    COUNT(DISTINCT source_node) as nodes,
-                    COUNT(DISTINCT workspace) as workspaces,
-                    SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) as unsynced
-                   FROM memories"""
-            ).fetchone()
-            type_counts = self.conn.execute(
-                "SELECT type, COUNT(*) as cnt FROM memories GROUP BY type"
-            ).fetchall()
-            return {
-                "total_memories": row["total"],
-                "unique_nodes": row["nodes"],
-                "unique_workspaces": row["workspaces"],
-                "unsynced": row["unsynced"],
-                "by_type": {r["type"]: r["cnt"] for r in type_counts},
+        """Bounded 30s cache; index-only aggregates and a two-second budget."""
+        cached = self.cached_stats()
+        if cached is not None:
+            return cached
+        if not self._lock.acquire(timeout=0.25):
+            raise TimeoutError('Index statistics lock is busy')
+        try:
+            cached = self.cached_stats()
+            if cached is not None:
+                return cached
+            deadline = time.monotonic() + 2
+            connection = self.conn
+            connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 10000)
+            try:
+                # Separate covering indexes avoid loading large memory content.
+                total = connection.execute('SELECT COUNT(*) FROM memories').fetchone()[0]
+                nodes = connection.execute('SELECT COUNT(DISTINCT source_node) FROM memories').fetchone()[0]
+                spaces = connection.execute('SELECT COUNT(DISTINCT workspace) FROM memories').fetchone()[0]
+                unsynced = connection.execute('SELECT COUNT(*) FROM memories WHERE synced = 0').fetchone()[0]
+                type_counts = connection.execute('SELECT type, COUNT(*) AS cnt FROM memories GROUP BY type').fetchall()
+            finally:
+                connection.set_progress_handler(None, 0)
+            result = {
+                'total_memories': total, 'unique_nodes': nodes, 'unique_workspaces': spaces,
+                'unsynced': unsynced, 'by_type': {r['type']: r['cnt'] for r in type_counts},
+                'stats_collected_at': datetime.now(timezone.utc).isoformat(),
             }
+            self._stats_cache = result
+            self._stats_cached_at = time.monotonic()
+            return {**copy.deepcopy(result), 'stats_age_seconds': 0.0}
+        finally:
+            self._lock.release()
 
     def get_recent(self, limit: int = 20) -> list[dict]:
         """Get most recent memories."""
@@ -424,3 +468,4 @@ class IndexEngine:
         if self._conn:
             self._conn.close()
             self._conn = None
+            self._stats_cache = None

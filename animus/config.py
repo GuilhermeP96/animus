@@ -180,7 +180,14 @@ class AnimusConfig(BaseSettings):
     # ── Server (when running as hub) ──
     server_host: str = "0.0.0.0"
     server_port: int = 8314
-    server_secret: str = Field(default="", description="Shared secret for peer auth")
+    server_secret: str = Field(default="", repr=False, description="Shared secret for peer auth")
+    server_peer_keys_file: Optional[Path] = Field(default=None, description="Private root-provisioned per-node credential registry")
+    allow_insecure_dev_auth: bool = Field(default=False, description="Explicit loopback-only test auth bypass")
+
+    @field_validator('server_peer_keys_file', mode='before')
+    @classmethod
+    def empty_registry_is_unconfigured(cls, value):
+        return None if value == '' else value
 
     # ── Tunnel ──
     tunnel_mode: str = Field(
