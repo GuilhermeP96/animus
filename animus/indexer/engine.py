@@ -50,12 +50,26 @@ class IndexEngine:
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
         self._stats_cache: dict | None = None
-        self._stats_cached_at = 0.0
+        self._stats_empty_cached_at = 0.0
         self._stats_lock = threading.Lock()
-        self._stats_invalidated = False
         self._stats_generation = 0
         self._stats_last_error: str | None = None
         self._stats_retry_at = 0.0
+
+    @property
+    def _stats_cached_at(self) -> float:
+        snapshot = self._stats_cache
+        return snapshot['_cached_monotonic'] if snapshot else self._stats_empty_cached_at
+
+    @_stats_cached_at.setter
+    def _stats_cached_at(self, value: float) -> None:
+        # Compatibility for fixture-clock controls. Production publishes the
+        # timestamp, generation and counts in one atomic snapshot assignment.
+        snapshot = self._stats_cache
+        if snapshot is not None:
+            self._stats_cache = {**snapshot, '_cached_monotonic': value}
+        else:
+            self._stats_empty_cached_at = value
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -190,7 +204,6 @@ class IndexEngine:
                     )
                 self.conn.commit()
                 if cursor.rowcount > 0:
-                    self._stats_invalidated = True
                     self._stats_generation += 1
                 return cursor.rowcount > 0
             except sqlite3.IntegrityError:
@@ -410,7 +423,6 @@ class IndexEngine:
                 changed += 1
             self.conn.commit()
             if changed:
-                self._stats_invalidated = True
                 self._stats_generation += 1
             return changed
 
@@ -423,14 +435,12 @@ class IndexEngine:
                 memory_ids,
             )
             self.conn.commit()
-            self._stats_invalidated = True
             self._stats_generation += 1
 
     def delete_memory(self, memory_id: str) -> None:
         with self._lock:
             self.conn.execute('DELETE FROM memories WHERE id = ?', (memory_id,))
             self.conn.commit()
-            self._stats_invalidated = True
             self._stats_generation += 1
 
     def check_health(self) -> None:
@@ -446,13 +456,16 @@ class IndexEngine:
         cached = self._stats_cache
         if cached is None:
             return None
-        age = max(0.0, time.monotonic() - self._stats_cached_at)
-        stale = age >= _STATS_TTL_SECONDS or self._stats_invalidated or bool(self._stats_last_error)
+        age = max(0.0, time.monotonic() - cached['_cached_monotonic'])
+        changed = cached['_index_generation'] != self._stats_generation
+        stale = age >= _STATS_TTL_SECONDS or changed or bool(self._stats_last_error)
         result = copy.deepcopy(cached)
+        result.pop('_cached_monotonic')
+        result.pop('_index_generation')
         result.update(stats_age_seconds=round(age, 3),
                       stats_status='stale' if stale else 'fresh',
                       stats_degraded=stale,
-                      stats_reason=self._stats_last_error or ('index_changed' if self._stats_invalidated else ('ttl_expired' if stale else None)),
+                      stats_reason=self._stats_last_error or ('index_changed' if changed else ('ttl_expired' if stale else None)),
                       stats_retry_after_seconds=max(0, int(self._stats_retry_at - time.monotonic() + 0.999)))
         return result
 
@@ -541,9 +554,8 @@ class IndexEngine:
                 'total_memories': total, 'unique_nodes': nodes, 'unique_workspaces': spaces,
                 'unsynced': unsynced, 'by_type': {r['type']: r['cnt'] for r in types},
                 'stats_collected_at': collected_at,
+                '_cached_monotonic': collected_monotonic, '_index_generation': generation,
             }
-            self._stats_cached_at = collected_monotonic
-            self._stats_invalidated = self._stats_generation != generation
             self._stats_last_error = None
             self._stats_retry_at = 0.0
             return self.cached_stats()
@@ -563,5 +575,4 @@ class IndexEngine:
             self._conn.close()
             self._conn = None
             self._stats_cache = None
-            self._stats_invalidated = True
             self._stats_generation += 1
