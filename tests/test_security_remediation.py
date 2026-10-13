@@ -205,3 +205,11 @@ def test_registry_invalid_shape_is_rejected(hub_config, tmp_path):
     hub_config.server_peer_keys_file = registry
     with pytest.raises(ValueError):
         peer_secret(hub_config, 'fixture-node')
+
+
+def test_health_rejects_database_missing_required_memories_table(engine):
+    # Real valid SQLite with unrelated schema is not an operational Animus DB.
+    engine.conn.execute("DROP TABLE memories")
+    engine.conn.commit()
+    with pytest.raises(sqlite3.OperationalError, match="no such table: memories"):
+        engine.check_health()

@@ -409,8 +409,9 @@ class IndexEngine:
         """Read the real DB without waiting for the index writer/count lock."""
         uri = self.db_path.resolve().as_uri() + '?mode=ro'
         with sqlite3.connect(uri, uri=True, timeout=0.25) as connection:
-            connection.execute('SELECT 1 FROM sqlite_schema LIMIT 1').fetchone()
-            connection.execute('SELECT 1').fetchone()
+            # Connectivity alone can report an empty/wrong database as ready.
+            # Preparing this bounded query also proves the required table exists.
+            connection.execute('SELECT 1 FROM memories LIMIT 1').fetchone()
 
     def cached_stats(self) -> dict | None:
         """Never trigger counts from a health request; expose TTL and nulls."""
