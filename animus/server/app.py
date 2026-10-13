@@ -22,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ..config import AnimusConfig
-from ..indexer.engine import IndexEngine
+from ..indexer.engine import IndexEngine, StatsUnavailable
 from ..network.crypto import verify_auth_header
 from ..network.sync import SyncProtocol
 from .licensing import require_peer_license
@@ -437,6 +437,8 @@ def health():
         "memories": stats["total_memories"] if stats else None,
         "nodes": stats["unique_nodes"] if stats else None,
         "stats_age_seconds": stats["stats_age_seconds"] if stats else None,
+        "stats_status": stats["stats_status"] if stats else "unavailable",
+        "stats_degraded": stats["stats_degraded"] if stats else True,
         "peers_online": sum(1 for p in _connected_peers.values() if _peer_is_online(p)),
     }
 
@@ -446,9 +448,8 @@ async def stats(node_id: str = Depends(verify_peer)):
     engine = get_engine()
     try:
         return await run_in_threadpool(engine.get_stats)
-    except Exception as exc:
-        logger.warning('Index statistics unavailable: %s', type(exc).__name__)
-        raise HTTPException(status_code=503, detail='Index statistics unavailable') from None
+    except StatsUnavailable as exc:
+        return JSONResponse(status_code=503, content=exc.payload(), headers={"Retry-After": "30"})
 
 
 @app.post("/api/sync/push")

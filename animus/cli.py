@@ -443,7 +443,8 @@ def collect(verbose: bool = False):
     if obsidian_collector.diagnostics:
         console.print(f"  Vault warnings:  [yellow]{len(obsidian_collector.diagnostics)}[/]")
 
-    stats = engine.get_stats()
+    stats = engine.stats_view()
+    console.print(f"  Statistics: {stats['stats_status']} (age seconds: {stats['stats_age_seconds']})")
     console.print(f"  Total in index:  [bold]{stats['total_memories']}[/]")
 
     if stats["by_type"]:
@@ -548,7 +549,8 @@ def stats():
     from .indexer.engine import IndexEngine
 
     engine = IndexEngine(config.db_path)
-    s = engine.get_stats()
+    s = engine.stats_view()
+    console.print(f"  Statistics: {s['stats_status']} (age seconds: {s['stats_age_seconds']})")
 
     console.print("\n[bold]⟁ Animus Memory Bank[/]\n")
     console.print(f"  Total memories:    [bold cyan]{s['total_memories']}[/]")
