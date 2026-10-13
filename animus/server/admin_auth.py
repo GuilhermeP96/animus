@@ -22,10 +22,7 @@ from pydantic import BaseModel
 
 ADMIN_USER = os.environ.get("ANIMUS_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("ANIMUS_ADMIN_PASSWORD", "")
-_ADMIN_SECRET_RAW = os.environ.get(
-    "ANIMUS_ADMIN_SECRET",
-    os.environ.get("ANIMUS_SERVER_SECRET", ""),
-)
+_ADMIN_SECRET_RAW = os.environ.get("ANIMUS_ADMIN_SECRET", "")
 ADMIN_SECRET = _ADMIN_SECRET_RAW or "animus-fail-closed-no-secret"
 _ADMIN_INSECURE = os.environ.get("ANIMUS_ADMIN_INSECURE", "0") == "1"
 SESSION_COOKIE = "animus_session"

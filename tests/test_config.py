@@ -230,3 +230,8 @@ class TestLegacyMigration:
         assert (new_home / ".animus" / "config.json").exists()
         # And the data_dir field must point at the new location
         assert cfg.data_dir == new_home / ".animus"
+
+
+def test_empty_registry_env_does_not_activate_path(monkeypatch):
+    monkeypatch.setenv('ANIMUS_SERVER_PEER_KEYS_FILE', '')
+    assert AnimusConfig(_env_file=None).server_peer_keys_file is None

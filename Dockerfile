@@ -1,18 +1,22 @@
-FROM python:3.12-slim
+ARG PYTHON_BASE=python:3.12-slim-trixie
+FROM ${PYTHON_BASE}
 
 LABEL maintainer="datano" \
     description="Animus Hub — AI Memory Synchronization Server"
 
 WORKDIR /app
 
+# Preserve the verified current Debian major; require an exact codename match.
+ARG BASE_CODENAME=trixie
+RUN case "$BASE_CODENAME" in bookworm|trixie) ;; *) exit 1 ;; esac && \
+    test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = "$BASE_CODENAME"
 # System deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir . 2>/dev/null || true
 COPY . .
 RUN pip install --no-cache-dir .
 RUN mkdir -p /opt/animus-packages \
