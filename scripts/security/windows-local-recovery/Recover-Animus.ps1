@@ -34,7 +34,10 @@ function Verify-Native {
     $script:RecoveryGate='native_interpreter_path'
     if (($script:PythonExe.Replace('\','/')) -match '(?i)(/\.codex/|/codex/|vscode|claude|antigravity|/agy/)') { throw 'Use only the existing native Animus interpreter' }
     $script:RecoveryGate='native_nonce_probe'
-    $probe=@(& $script:PythonExe -c 'import sys,cryptography; from animus.config import AnimusConfig; from animus.network.crypto import create_auth_header; assert sys.version_info >= (3,10); assert create_auth_header("recovery-probe-only-not-a-peer-credential-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ","recovery-preflight",secure=True).get("X-Animus-Nonce"); print("native-ok")' 2>&1)
+    $probeSource='import sys,cryptography; from animus.config import AnimusConfig; from animus.network.crypto import create_auth_header; assert sys.version_info >= (3,10); assert create_auth_header("recovery-probe-only-not-a-peer-credential-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ","recovery-preflight",secure=True).get("X-Animus-Nonce"); print("native-ok")'
+    $probeEncoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($probeSource))
+    $probeBootstrap="import base64;exec(base64.b64decode('"+$probeEncoded+"'))"
+    $probe=@(& $script:PythonExe -c $probeBootstrap 2>&1)
     if ($LASTEXITCODE -ne 0 -or ($probe -join '') -ne 'native-ok') { throw 'Existing native Python/Animus/cryptography or strict nonce support unavailable' }
     $script:RecoveryGate='native_environment_auth'
     foreach ($scope in @('Process','User','Machine')) {
