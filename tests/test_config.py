@@ -29,6 +29,21 @@ class TestDefaultPaths:
 
 
 class TestAnimusConfig:
+    def test_cloudflare_access_requires_complete_https_credentials(self, config):
+        assert config.cloudflare_access_headers() == {}
+        config.cf_access_client_id = "test-client-id"
+        with pytest.raises(ValueError, match="both"):
+            config.cloudflare_access_headers()
+        config.cf_access_client_secret = "test-client-secret"
+        config.hub_url = "http://localhost:8314"
+        with pytest.raises(ValueError, match="HTTPS"):
+            config.cloudflare_access_headers()
+        config.hub_url = "https://hub.example.com"
+        assert config.cloudflare_access_headers() == {
+            "CF-Access-Client-Id": "test-client-id",
+            "CF-Access-Client-Secret": "test-client-secret",
+        }
+
     def test_default_values(self):
         cfg = AnimusConfig()
         assert cfg.node_role == "peer"
@@ -215,3 +230,8 @@ class TestLegacyMigration:
         assert (new_home / ".animus" / "config.json").exists()
         # And the data_dir field must point at the new location
         assert cfg.data_dir == new_home / ".animus"
+
+
+def test_empty_registry_env_does_not_activate_path(monkeypatch):
+    monkeypatch.setenv('ANIMUS_SERVER_PEER_KEYS_FILE', '')
+    assert AnimusConfig(_env_file=None).server_peer_keys_file is None

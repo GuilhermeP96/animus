@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ..config import AnimusConfig
@@ -24,6 +26,7 @@ from ..indexer.engine import IndexEngine
 from ..network.crypto import verify_auth_header
 from ..network.sync import SyncProtocol
 from .licensing import require_peer_license
+from .peer_keys import peer_secret, insecure_local_test
 
 logger = logging.getLogger("animus.server")
 
@@ -300,22 +303,29 @@ async def rate_limit_middleware(request: Request, call_next):
 async def verify_peer(request: Request) -> str:
     """Verify peer authentication. Returns node_id."""
     config = get_config()
-    if not config.server_secret:
-        # No auth configured — accept all (dev mode)
+    if insecure_local_test(config):
         return request.headers.get("x-animus-node", "anonymous")
+    try:
+        secret = peer_secret(config, request.headers.get('x-animus-node', ''))
+    except (OSError, ValueError, TypeError):
+        raise HTTPException(status_code=503, detail='Peer credential registry unavailable') from None
+    if not secret:
+        raise HTTPException(status_code=401, detail='Peer authentication unavailable')
 
     # Read body up front so we can include its hash in the signed
     # payload. FastAPI caches the result on the Request object, so
     # the downstream pydantic dependency still sees the same bytes.
     body = await request.body() if request.method in ("POST", "PUT", "PATCH") else b""
 
-    if not verify_auth_header(config.server_secret, dict(request.headers), body=body):
+    if not verify_auth_header(secret, dict(request.headers), body=body):
         raise HTTPException(status_code=401, detail="Invalid authentication")
     node_id = request.headers["x-animus-node"]
     metadata: dict[str, Any] = {}
     if body:
         try:
             metadata = json.loads(body)
+            if not isinstance(metadata, dict):
+                raise HTTPException(status_code=400, detail='Peer request must be a JSON object')
         except (TypeError, ValueError):
             metadata = {}
     if metadata.get("node_id") and metadata["node_id"] != node_id:
@@ -406,14 +416,27 @@ async def api_version():
     }
 
 
+@app.get("/health/live")
+def liveness():
+    """Cheap process health; detailed index counts live at /health."""
+    get_engine()
+    return {"status": "alive"}
+
+
 @app.get("/health")
-async def health():
+def health():
     engine = get_engine()
-    stats = engine.get_stats()
+    try:
+        engine.check_health()
+    except Exception:
+        return JSONResponse(status_code=503, content={'status': 'unhealthy', 'database': 'unavailable'})
+    stats = engine.cached_stats()
     return {
         "status": "healthy",
-        "memories": stats["total_memories"],
-        "nodes": stats["unique_nodes"],
+        "database": "available",
+        "memories": stats["total_memories"] if stats else None,
+        "nodes": stats["unique_nodes"] if stats else None,
+        "stats_age_seconds": stats["stats_age_seconds"] if stats else None,
         "peers_online": sum(1 for p in _connected_peers.values() if _peer_is_online(p)),
     }
 
@@ -421,7 +444,11 @@ async def health():
 @app.get("/api/stats")
 async def stats(node_id: str = Depends(verify_peer)):
     engine = get_engine()
-    return engine.get_stats()
+    try:
+        return await run_in_threadpool(engine.get_stats)
+    except Exception as exc:
+        logger.warning('Index statistics unavailable: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='Index statistics unavailable') from None
 
 
 @app.post("/api/sync/push")
@@ -449,7 +476,7 @@ async def sync_push(req: PushRequest, node_id: str = Depends(verify_peer)):
         "received": len(memories),
         "new": new_count,
         "skipped": skipped,
-        "total": engine.get_stats()["total_memories"],
+        "total": (engine.cached_stats() or {}).get('total_memories'),
     }
 
 
@@ -603,7 +630,10 @@ async def websocket_sync(ws: WebSocket):
 
     try:
         # Wait for handshake
-        raw = await ws.receive_text()
+        raw = await asyncio.wait_for(ws.receive_text(), timeout=10)
+        if len(raw) > 8192:
+            await ws.close(code=1009, reason='Handshake too large')
+            return
         msg = SyncProtocol.parse(raw)
 
         if msg["type"] != "HANDSHAKE":
@@ -616,7 +646,15 @@ async def websocket_sync(ws: WebSocket):
         # Verify auth if configured. The handshake message itself is
         # the signed body, so a stolen header alone can't be replayed
         # against a different handshake.
-        if config.server_secret:
+        try:
+            secret = peer_secret(config, peer_node_id)
+        except (OSError, ValueError, TypeError):
+            await ws.close(code=1013, reason='Peer credential registry unavailable')
+            return
+        if not secret and not insecure_local_test(config):
+            await ws.close(code=4003, reason='Peer authentication unavailable')
+            return
+        if secret:
             sig_headers = {
                 "x-animus-node": msg.get("node_id", ""),
                 "x-animus-timestamp": str(msg.get("timestamp", "")),
@@ -628,7 +666,7 @@ async def websocket_sync(ws: WebSocket):
                 f"{msg.get('timestamp', '')}|{msg.get('nonce', '')}"
             )
             if not verify_auth_header(
-                config.server_secret, sig_headers, body=signed_body
+                secret, sig_headers, body=signed_body
             ):
                 await ws.close(code=4003, reason="Invalid auth signature")
                 return
@@ -658,6 +696,9 @@ async def websocket_sync(ws: WebSocket):
         engine = get_engine()
         while True:
             raw = await ws.receive_text()
+            if secret and peer_secret(config, peer_node_id) != secret:
+                await ws.close(code=4003, reason='Peer credential changed')
+                return
             msg = SyncProtocol.parse(raw)
 
             if msg["type"] == "PUSH":

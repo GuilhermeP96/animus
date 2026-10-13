@@ -110,7 +110,8 @@ def config_set(key: str, value: str):
     else:
         setattr(cfg, key, value)
     cfg.save()
-    console.print(f"[green]✓[/] {key} = {value}")
+    display = "***" if any(part in key.lower() for part in ("secret", "token", "key")) else value
+    console.print(f"[green]✓[/] {key} = {display}")
 
 
 # ═══════════════════════════════════════════════════════════════

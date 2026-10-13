@@ -43,7 +43,7 @@ class TestAdminFailClosed:
         m = reload_admin_auth(
             {
                 "ANIMUS_ADMIN_PASSWORD": "hunter2",
-                "ANIMUS_SERVER_SECRET": "real-secret",
+                "ANIMUS_ADMIN_SECRET": "real-secret",
             }
         )
         assert m._admin_configured() is True
@@ -66,3 +66,10 @@ class TestAdminFailClosed:
         """Regression: pre-0.4.6 default admin/admin must NOT work."""
         m = reload_admin_auth({})
         assert m.validate_credentials("admin", "admin") is False
+
+
+def test_peer_secret_alone_never_configures_admin(reload_admin_auth):
+    auth = reload_admin_auth({'ANIMUS_ADMIN_PASSWORD': 'fixture-password',
+                              'ANIMUS_SERVER_SECRET': 'fixture-peer-secret'})
+    assert not auth._admin_configured()
+    assert not auth.validate_credentials('admin', 'fixture-password')

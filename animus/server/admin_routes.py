@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from starlette.concurrency import run_in_threadpool
+from .peer_keys import peer_secret
+
 import io
 import json
 import logging
@@ -88,7 +91,7 @@ async def logout(request: Request):
 @router.get("/admin", response_class=HTMLResponse, name="admin_dashboard")
 async def dashboard(request: Request, session: AdminSession = Depends(require_admin)):
     engine = get_engine()
-    stats = engine.get_stats()
+    stats = await run_in_threadpool(engine.get_stats)
     config = get_config()
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -236,7 +239,7 @@ async def obsidian_page(
     offset = (page - 1) * per_page
     return templates.TemplateResponse(request, "obsidian.html", {
         "session": session,
-        "stats": get_engine().get_stats(),
+        "stats": await run_in_threadpool(get_engine().get_stats),
         "obsidian_stats": _obsidian_stats(catalog),
         "notes": notes[offset:offset + per_page],
         "total": len(notes),
@@ -312,7 +315,7 @@ async def memories_page(
     types_rows = engine.conn.execute("SELECT DISTINCT type FROM memories ORDER BY type").fetchall()
     ws_rows = engine.conn.execute("SELECT DISTINCT workspace FROM memories WHERE workspace != '' ORDER BY workspace").fetchall()
 
-    stats = engine.get_stats()
+    stats = await run_in_threadpool(engine.get_stats)
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     return templates.TemplateResponse(request, "memories.html", {
@@ -793,8 +796,7 @@ async def delete_memory(
     session: AdminSession = Depends(require_admin),
 ):
     engine = get_engine()
-    engine.conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-    engine.conn.commit()
+    await run_in_threadpool(engine.delete_memory, memory_id)
     return {"status": "deleted", "id": memory_id}
 
 
@@ -861,7 +863,10 @@ async def reveal_secret(session: AdminSession = Depends(require_admin)):
     """Return the shared HMAC secret. Admin-only; intended to be shown
     once in the UI after an explicit click."""
     config = get_config()
-    return {"secret": config.server_secret or ""}
+    if config.server_peer_keys_file is not None:
+        raise HTTPException(status_code=409, detail='Credentials are provisioned separately per node')
+    secret = peer_secret(config, 'admin-provisioning')
+    return {"secret": secret}
 
 
 # ── Peer installer kit (self-contained ZIP) ──
@@ -891,11 +896,14 @@ def _installer_response(
 ) -> StreamingResponse:
     """Render the idempotent install/update kit for one resolved peer."""
     config = get_config()
-    secret = config.server_secret or ""
+    try:
+        secret = peer_secret(config, node_id)
+    except (OSError, ValueError, TypeError):
+        raise HTTPException(status_code=503, detail='Peer credential registry unavailable') from None
     if not secret:
         raise HTTPException(
             status_code=409,
-            detail="Hub has no ANIMUS_SERVER_SECRET configured — set it in .env first.",
+            detail="Peer has no operator-provisioned credential.",
         )
     if not _INSTALLER_KIT_DIR.is_dir():
         raise HTTPException(status_code=500, detail="installer_kit templates missing")
@@ -905,6 +913,8 @@ def _installer_response(
     substitutions = {
         "{{HUB_URL}}": hub_url,
         "{{SECRET}}": secret,
+        "{{CF_ACCESS_CLIENT_ID}}": config.cf_access_client_id,
+        "{{CF_ACCESS_CLIENT_SECRET}}": config.cf_access_client_secret,
         "{{NODE_ID}}": node_id,
         "{{NODE_NAME}}": node_name,
         "{{OS_NAME}}": _safe_peer_value(os_name, "unknown"),
@@ -1025,7 +1035,7 @@ async def admin_obsidian_notes(
 @router.get("/admin/api/stats")
 async def admin_stats(session: AdminSession = Depends(require_admin)):
     engine = get_engine()
-    stats = engine.get_stats()
+    stats = await run_in_threadpool(engine.get_stats)
     stats["peers_online"] = sum(1 for p in _connected_peers.values() if _peer_is_online(p))
     return stats
 
