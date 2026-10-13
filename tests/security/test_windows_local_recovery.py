@@ -171,3 +171,42 @@ def test_packager_refuses_source_drift_in_real_git_fixture(tmp_path):
     crypto.write_text('altered uncommitted crypto')
     with pytest.raises(ValueError): pack.package(tmp_path / 'after.zip')
     assert not (tmp_path / 'after.zip').exists()
+
+
+
+def test_batch_generator_respects_actual_enrollment_rotation_and_expiry(prepared,tmp_path):
+    config, work, public, _, _, _, original=prepared
+    spec=importlib.util.spec_from_file_location('batch_generator',ROOT/'scripts/security/prepare-peer-rotation.py')
+    generator=importlib.util.module_from_spec(spec); spec.loader.exec_module(generator)
+    approved=tmp_path/'approved.json'
+    record={**public,'verified_sha256':public['fingerprint'],
+            'independent_channel':{'method':'existing-ssh-publickey','evidence_id':'fixture-independent-owner-key'}}
+    approved.write_text(json.dumps({public['node_id']:record})); approved.chmod(0o600)
+    out=tmp_path/'batch-private'; receipt=generator.prepare(approved,out,'administrative-batch-rotation')
+    registry=json.loads((out/'peer-keys.json').read_text())
+    assert registry['rotation_id']=='administrative-batch-rotation'
+    packet=out/(public['node_id']+'.rotation.json'); envelope=json.loads(packet.read_text())
+    assert envelope['rotation_id']==public['rotation_id'] and envelope['expires_at']==public['expires_at']
+    assert receipt['expires_at']==public['expires_at'] and not receipt['activated']
+    r.stage(work,packet,receipt['envelope_sha256'][public['node_id']])
+    r.commit(work)
+    assert json.loads(config.read_text())=={**original,'server_secret':registry['peers'][public['node_id']]['secret']}
+
+
+@pytest.mark.parametrize('change',['rotation_missing','expired','too_short','extended','boolean_expiry','node_mismatch'])
+def test_generator_rejects_invalid_enrollment_before_artifacts(prepared,tmp_path,change):
+    _,_,public,_,_,_,_=prepared
+    spec=importlib.util.spec_from_file_location('reject_generator',ROOT/'scripts/security/prepare-peer-rotation.py')
+    generator=importlib.util.module_from_spec(spec); spec.loader.exec_module(generator)
+    record={**public,'verified_sha256':public['fingerprint'],
+            'independent_channel':{'method':'existing-ssh-publickey','evidence_id':'fixture-independent-key'}}
+    if change=='rotation_missing': record.pop('rotation_id')
+    elif change=='expired': record['expires_at']=int(time.time())-1
+    elif change=='too_short': record['expires_at']=int(time.time())+30
+    elif change=='extended': record['expires_at']=int(time.time())+3601
+    elif change=='boolean_expiry': record['expires_at']=True
+    else: record['node_id']='wrong-peer'
+    approved=tmp_path/'approved-invalid.json'; approved.write_text(json.dumps({public['node_id']:record})); approved.chmod(0o600)
+    out=tmp_path/'not-created'
+    with pytest.raises(ValueError): generator.prepare(approved,out,'fixture-batch')
+    assert not out.exists()
