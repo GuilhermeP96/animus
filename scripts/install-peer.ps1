@@ -263,6 +263,12 @@ function Configure-Peer($dir, $hub, $secret, $id, $name) {
     Assert-NativeSuccess 'config-set hub_url'
     & $animus config-set server_secret $secret | Out-Null
     Assert-NativeSuccess 'config-set server_secret'
+    if ($env:ANIMUS_CF_ACCESS_CLIENT_ID -and $env:ANIMUS_CF_ACCESS_CLIENT_SECRET) {
+        & $animus config-set cf_access_client_id $env:ANIMUS_CF_ACCESS_CLIENT_ID | Out-Null
+        Assert-NativeSuccess 'config-set cf_access_client_id'
+        & $animus config-set cf_access_client_secret $env:ANIMUS_CF_ACCESS_CLIENT_SECRET | Out-Null
+        Assert-NativeSuccess 'config-set cf_access_client_secret'
+    }
     & $animus config-set node_id       $id   | Out-Null
     Assert-NativeSuccess 'config-set node_id'
     & $animus config-set node_name     $name | Out-Null

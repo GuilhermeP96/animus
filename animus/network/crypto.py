@@ -17,14 +17,16 @@ Wire format (HTTP headers, case-insensitive on the wire)::
 
 Backwards compatibility: peers older than 0.4.6 omit ``Nonce`` and
 ``Body-SHA256``. The verifier still accepts them (treating both as
-empty strings) unless ``ANIMUS_REQUIRE_NONCE=1`` is set on the hub.
+empty strings) only with explicit ``ANIMUS_REQUIRE_NONCE=0`` during local legacy tests. Strict mode is the default.
 """
 
 from __future__ import annotations
 
 import hashlib
+import heapq
 import hmac
 import os
+import re
 import secrets
 import threading
 import time
@@ -59,6 +61,16 @@ def hash_body(body: bytes | str | None) -> str:
     if isinstance(body, str):
         body = body.encode("utf-8")
     return hashlib.sha256(body).hexdigest()
+
+
+# Fingerprint only: the compromised former test fallback is never a valid key.
+_REVOKED_SECRET_SHA256 = frozenset({
+    'e82a6b79ae8c5fa691dfd50e923714fd121a125a2a50a568232065ce0b4dcd27',
+})
+
+
+def secret_is_revoked(secret: str) -> bool:
+    return hashlib.sha256(secret.encode()).hexdigest() in _REVOKED_SECRET_SHA256
 
 
 def derive_peer_key(shared_secret: str, node_id: str) -> str:
@@ -104,6 +116,8 @@ def create_auth_header(
     ``ANIMUS_SECURE_AUTH=0`` (or ``secure=False``) only when this peer
     must talk to a hub older than 0.4.6 during a rolling upgrade.
     """
+    if not shared_secret or secret_is_revoked(shared_secret):
+        raise ValueError("Missing or revoked peer secret")
     if secure is None:
         secure = os.environ.get("ANIMUS_SECURE_AUTH", "1") == "1"
 
@@ -137,26 +151,29 @@ def create_auth_header(
 _REPLAY_CACHE_MAX = 100_000
 _replay_cache: "OrderedDict[tuple[str, str], float]" = OrderedDict()
 _replay_lock = threading.Lock()
+_replay_expirations: list[tuple[float, tuple[str, str]]] = []
 
 
-def _seen_recently(node_id: str, nonce: str, max_age: int) -> bool:
-    """Return True if (node_id, nonce) was already seen inside the
-    replay window. Records the pair if it's new."""
+def _seen_recently(node_id: str, nonce: str, max_age: int, expires_at: float | None = None) -> bool:
+    """Atomically consume a verified nonce; fail closed if live cache is full.
+
+    Store the timestamp's validity deadline, including permitted future skew.
+    Invalid signatures never call this function or consume nonce capacity.
+    """
     if not nonce:
-        # Pre-0.4.6 peer or a request that doesn't carry a nonce.
-        # Timestamp window is the only defence in that case.
         return False
     key = (node_id, nonce)
     now = time.time()
-    cutoff = now - max_age
     with _replay_lock:
-        ts = _replay_cache.get(key)
-        if ts is not None and ts >= cutoff:
+        while _replay_expirations and _replay_expirations[0][0] < now:
+            expiry, old = heapq.heappop(_replay_expirations)
+            if _replay_cache.get(old) == expiry:
+                del _replay_cache[old]
+        if key in _replay_cache or len(_replay_cache) >= _REPLAY_CACHE_MAX:
             return True
-        _replay_cache[key] = now
-        _replay_cache.move_to_end(key)
-        while len(_replay_cache) > _REPLAY_CACHE_MAX:
-            _replay_cache.popitem(last=False)
+        expiry = expires_at if expires_at is not None else now + max_age
+        _replay_cache[key] = expiry
+        heapq.heappush(_replay_expirations, (expiry, key))
     return False
 
 
@@ -164,6 +181,7 @@ def _replay_cache_clear() -> None:
     """Test-only: drop all remembered nonces."""
     with _replay_lock:
         _replay_cache.clear()
+        _replay_expirations.clear()
 
 
 def verify_auth_header(
@@ -183,17 +201,29 @@ def verify_auth_header(
     environment flag. When True, requests without a nonce are
     rejected outright.
     """
+    if not shared_secret or secret_is_revoked(shared_secret):
+        return False
     node_id = headers.get("x-animus-node", "")
     timestamp = headers.get("x-animus-timestamp", "")
     signature = headers.get("x-animus-signature", "")
     nonce = headers.get("x-animus-nonce", "")
     sent_body_hash = headers.get("x-animus-body-sha256", "")
 
-    if not all([node_id, timestamp, signature]):
+    if not all(isinstance(value, str) for value in (node_id, timestamp, signature, nonce, sent_body_hash)):
+        return False
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", node_id):
+        return False
+    if not re.fullmatch(r"[0-9]{1,12}", timestamp) or not re.fullmatch(r"[0-9a-f]{64}", signature):
+        return False
+    if nonce and not re.fullmatch(r"[0-9a-f]{32}", nonce):
+        return False
+    if sent_body_hash and not re.fullmatch(r"[0-9a-f]{64}", sent_body_hash):
+        return False
+    if not 0 < max_age <= 300:
         return False
 
     if require_nonce is None:
-        require_nonce = os.environ.get("ANIMUS_REQUIRE_NONCE", "0") == "1"
+        require_nonce = os.environ.get("ANIMUS_REQUIRE_NONCE", "1") == "1"
     if require_nonce and not nonce:
         return False
 
@@ -209,13 +239,10 @@ def verify_auth_header(
         return False
     body_h = sent_body_hash or actual_body_hash
 
-    if _seen_recently(node_id, nonce, max_age):
-        return False
-
     peer_key = derive_peer_key(shared_secret, node_id)
     payload = _build_payload(node_id, timestamp, nonce, body_h)
     if verify_signature(peer_key, payload, signature):
-        return True
+        return not _seen_recently(node_id, nonce, max_age, expires_at=ts + max_age)
     # Backwards compat: 0.4.5 and older peers don't send a nonce or
     # body hash and sign only ``f"{node_id}:{timestamp}"``. Accept
     # them only when the hub hasn't enabled strict nonce mode.

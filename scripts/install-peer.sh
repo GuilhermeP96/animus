@@ -137,6 +137,10 @@ configure_peer() {
 
     animus config-set hub_url       "$hub_url"  >/dev/null
     animus config-set server_secret "$secret"   >/dev/null
+    if [[ -n "${ANIMUS_CF_ACCESS_CLIENT_ID:-}" && -n "${ANIMUS_CF_ACCESS_CLIENT_SECRET:-}" ]]; then
+        animus config-set cf_access_client_id "$ANIMUS_CF_ACCESS_CLIENT_ID" >/dev/null
+        animus config-set cf_access_client_secret "$ANIMUS_CF_ACCESS_CLIENT_SECRET" >/dev/null
+    fi
     animus config-set node_id       "$node_id"  >/dev/null
     animus config-set node_name     "$node_name" >/dev/null
 

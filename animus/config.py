@@ -162,11 +162,32 @@ class AnimusConfig(BaseSettings):
     # ── Hub Connection ──
     hub_url: str = Field(default="", description="Hub server URL (wss://...)")
     hub_token: str = Field(default="", description="Auth token for hub")
+    cf_access_client_id: str = Field(default="", description="Cloudflare Access service token ID")
+    cf_access_client_secret: str = Field(default="", repr=False,
+                                         description="Cloudflare Access service token secret")
+
+    def cloudflare_access_headers(self) -> dict[str, str]:
+        """Add the optional edge identity without replacing peer HMAC auth."""
+        if not self.cf_access_client_id and not self.cf_access_client_secret:
+            return {}
+        if not self.cf_access_client_id or not self.cf_access_client_secret:
+            raise ValueError("Cloudflare Access requires both client ID and client secret")
+        if not self.hub_url.lower().startswith(("https://", "wss://")):
+            raise ValueError("Cloudflare Access credentials require an HTTPS or WSS hub URL")
+        return {"CF-Access-Client-Id": self.cf_access_client_id,
+                "CF-Access-Client-Secret": self.cf_access_client_secret}
 
     # ── Server (when running as hub) ──
     server_host: str = "0.0.0.0"
     server_port: int = 8314
-    server_secret: str = Field(default="", description="Shared secret for peer auth")
+    server_secret: str = Field(default="", repr=False, description="Shared secret for peer auth")
+    server_peer_keys_file: Optional[Path] = Field(default=None, description="Private root-provisioned per-node credential registry")
+    allow_insecure_dev_auth: bool = Field(default=False, description="Explicit loopback-only test auth bypass")
+
+    @field_validator('server_peer_keys_file', mode='before')
+    @classmethod
+    def empty_registry_is_unconfigured(cls, value):
+        return None if value == '' else value
 
     # ── Tunnel ──
     tunnel_mode: str = Field(
