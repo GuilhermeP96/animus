@@ -21,8 +21,8 @@ function Private([string]$Path,[string]$Owner,[bool]$Directory=$false) {
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
     $observed=Get-Acl -LiteralPath $Path
-    if (-not $observed.AreAccessRulesProtected -or (Sid $observed.Owner) -ne $Owner) { throw 'Private ACL mismatch' }
-    foreach ($rule in $observed.Access) {
+    if (-not $observed.AreAccessRulesProtected -or $observed.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $Owner) { throw 'Private ACL mismatch' }
+    foreach ($rule in $observed.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
         if ((Sid $rule.IdentityReference.Value) -notin @($Owner,'S-1-5-18','S-1-5-32-544') -or $rule.IsInherited -or $rule.AccessControlType -ne 'Allow') { throw 'Unexpected private ACL' }
     }
 }
@@ -30,7 +30,7 @@ function Parent([string]$Path,[string]$Owner) {
     $item=Get-Item -LiteralPath $Path -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Parent reparse forbidden' }
     $danger=[Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
-    foreach ($rule in (Get-Acl -LiteralPath $Path).Access) {
+    foreach ($rule in (Get-Acl -LiteralPath $Path).GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
         if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
         if ($rule.AccessControlType -eq 'Allow' -and (Sid $rule.IdentityReference.Value) -notin @($Owner,'S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464') -and ($rule.FileSystemRights -band $danger)) { throw 'Untrusted parent mutation permission' }
     }
@@ -51,7 +51,7 @@ function Guard-Ancestry([string]$Path,[string]$Owner) {
     $trusted=@($Owner,'S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
     while ($null -ne $parent) {
         if ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Native ancestor reparse forbidden' }
-        foreach ($rule in (Get-Acl -LiteralPath $parent.FullName).Access) {
+        foreach ($rule in (Get-Acl -LiteralPath $parent.FullName).GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
             if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
             if ($rule.AccessControlType -eq 'Allow' -and (Sid $rule.IdentityReference.Value) -notin $trusted -and ($rule.FileSystemRights -band $danger)) { throw 'Untrusted native ancestor replacement permission' }
         }
