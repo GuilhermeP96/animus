@@ -7,6 +7,7 @@ import logging
 import os
 import platform
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -256,7 +257,14 @@ class AnimusConfig(BaseSettings):
         return self.data_dir / "config.json"
 
     def ensure_dirs(self) -> None:
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt" and self.data_dir.is_symlink():
+            raise ValueError("Animus data directory cannot be a symlink")
+        self.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name != "nt":
+            if self.data_dir.stat().st_uid != os.geteuid():
+                raise PermissionError("Animus data directory must belong to the native service account")
+            # Harden this directory only; never recurse into memory/provider data.
+            self.data_dir.chmod(0o700)
         self.index_path.mkdir(parents=True, exist_ok=True)
 
     def save(self) -> None:
@@ -266,7 +274,29 @@ class AnimusConfig(BaseSettings):
         for k, v in data.items():
             if isinstance(v, Path):
                 data[k] = str(v)
-        self.config_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+        encoded = json.dumps(data, indent=2, default=str)
+        if os.name == "nt":
+            # Windows private ACL qualification belongs to native recovery launcher.
+            self.config_path.write_text(encoded, encoding="utf-8")
+            return
+        if self.config_path.is_symlink():
+            raise ValueError("Animus config cannot be a symlink")
+        descriptor, temporary = tempfile.mkstemp(prefix=".config-", suffix=".tmp", dir=self.data_dir)
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.config_path)
+            directory_fd = os.open(self.data_dir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if Path(temporary).exists():
+                Path(temporary).unlink()
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "AnimusConfig":

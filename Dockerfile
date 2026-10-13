@@ -23,7 +23,7 @@ RUN mkdir -p /opt/animus-packages \
     && pip wheel --no-cache-dir --no-deps --wheel-dir /opt/animus-packages .
 
 # Data volume
-RUN mkdir -p /data/animus
+RUN install -d -m 0700 /data/animus
 VOLUME /data/animus
 
 # Environment

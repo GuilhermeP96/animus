@@ -51,3 +51,28 @@ def test_owner_private_regular_files_required(tmp_path):
 def test_oversized_native_private_input_refused(tmp_path):
     path=tmp_path/'oversized'; path.write_bytes(b' '*(n.LIMIT+1)); path.chmod(0o600)
     with pytest.raises(n.r.RecoveryError): n.private(path)
+
+
+def test_unix_save_hardens_only_datadir_and_config_preserving_other_data(tmp_path):
+    from animus.config import AnimusConfig
+    data_dir=tmp_path/'native-data'; data_dir.mkdir(mode=0o755)
+    existing=data_dir/'existing-memory.txt'; existing.write_text('existing fixture'); existing.chmod(0o640)
+    sibling=tmp_path/'other-project'; sibling.mkdir(mode=0o755)
+    config=AnimusConfig(_env_file=None,node_id='native-mode-fixture',data_dir=data_dir,
+                        server_secret=secrets.token_urlsafe(48))
+    config.save()
+    assert data_dir.stat().st_mode & 0o777==0o700
+    assert config.config_path.stat().st_mode & 0o777==0o600
+    assert existing.stat().st_mode & 0o777==0o640 and sibling.stat().st_mode & 0o777==0o755
+    assert AnimusConfig.load(config.config_path).node_id=='native-mode-fixture'
+    assert not list(data_dir.glob('.config-*.tmp'))
+
+
+def test_unix_save_refuses_config_symlink_without_mutating_target(tmp_path):
+    from animus.config import AnimusConfig
+    data_dir=tmp_path/'native-data'; data_dir.mkdir(mode=0o700)
+    target=tmp_path/'other-config'; target.write_text('must stay unchanged')
+    (data_dir/'config.json').symlink_to(target)
+    config=AnimusConfig(_env_file=None,node_id='native-symlink-fixture',data_dir=data_dir)
+    with pytest.raises(ValueError): config.save()
+    assert target.read_text()=='must stay unchanged'
