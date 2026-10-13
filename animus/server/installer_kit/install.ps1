@@ -64,7 +64,7 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
 }
 
 $repo   = if ($env:ANIMUS_REPO_URL) { $env:ANIMUS_REPO_URL } else { 'https://github.com/GuilhermeP96/animus.git' }
-$branch = if ($env:ANIMUS_BRANCH)   { $env:ANIMUS_BRANCH }   else { 'master' }
+$branch = if ($env:ANIMUS_BRANCH)   { $env:ANIMUS_BRANCH }   else { 'licensing-managment' }
 $rawBase = ($repo -replace '\.git$', '') -replace 'github\.com', 'raw.githubusercontent.com'
 $url    = "$rawBase/$branch/scripts/install-peer.ps1"
 $installedSource = Join-Path $installDir 'scripts\install-peer.ps1'

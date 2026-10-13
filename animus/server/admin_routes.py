@@ -920,7 +920,7 @@ def _installer_response(
         "{{NODE_NAME}}": node_name,
         "{{OS_NAME}}": _safe_peer_value(os_name, "unknown"),
         "{{REPO_URL}}": "https://github.com/GuilhermeP96/animus.git",
-        "{{BRANCH}}": "master",
+        "{{BRANCH}}": "licensing-managment",
         "{{GENERATED_AT}}": generated_at,
     }
 

@@ -32,7 +32,7 @@ if [[ -z "${ANIMUS_SERVER_SECRET:-}" || "${ANIMUS_SERVER_SECRET}" == "{{SECRET}}
 fi
 
 REPO=${ANIMUS_REPO_URL:-https://github.com/GuilhermeP96/animus.git}
-BRANCH=${ANIMUS_BRANCH:-master}
+BRANCH=${ANIMUS_BRANCH:-licensing-managment}
 RAW_BASE=${ANIMUS_RAW_BASE:-${REPO%.git}}
 RAW_BASE=${RAW_BASE/github.com/raw.githubusercontent.com}
 
