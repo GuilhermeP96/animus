@@ -41,6 +41,14 @@ def auth_headers():
 
 
 class TestRootAndHealth:
+    def test_liveness_does_not_scan_memory_index(self, client, monkeypatch):
+        def expensive_stats():
+            raise AssertionError("liveness must not scan the index")
+        monkeypatch.setattr(server_module._engine, "get_stats", expensive_stats)
+        resp = client.get("/health/live")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "alive"}
+
     def test_root(self, client):
         resp = client.get("/")
         assert resp.status_code == 200

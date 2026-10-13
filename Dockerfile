@@ -32,6 +32,6 @@ ENV ANIMUS_DATA_DIR=/data/animus \
 EXPOSE 8314
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD curl -f http://localhost:8314/health || exit 1
+    CMD curl -fsS --max-time 3 http://localhost:8314/health/live || exit 1
 
 CMD ["uvicorn", "animus.server.app:app", "--host", "0.0.0.0", "--port", "8314"]

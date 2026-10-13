@@ -116,7 +116,7 @@ class AnimusPeer:
             body_str = SyncProtocol.push(batch)
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, headers=self.config.cloudflare_access_headers()) as client:
                 # Use HTTP POST for batch sync (simpler than WS for one-shots)
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/sync/push",
@@ -153,7 +153,7 @@ class AnimusPeer:
             })
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, headers=self.config.cloudflare_access_headers()) as client:
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/sync/pull",
                     content=body_str,
@@ -178,7 +178,7 @@ class AnimusPeer:
             body_str = json.dumps({"query": query, "node_id": self.config.node_id})
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, headers=self.config.cloudflare_access_headers()) as client:
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/search",
                     content=body_str,

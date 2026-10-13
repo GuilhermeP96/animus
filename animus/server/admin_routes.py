@@ -905,6 +905,8 @@ def _installer_response(
     substitutions = {
         "{{HUB_URL}}": hub_url,
         "{{SECRET}}": secret,
+        "{{CF_ACCESS_CLIENT_ID}}": config.cf_access_client_id,
+        "{{CF_ACCESS_CLIENT_SECRET}}": config.cf_access_client_secret,
         "{{NODE_ID}}": node_id,
         "{{NODE_NAME}}": node_name,
         "{{OS_NAME}}": _safe_peer_value(os_name, "unknown"),

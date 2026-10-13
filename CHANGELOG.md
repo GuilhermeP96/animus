@@ -4,6 +4,14 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.10] — 2026-10-01 — Cloudflare edge protection
+
+- Optional Cloudflare Access service credentials accompany synchronization,
+  remote search, release probes and wheel downloads, while preserving HMAC auth.
+- Installer kits carry the optional Access configuration; `config-set` masks secrets.
+- `/health/live` provides cheap liveness without scanning the memory index;
+  detailed `/health` runs its synchronous database work in the thread pool.
+
 ## [0.8.9] — 2026-09-19 — Datano licensing control plane
 
 ### Added
