@@ -40,6 +40,7 @@ where = ["."]
 include = ["animus*"]
 
 [tool.setuptools.package-data]
+"animus.network" = ["windows-update-task.ps1"]
 "animus.server" = [
     "templates/*.html",
     "static/**/*",

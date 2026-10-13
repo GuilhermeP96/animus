@@ -223,10 +223,8 @@ class TestApplyUpdateGuards:
             with patch.object(updater.os, "name", "posix"):
                 assert updater.apply_update(info) is True
 
-    def test_windows_update_is_deferred_until_process_exits(self, tmp_path):
-        import base64
+    def test_windows_legacy_git_target_does_not_exit_or_launch_helper(self, tmp_path):
         from animus.network import updater
-
         info = VersionInfo(latest="99.0.0")
         fake_pip = tmp_path / "pip.exe"
         fake_pip.write_text("")
@@ -234,17 +232,10 @@ class TestApplyUpdateGuards:
         with patch.object(updater, "_is_writable_install", return_value=True), \
              patch.object(updater, "_pip_exe", return_value=fake_pip), \
              patch.object(updater.os, "name", "nt"), \
-             patch.object(updater.subprocess, "Popen") as popen:
-            assert updater.apply_update(info) is True
-
-        args = popen.call_args.args[0]
-        script = base64.b64decode(args[-1]).decode("utf-16le")
-        assert args[:3] == ["powershell.exe", "-NoProfile", "-NonInteractive"]
-        assert "Get-Process -Id" in script
-        assert "animus*.exe" in script
-        assert "-m' 'pip' 'install" in script
-        assert updater.update_is_deferred() is True
-        updater._deferred_update_pending = False
+             patch.object(updater.subprocess, "Popen") as detached:
+            assert updater.apply_update(info) is False
+        detached.assert_not_called()
+        assert updater.update_is_deferred() is False
 
 
 class TestRestartInPlace:
