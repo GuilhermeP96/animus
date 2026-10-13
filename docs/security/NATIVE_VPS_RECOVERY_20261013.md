@@ -44,3 +44,21 @@ attribution/private modes/symlink/size; they do not assert actual systemd runtim
 qualification. No live service/env/config was read or changed by those tests.
 Native service variations, other users and EnvironmentFile path escaping are
 refused until explicitly qualified. Source delivery alone is not a rotation.
+
+## Persistent Unix permissions
+
+For a Root-owned existing native data directory0755, Root records its private
+before-mode evidence, then hardens **only that exact directory** to0700; config
+must be0600. Do not relax the recovery gate, chmod recursively or touch peers'
+other data. Existing JSON/node/provider/license fields remain unchanged.
+
+Source persistence: Unix installer uses umask077 and explicitly calls qualified
+Config.ensure_dirs; it hardens only its service-owned data_dir0700. Config.save
+writes owner-private0600 temp, fsyncs and atomically replaces only config.json;
+refuses symlink targets and foreign directory ownership. Existing nested data,
+index files and sibling projects are never chmodded recursively. Docker image
+creates /data/animus0700; mounted runtime directory is checked by Config logic.
+Windows source keeps its separate ACL-based qualified recovery path.
+Fixture regression confirms modes and unchanged neighboring/nested files, and
+refuses a config symlink without changing its target. No installer or live chmod
+was executed by these source tests.
