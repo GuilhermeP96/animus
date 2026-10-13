@@ -125,14 +125,14 @@ try {
         if (-not $RecoveryDir -or -not $EnvelopePath -or $ExpectedDigest -notmatch '^[0-9a-f]{64}$') { throw 'Apply requires private recovery directory, envelope and independently received canonical SHA256' }
         $runtime=Get-Content -LiteralPath (Join-Path $RecoveryDir 'runtime.json') -Raw | ConvertFrom-Json
         if ($runtime.owner_sid -ne $owner) { throw 'Use the same independently verified local owner account' }
-        $PythonExe=$runtime.python
+        $selected=Get-SelectedTask $runtime.task_name $runtime.task_path
+        if ($selected.Fingerprint -ne $runtime.runtime_fingerprint) { throw 'Native runtime changed; do not stop or activate' }
+        $PythonExe=$selected.Python; Verify-Native
+        if ($runtime.python -ne $PythonExe) { throw 'Saved interpreter differs from verified native task' }
         $actual=Invoke-Helper @('inspect','--config',$runtime.config_path)
         $explicitConfig=$ConfigPath
         if ($NonInteractive) { $explicitConfig=Full-Path $ConfigPath }
         Assert-RecoveryTargetBinding ([bool]$NonInteractive) $TaskName $TaskPath $explicitConfig $ExpectedNodeId $runtime $actual.node_id
-        $selected=Get-SelectedTask $runtime.task_name $runtime.task_path
-        if ($selected.Fingerprint -ne $runtime.runtime_fingerprint) { throw 'Native runtime changed; do not stop or activate' }
-        $PythonExe=$selected.Python; Verify-Native
         if ((Verify-TaskEnvironment $selected) -ne $runtime.environment_fingerprint) { throw 'Task .env/DataDir changed; prepare a fresh owner-confirmed enrollment' }
         $configOwner=Resolve-Sid ((Get-Acl -LiteralPath $runtime.config_path).Owner)
         if ($configOwner -ne $runtime.config_owner_sid) { throw 'Config ownership changed' }
