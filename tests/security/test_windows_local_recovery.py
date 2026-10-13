@@ -210,3 +210,14 @@ def test_generator_rejects_invalid_enrollment_before_artifacts(prepared,tmp_path
     out=tmp_path/'not-created'
     with pytest.raises(ValueError): generator.prepare(approved,out,'fixture-batch')
     assert not out.exists()
+
+
+
+def test_launcher_exact_synthetic_probe_works_in_old_installed_native_crypto(tmp_path):
+    import re
+    launcher=(ROOT/'scripts/security/windows-local-recovery/Recover-Animus.ps1').read_text()
+    probe=re.search(r"\$probe=@\(& \$script:PythonExe -c '([^']+)'",launcher).group(1)
+    env={k:v for k,v in os.environ.items() if k!='PYTHONPATH' and not k.startswith('ANIMUS_')}
+    result=subprocess.run([sys.executable,'-c',probe],cwd=tmp_path,env=env,capture_output=True,text=True,timeout=10)
+    assert result.returncode==0 and result.stdout.strip()=='native-ok'
+    assert result.stderr==''
