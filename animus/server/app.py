@@ -410,7 +410,7 @@ async def api_version():
             "ANIMUS_INSTALL_URL",
             "git+https://github.com/GuilhermeP96/animus.git",
         ),
-        "git_ref": os.environ.get("ANIMUS_GIT_REF", "main"),
+        "git_ref": os.environ.get("ANIMUS_GIT_REF", "licensing-managment"),
         "package_url": "/api/peers/package.whl" if latest == __version__ else "",
         "notes": os.environ.get("ANIMUS_RELEASE_NOTES", ""),
     }

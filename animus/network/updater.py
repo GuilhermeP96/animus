@@ -87,7 +87,7 @@ class VersionInfo:
     min_compat: str = ""
     channel: str = "stable"
     install_url: str = DEFAULT_REPO
-    git_ref: str = "main"
+    git_ref: str = "licensing-managment"
     package_url: str = ""
     notes: str = ""
 
@@ -98,7 +98,7 @@ class VersionInfo:
             min_compat=str(data.get("min_compat") or "").strip(),
             channel=str(data.get("channel") or "stable").strip(),
             install_url=str(data.get("install_url") or DEFAULT_REPO).strip(),
-            git_ref=str(data.get("git_ref") or "main").strip(),
+            git_ref=str(data.get("git_ref") or "licensing-managment").strip(),
             package_url=str(data.get("package_url") or "").strip(),
             notes=str(data.get("notes") or "").strip(),
         )

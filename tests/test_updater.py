@@ -42,7 +42,7 @@ class TestVersionInfo:
         v = VersionInfo.from_dict({"latest": "0.6.0"})
         assert v.latest == "0.6.0"
         assert v.install_url == DEFAULT_REPO
-        assert v.git_ref == "main"
+        assert v.git_ref == "licensing-managment"
         assert v.channel == "stable"
 
     def test_overrides(self):
@@ -287,7 +287,7 @@ class TestVersionEndpoint:
         assert data["latest"] == __version__
         assert data["channel"] == "stable"
         assert data["install_url"].startswith("git+")
-        assert data["git_ref"] in {"main", "master"}
+        assert data["git_ref"] == "licensing-managment"
         assert data["package_url"] == "/api/peers/package.whl"
 
     def test_env_overrides(self, version_client, monkeypatch):

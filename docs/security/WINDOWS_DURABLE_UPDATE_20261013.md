@@ -88,3 +88,12 @@ Python also rejects a persisted data_dir different from the currently loaded
 native daemon. Pure selection gates and real native read-only environment checks
 are separate from actual scheduled-job completion/reconnection. The final native
 fixture must still execute the corrected bytes and prove those lifecycle events.
+
+## Recoverable licensed source
+
+Default Git recovery references in `/api/version`, installer peer.env templates
+and Unix/Windows installer fallbacks are `licensing-managment`, the canonical
+licensed production branch. Explicit trusted operator overrides remain possible.
+The authenticated version-bound Hub wheel stays the normal native update path;
+Windows durable updates do not fall back to Git. This prevents recovering from
+a stale `main`/`master` tree that omits current security/licensing changes.
