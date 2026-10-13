@@ -18,6 +18,12 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Compatible patched build/installer tools; exact official wheel hashes.
+COPY scripts/docker/toolchain-patch.requirements.txt /tmp/animus-toolchain.requirements.txt
+RUN python -m pip install --no-cache-dir --only-binary=:all: --require-hashes \
+    -r /tmp/animus-toolchain.requirements.txt && python -m pip check \
+    && rm /tmp/animus-toolchain.requirements.txt
+
 # Python deps
 COPY pyproject.toml ./
 COPY . .

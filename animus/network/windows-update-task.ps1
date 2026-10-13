@@ -31,8 +31,89 @@ function Parent([string]$Path,[string]$Owner) {
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Parent reparse forbidden' }
     $danger=[Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
     foreach ($rule in (Get-Acl -LiteralPath $Path).Access) {
-        if ($rule.AccessControlType -eq 'Allow' -and (Sid $rule.IdentityReference.Value) -notin @($Owner,'S-1-5-18','S-1-5-32-544') -and ($rule.FileSystemRights -band $danger)) { throw 'Untrusted parent mutation permission' }
+        if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+        if ($rule.AccessControlType -eq 'Allow' -and (Sid $rule.IdentityReference.Value) -notin @($Owner,'S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464') -and ($rule.FileSystemRights -band $danger)) { throw 'Untrusted parent mutation permission' }
     }
+}
+function Local-Absolute([string]$Path) {
+    if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.StartsWith('\\')) { throw 'Absolute local native path required' }
+    return [IO.Path]::GetFullPath($Path).TrimEnd('\','/')
+}
+function Guard-Ancestry([string]$Path,[string]$Owner) {
+    $item=Get-Item -LiteralPath (Local-Absolute $Path) -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Native ancestry reparse forbidden' }
+    Parent $item.FullName $Owner
+    $parent=if ($item.PSIsContainer) { $item.Parent } else { $item.Directory }
+    # Rename/replacement is relevant on existing ancestors. A volume-root ACE
+    # permitting creation of unrelated directories does not permit replacing an
+    # existing protected child; unlike DELETE_CHILD/ownership/permission rights.
+    $danger=[Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+    $trusted=@($Owner,'S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    while ($null -ne $parent) {
+        if ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Native ancestor reparse forbidden' }
+        foreach ($rule in (Get-Acl -LiteralPath $parent.FullName).Access) {
+            if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+            if ($rule.AccessControlType -eq 'Allow' -and (Sid $rule.IdentityReference.Value) -notin $trusted -and ($rule.FileSystemRights -band $danger)) { throw 'Untrusted native ancestor replacement permission' }
+        }
+        $parent=$parent.Parent
+    }
+}
+function Hash-Text([string]$Value) {
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value)))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
+}
+function Env-Literal([string]$Value) {
+    $value=$Value.Trim()
+    if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) { $value=$value.Substring(1,$value.Length-2) }
+    if (-not $value -or $value -match '[\$`#\r\n]') { throw 'Ambiguous native dotenv selection refused' }
+    return $value
+}
+function Assert-SelectionBinding([string]$ExpectedDataDir,[string]$SelectedDataDir,[string]$ExpectedConfig,[string]$SelectedConfig,[string]$SecureAuth) {
+    if ($ExpectedDataDir -ne $SelectedDataDir -or $ExpectedConfig -ne $SelectedConfig -or ($SecureAuth -and $SecureAuth -ne '1')) { throw 'Native config selection or secure-auth drift' }
+}
+function Environment-Binding($Plan,$Task) {
+    $script:Gate='native_environment_selection'
+    $owner=$Plan.owner_sid
+    $data=Local-Absolute $Plan.data_dir
+    $config=Local-Absolute $Plan.config_path
+    Assert-SelectionBinding $data (Local-Absolute (Split-Path $config -Parent)) $config (Local-Absolute (Join-Path $data 'config.json')) ''
+    foreach ($path in @($data,$Plan.python,$config,$Plan.wheel)) { Guard-Ancestry $path $owner }
+    $working=$Task.Actions[0].WorkingDirectory
+    if (-not $working) { $working=Join-Path $env:SystemRoot 'System32' }
+    $working=Local-Absolute $working;Guard-Ancestry $working $owner
+    $values=[ordered]@{working_directory=$working;data_dir=$data;config_path=$config}
+    $explicit=$false
+    foreach ($scope in @('Process','User','Machine')) {
+        $envData=[Environment]::GetEnvironmentVariable('ANIMUS_DATA_DIR',$scope)
+        $secure=[Environment]::GetEnvironmentVariable('ANIMUS_SECURE_AUTH',$scope)
+        if ($envData) { $envData=Local-Absolute $envData;Assert-SelectionBinding $data $envData $config (Local-Absolute (Join-Path $envData 'config.json')) $secure;$explicit=$true }
+        elseif ($secure -and $secure -ne '1') { throw 'Explicit insecure native environment' }
+        $values[$scope+'_data_dir']=$envData;$values[$scope+'_secure_auth']=$secure
+    }
+    $envPath=Join-Path $working '.env'
+    $values['dotenv_path']=$envPath;$values['dotenv_sha256']='absent'
+    if (Test-Path -LiteralPath $envPath) {
+        Guard-Ancestry $envPath $owner
+        if ((Get-Item -LiteralPath $envPath).Length -gt 1048576) { throw 'Native dotenv bound exceeded' }
+        $seen=@{}
+        foreach ($line in [IO.File]::ReadAllLines($envPath)) {
+            if ($line -match '^\s*(?:export\s+)?(ANIMUS_DATA_DIR|ANIMUS_SECURE_AUTH)\s*=\s*(.*?)\s*$') {
+                $key=$Matches[1];$value=Env-Literal $Matches[2]
+                if ($seen.ContainsKey($key)) { throw 'Ambiguous duplicate native dotenv selector' }
+                $seen[$key]=$value
+                if ($key -eq 'ANIMUS_DATA_DIR') { $value=Local-Absolute $value;Assert-SelectionBinding $data $value $config (Local-Absolute (Join-Path $value 'config.json')) '';$explicit=$true }
+                elseif ($value -ne '1') { throw 'Native dotenv disables strict auth' }
+            }
+        }
+        $values['dotenv_sha256']=Hash $envPath
+    }
+    if (-not $explicit) {
+        $default=Local-Absolute (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.animus')
+        Assert-SelectionBinding $data $default $config (Local-Absolute (Join-Path $default 'config.json')) ''
+    }
+    $saved=Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
+    if ($saved.node_id -cne $Plan.node_id -or -not $saved.data_dir -or (Local-Absolute $saved.data_dir) -ne $data) { throw 'Persistent native identity/data selection differs' }
+    return Hash-Text ($values | ConvertTo-Json -Compress)
 }
 function Write-PrivateJson([string]$Path,$Value,[string]$Owner) {
     $temp=$Path+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
@@ -74,7 +155,9 @@ function Validate-Plan($Plan) {
     $config=Get-Content -LiteralPath $Plan.config_path -Raw | ConvertFrom-Json
     if ($config.node_id -cne $Plan.node_id) { throw 'Native node mismatch' }
     if ([Environment]::GetEnvironmentVariable('ANIMUS_SECURE_AUTH','Process') -and $env:ANIMUS_SECURE_AUTH -ne '1') { throw 'Explicit insecure auth environment' }
-    $null=Validate-Task $Plan
+    $selected=Validate-Task $Plan
+    Guard-Ancestry $Plan.runner $Plan.owner_sid
+    if ((Environment-Binding $Plan $selected) -ne $Plan.environment_fingerprint) { throw 'Native environment/config selection drift; no stop/install/restart' }
 }
 function Assert-VerifiedRestartEvidence([string]$ExpectedVersion,[string]$InstalledVersion,[long]$PidValue,[long]$ExpectedCreation,[long]$ObservedCreation,[bool]$TaskRunning,[bool]$ProcessAlive) {
     if ($ExpectedVersion -cne $InstalledVersion -or $PidValue -le 0 -or $ExpectedCreation -le 0 -or $ExpectedCreation -ne $ObservedCreation -or -not $TaskRunning -or -not $ProcessAlive) { throw 'Actual package/task/process evidence is incomplete' }
@@ -95,6 +178,8 @@ try {
         $sourceOwner=Invoke-CimMethod -InputObject $source -MethodName GetOwnerSid
         if ($sourceOwner.ReturnValue -ne 0 -or $sourceOwner.Sid -ne $owner) { throw 'Source process belongs to another principal' }
         if ($source.ExecutablePath -ne $spec.python -or -not $source.CommandLine.Trim().EndsWith($task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)) { throw 'Daemon task/process attribution mismatch' }
+        $spec | Add-Member -NotePropertyName owner_sid -NotePropertyValue $owner
+        $environmentFingerprint=Environment-Binding $spec $task
         Parent $spec.data_dir $owner
         Parent (Split-Path $spec.config_path -Parent) $owner
         if (-not $task.Settings.Enabled) { throw 'Native task must be enabled before staging update' }
@@ -108,8 +193,9 @@ try {
         [IO.File]::WriteAllBytes($runner,[IO.File]::ReadAllBytes($PSCommandPath)); Private $runner $owner
         $jobName='AnimusPeerUpdate-'+[Guid]::NewGuid().ToString('N')
         $PlanPath=Join-Path $jobDir 'plan.json'
-        $plan=@{version=1;task_name=$spec.task_name;task_path=$spec.task_path;task_sha256=(Task-Binding $task);owner_sid=$owner;python=$spec.python;config_path=$spec.config_path;config_sha256=$spec.config_sha256;node_id=$spec.node_id;wheel=$spec.wheel;wheel_sha256=$spec.wheel_sha256;expected_version=$spec.expected_version;source_pid=$spec.source_pid;source_creation_ticks=$source.CreationDate.ToUniversalTime().Ticks;deadline_ticks=[DateTime]::UtcNow.AddMinutes(15).Ticks;job_name=$jobName;runner=$runner;runner_sha256=(Hash $runner)}
+        $plan=@{version=1;data_dir=$spec.data_dir;environment_fingerprint=$environmentFingerprint;task_name=$spec.task_name;task_path=$spec.task_path;task_sha256=(Task-Binding $task);owner_sid=$owner;python=$spec.python;config_path=$spec.config_path;config_sha256=$spec.config_sha256;node_id=$spec.node_id;wheel=$spec.wheel;wheel_sha256=$spec.wheel_sha256;expected_version=$spec.expected_version;source_pid=$spec.source_pid;source_creation_ticks=$source.CreationDate.ToUniversalTime().Ticks;deadline_ticks=[DateTime]::UtcNow.AddMinutes(15).Ticks;job_name=$jobName;runner=$runner;runner_sha256=(Hash $runner)}
         Write-PrivateJson $PlanPath $plan $owner
+        Validate-Plan $plan
         $script:Gate='register_independent_update_task'
         $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $command="& '"+$runner.Replace("'","''")+"' -Mode Run -PlanPath '"+$PlanPath.Replace("'","''")+"'"
@@ -133,6 +219,7 @@ try {
             Start-Sleep -Milliseconds 200
         } while ([DateTime]::UtcNow -lt $deadline)
         if (-not $jobStarted) { throw 'Independent job did not actually start; daemon remains running' }
+        Validate-Plan $plan
         Write-Output (@{status='registered';job_started=$true;installed=$false;restart_verified=$false;job_name=$jobName} | ConvertTo-Json -Compress)
         exit 0
     }

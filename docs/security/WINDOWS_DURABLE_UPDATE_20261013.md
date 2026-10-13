@@ -58,3 +58,33 @@ After verified corporate SharePoint upload/listing/size/streamed SHA receipt,
 Root may remove only unchanged local payload; receipts/jobs/logs are not deleted
 by age. No installer/client reinstall, active key rotation or e-mail is part of
 this source delivery. Source/package/branch synchronization remains required.
+
+## Independent review: effective configuration selection
+
+The first runner bound the configuration hash but omitted `data_dir` from the
+persisted job plan and did not bind the Task working-directory dotenv or the
+Process/User/Machine selector environment. A restarted process could select a
+second configuration and still be alive with the expected package version.
+That is a source blocker, independently identified before activation.
+
+The corrected runner retains the exact loaded/persisted data directory and binds
+its canonical config/node, Task working directory (including the Windows default),
+whole dotenv-file SHA or absence, and all three ANIMUS_DATA_DIR/SECURE_AUTH scopes.
+Explicit selectors must all agree with the original configuration; insecure,
+relative/UNC, interpolated or duplicate selectors fail closed. When no selector
+exists, only the current principal's native default profile directory qualifies.
+The same fingerprint is rechecked before acknowledging job_started, stopping,
+installing and restarting. No task, dotenv or config is rewritten to force a pass.
+
+Files/directories and every ancestor are checked for reparse and untrusted
+replacement/ACL rights. Existing drive-root unrelated-directory creation rights
+are distinguished from replacement of a protected child; InheritOnly ACEs do not
+apply to that ancestor. Windows TrustedInstaller is an explicitly trusted OS
+principal alongside SYSTEM/Administrators/current native principal, not a general
+exception for other users. New private update state remains protected to its own
+principal/SYSTEM/Administrators only.
+
+Python also rejects a persisted data_dir different from the currently loaded
+native daemon. Pure selection gates and real native read-only environment checks
+are separate from actual scheduled-job completion/reconnection. The final native
+fixture must still execute the corrected bytes and prove those lifecycle events.

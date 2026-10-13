@@ -23,3 +23,22 @@ foreach ($case in @(
     $count++
 }
 Write-Output ('restart_evidence_checks_passed='+$count)
+
+$selection=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-SelectionBinding'},$true)
+if ($null -eq $selection) { throw 'Missing native selector binding gate' }
+Invoke-Expression $selection.Extent.Text
+Assert-SelectionBinding 'C:\Fixture\Data' 'C:\Fixture\Data' 'C:\Fixture\Data\config.json' 'C:\Fixture\Data\config.json' ''
+$selectionChecks=1
+Assert-SelectionBinding 'C:\Fixture\Data' 'c:\fixture\data' 'C:\Fixture\Data\config.json' 'c:\fixture\data\config.json' '1'
+$selectionChecks++
+foreach ($case in @(
+ @('C:\Fixture\Data','C:\Other','C:\Fixture\Data\config.json','C:\Other\config.json','1'),
+ @('C:\Fixture\Data','C:\Fixture\Data','C:\Fixture\Data\config.json','C:\Other\config.json','1'),
+ @('C:\Fixture\Data','C:\Fixture\Data','C:\Fixture\Data\config.json','C:\Fixture\Data\config.json','0')
+)) {
+ $refused=$false
+ try { Assert-SelectionBinding @case } catch { $refused=$true }
+ if (-not $refused) { throw 'Config/secure-auth drift was accepted' }
+ $selectionChecks++
+}
+Write-Output ('selection_evidence_checks_passed='+$selectionChecks)

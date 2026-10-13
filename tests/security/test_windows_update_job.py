@@ -56,3 +56,11 @@ def test_runner_has_no_broad_kill_or_detached_completion_assumption():
     assert 'restart_verified=$true' in script and 'server_reconnection_verified=$false' in script
     assert 'source_creation_ticks' in script and 'expected_version' in script
     assert '--no-index --no-deps' in script
+
+
+def test_persistent_native_data_directory_drift_refused(tmp_path):
+    data=tmp_path/'native'; config=AnimusConfig(_env_file=None,node_id='update-fixture',data_dir=data)
+    config.save(); updates=data/'updates';updates.mkdir();package=wheel(updates/'candidate.whl')
+    saved=json.loads(config.config_path.read_text());saved['data_dir']=str(tmp_path/'other-native')
+    config.config_path.write_text(json.dumps(saved))
+    with pytest.raises(ValueError):build_spec(package,'99.0.0',config)
