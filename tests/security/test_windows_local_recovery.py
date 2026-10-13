@@ -125,7 +125,7 @@ def test_source_only_package(tmp_path):
     archive = tmp_path / 'kit.zip'; result = pack.package(archive)
     import zipfile
     with zipfile.ZipFile(archive) as z:
-        assert set(z.namelist()) == {'Recover-Animus.ps1','Protect-PrivateState.ps1','recover_peer.py',
+        assert set(z.namelist()) == {'Recovery-Selection.ps1','Recover-Animus.ps1','Protect-PrivateState.ps1','recover_peer.py',
                                    'credential_rotation.py','README_PTBR.md','manifest.json'}
         manifest = json.loads(z.read('manifest.json'))
         for name, sha in manifest['files'].items():

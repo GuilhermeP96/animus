@@ -9,7 +9,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-FILES = ['Recover-Animus.ps1', 'Protect-PrivateState.ps1', 'recover_peer.py', 'README_PTBR.md']
+FILES = ['Recovery-Selection.ps1', 'Recover-Animus.ps1', 'Protect-PrivateState.ps1', 'recover_peer.py', 'README_PTBR.md']
 
 def package(destination):
     destination = Path(destination).absolute()

@@ -58,3 +58,15 @@ stop/start or online reconnection. PowerShell AST and real Windows assisted smok
 remain distinct gates; do not claim native qualification before owner execution.
 Private native key/config backup retention follows corporate verified offsite
 receipt policy; no automatic age eviction. No secrets may enter Git/issues/email.
+
+## Authorized authenticated SSH automation
+
+Optional `-NonInteractive` is allowed only with explicit TaskName/TaskPath/
+absolute local ConfigPath/ExpectedNodeId in both phases. It never establishes
+SSH trust: Root must independently authenticate the host/key and have owner
+permission. Default interactive confirmations remain. Expected node is matched
+against inspected config, enrollment and persisted runtime; Apply rechecks exact
+task/path/config and current node before stage/stop. Old runtime metadata lacking
+node binding requires fresh preparation. Separate PowerShell pure selection
+regressions: `pwsh -NoProfile -File tests/security/Test-RecoverySelection.ps1`.
+PowerShell AST/tests are distinct from actual Windows ACL/task/native smoke.
