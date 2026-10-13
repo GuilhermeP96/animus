@@ -139,8 +139,7 @@ def test_offline_rotation_artifacts_private_and_not_activated(tmp_path):
 def test_health_uses_real_database_but_not_writer_lock(engine):
     with engine._lock:
         engine.check_health()  # Independent read-only connection.
-        with pytest.raises(TimeoutError):
-            engine.get_stats()
+        assert engine.get_stats()['total_memories'] == 0
     engine.close()
     engine.db_path = engine.db_path.parent / 'corrupt-fixture.sqlite3'
     engine.db_path.write_bytes(b'not-a-sqlite-database' * 512)
@@ -153,16 +152,18 @@ def test_stats_cache_avoids_repeated_scans_and_marks_age(populated_engine):
     populated_engine.conn.set_trace_callback(queries.append)
     first = populated_engine.get_stats()
     assert first['total_memories'] == 7
-    assert first['stats_age_seconds'] == 0.0
+    assert 0 <= first['stats_age_seconds'] < 1
     queries.clear()
     second = populated_engine.get_stats()
     assert second['total_memories'] == 7
     assert second['stats_age_seconds'] >= 0
     assert queries == []
     populated_engine._stats_cached_at = time.monotonic() - 31
-    assert populated_engine.cached_stats() is None
+    assert populated_engine.cached_stats()['stats_status'] == 'stale'
     refreshed = populated_engine.get_stats()
-    assert queries and refreshed['total_memories'] == 7
+    assert queries == []  # Refresh never touches writer connection.
+    assert refreshed['total_memories'] == 7
+    assert refreshed['stats_status'] == 'fresh'
 
 
 def test_configured_revocation_is_permanent_for_peer_auth(monkeypatch):
@@ -176,11 +177,15 @@ def test_configured_revocation_is_permanent_for_peer_auth(monkeypatch):
         crypto.create_auth_header(key, 'fixture-node')
 
 
-def test_deletion_invalidates_cached_count(populated_engine):
+def test_deletion_marks_snapshot_stale_until_bounded_refresh(populated_engine):
     before = populated_engine.get_stats()['total_memories']
     row = populated_engine.get_recent(1)[0]
     populated_engine.delete_memory(row['id'])
-    assert populated_engine.cached_stats() is None
+    cached = populated_engine.get_stats()
+    assert cached['total_memories'] == before
+    assert cached['stats_status'] == 'stale'
+    assert cached['stats_reason'] == 'index_changed'
+    populated_engine._stats_cached_at = time.monotonic() - 31
     assert populated_engine.get_stats()['total_memories'] == before - 1
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from starlette.concurrency import run_in_threadpool
 from .peer_keys import peer_secret
+from ..indexer.engine import StatsUnavailable
 
 import io
 import json
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -91,7 +92,7 @@ async def logout(request: Request):
 @router.get("/admin", response_class=HTMLResponse, name="admin_dashboard")
 async def dashboard(request: Request, session: AdminSession = Depends(require_admin)):
     engine = get_engine()
-    stats = await run_in_threadpool(engine.get_stats)
+    stats = await run_in_threadpool(engine.stats_view)
     config = get_config()
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -239,7 +240,7 @@ async def obsidian_page(
     offset = (page - 1) * per_page
     return templates.TemplateResponse(request, "obsidian.html", {
         "session": session,
-        "stats": await run_in_threadpool(get_engine().get_stats),
+        "stats": await run_in_threadpool(get_engine().stats_view),
         "obsidian_stats": _obsidian_stats(catalog),
         "notes": notes[offset:offset + per_page],
         "total": len(notes),
@@ -315,7 +316,7 @@ async def memories_page(
     types_rows = engine.conn.execute("SELECT DISTINCT type FROM memories ORDER BY type").fetchall()
     ws_rows = engine.conn.execute("SELECT DISTINCT workspace FROM memories WHERE workspace != '' ORDER BY workspace").fetchall()
 
-    stats = await run_in_threadpool(engine.get_stats)
+    stats = await run_in_threadpool(engine.stats_view)
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     return templates.TemplateResponse(request, "memories.html", {
@@ -1035,7 +1036,10 @@ async def admin_obsidian_notes(
 @router.get("/admin/api/stats")
 async def admin_stats(session: AdminSession = Depends(require_admin)):
     engine = get_engine()
-    stats = await run_in_threadpool(engine.get_stats)
+    try:
+        stats = await run_in_threadpool(engine.get_stats)
+    except StatsUnavailable as exc:
+        return JSONResponse(status_code=503, content=exc.payload(), headers={"Retry-After": "30"})
     stats["peers_online"] = sum(1 for p in _connected_peers.values() if _peer_is_online(p))
     return stats
 

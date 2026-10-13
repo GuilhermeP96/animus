@@ -12,17 +12,17 @@
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-label">Total Memories</div>
-        <div class="stat-value glow-text">{{ stats.total_memories }}</div>
+        <div class="stat-value glow-text">{{ stats.total_memories if stats.total_memories is not none else 'Unavailable' }}</div>
         <div class="stat-detail">Genetic sequences indexed</div>
     </div>
     <div class="stat-card gold">
         <div class="stat-label">Unique Nodes</div>
-        <div class="stat-value glow-gold">{{ stats.unique_nodes }}</div>
+        <div class="stat-value glow-gold">{{ stats.unique_nodes if stats.unique_nodes is not none else 'Unavailable' }}</div>
         <div class="stat-detail">Subjects connected</div>
     </div>
     <div class="stat-card green">
         <div class="stat-label">Workspaces</div>
-        <div class="stat-value" style="color: var(--animus-green)">{{ stats.unique_workspaces }}</div>
+        <div class="stat-value" style="color: var(--animus-green)">{{ stats.unique_workspaces if stats.unique_workspaces is not none else 'Unavailable' }}</div>
         <div class="stat-detail">Memory sequences active</div>
     </div>
     <div class="stat-card">
@@ -91,7 +91,7 @@
                 <span class="kv-val"><span class="tag tag-type">{{ config.node_role }}</span></span>
 
                 <span class="kv-key">Unsynced</span>
-                <span class="kv-val">{{ stats.unsynced or 0 }}</span>
+                <span class="kv-val">{{ stats.unsynced if stats.unsynced is not none else 'Unavailable' }}</span>
 
                 <span class="kv-key">Status</span>
                 <span class="kv-val" style="color: var(--animus-green);">● Operational</span>

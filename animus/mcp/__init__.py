@@ -565,7 +565,7 @@ class AnimusMCPServer:
                 }]
             }
         elif uri == "animus://memories/stats":
-            stats = self.engine.get_stats()
+            stats = self.engine.stats_view()
             return {
                 "contents": [{
                     "uri": uri,
@@ -753,9 +753,10 @@ class AnimusMCPServer:
         return "\n".join(output)
 
     def _tool_stats(self, args: dict) -> str:
-        stats = self.engine.get_stats()
+        stats = self.engine.stats_view()
         lines = [
             "⟁ Animus Memory Bank",
+            f"  Statistics: {stats['stats_status']} (age seconds: {stats['stats_age_seconds']})",
             f"  Total memories:  {stats['total_memories']}",
             f"  Unique nodes:    {stats['unique_nodes']}",
             f"  Workspaces:      {stats['unique_workspaces']}",
@@ -777,10 +778,11 @@ class AnimusMCPServer:
         new_count = self.engine.index_batch(memories)
         for vault, active_ids in obsidian_collector.seen_by_vault.items():
             self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
-        stats = self.engine.get_stats()
+        stats = self.engine.stats_view()
         return (
             f"✓ Collection complete\n"
             f"  Found: {len(memories)} | New: {new_count} | Total: {stats['total_memories']}"
+            f" | Statistics: {stats['stats_status']} (age seconds: {stats['stats_age_seconds']})"
         )
 
     # ── Session-aware tools (mirror /admin/sessions, /admin/graph) ──
