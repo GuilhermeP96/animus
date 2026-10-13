@@ -84,3 +84,24 @@ ScheduledTask precisam de execução assistida no Windows real pelo proprietári
 fixtures Linux não comprovam ACL, parada do processo ou reconexão de peer.
 Serviços/wrappers não são suportados até revisão específica. O código não faz
 requisições de rede nem usa licença/credencial antiga como canal de confiança.
+
+## Transporte SSH administrativo autenticado (opcional)
+
+Somente após autorização explícita do proprietário e verificação independente
+nome do host/chave SSH, o administrador pode executar sem prompts usando
+`-NonInteractive`. Esse parâmetro não estabelece confiança no transporte:
+quem o utiliza deve comprovar SSH autenticado e identidade do equipamento.
+Obrigatórios **nos dois modos**: TaskName, TaskPath, ConfigPath local absoluto e
+ExpectedNodeId identificado independentemente. Não há descoberta/seleção
+implícita nesse modo. O esperado é comparado ao inspect, enrollment, metadata
+privada e config atual; qualquer mismatch bloqueia antes de stage/stop.
+Apply ainda exige envelope e digest independentes e alvo idêntico ao Prepare.
+
+```powershell
+.\Recover-Animus.ps1 -Mode Prepare -NonInteractive -TaskName 'AnimusPeerDaemon' -TaskPath '\' -ConfigPath 'C:\Users\USUARIO\.animus\config.json' -ExpectedNodeId 'IDENTIDADE_CONFIRMADA' -RecoveryDir 'C:\Users\USUARIO\.animus-recovery-NOVO'
+.\Recover-Animus.ps1 -Mode Apply -NonInteractive -TaskName 'AnimusPeerDaemon' -TaskPath '\' -ConfigPath 'C:\Users\USUARIO\.animus\config.json' -ExpectedNodeId 'IDENTIDADE_CONFIRMADA' -RecoveryDir 'C:\Users\USUARIO\.animus-recovery-NOVO' -EnvelopePath 'C:\ENVELOPE\envelope.json' -ExpectedDigest 'SHA256_CANONICO_INDEPENDENTE'
+```
+
+O padrão continua interativo com CONFIRM/APPLY. Pacotes antigos sem node_id
+vinculado em runtime.json precisam de Prepare novo; não reutilize enrollment
+antigo nesse modo. Tarefa Ready sem processo não comprova peer online.

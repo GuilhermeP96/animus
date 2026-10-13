@@ -2,10 +2,12 @@
 param([ValidateSet('Prepare','Apply')][string]$Mode='Prepare',
       [string]$ConfigPath, [string]$PythonExe, [string]$TaskName, [string]$TaskPath,
       [string]$RecoveryDir, [string]$EnvelopePath, [string]$ExpectedDigest,
+      [switch]$NonInteractive, [string]$ExpectedNodeId,
       [ValidateRange(60,3600)][int]$TTLSeconds=3600)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $helper=Join-Path $PSScriptRoot 'recover_peer.py'
+. (Join-Path $PSScriptRoot 'Recovery-Selection.ps1')
 function Full-Path([string]$Path) {
     $item=Get-Item -LiteralPath $Path -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse path forbidden' }
@@ -60,6 +62,7 @@ function Get-SelectedTask([string]$Name,[string]$Path) {
 }
 try {
     if ($env:OS -ne 'Windows_NT') { throw 'Run this native recovery launcher on Windows only' }
+    Assert-ExplicitRecoverySelection ([bool]$NonInteractive) $TaskName $TaskPath $ConfigPath $ExpectedNodeId
     $owner=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     if ($Mode -eq 'Prepare') {
         $tasks=@(Get-ScheduledTask | Where-Object {$_.TaskName -match 'Animus' -or $_.TaskPath -match 'Animus'})
@@ -104,12 +107,15 @@ try {
         $configOwner=Resolve-Sid $acl.Owner
         if ($selected.Sid -notin @($configOwner,'S-1-5-18')) { throw 'Runtime principal cannot read the protected replacement; administrator must qualify ownership' }
         $identity=Invoke-Helper @('inspect','--config',$ConfigPath)
+        Assert-RecoveryNodeIdentity $ExpectedNodeId $identity.node_id
         Write-Host ('Selected node {0}; task {1}{2}; config {3}' -f $identity.node_id,$TaskPath,$TaskName,$ConfigPath)
-        if ((Read-Host 'Type CONFIRM to attest this exact config belongs to this native task') -cne 'CONFIRM') { throw 'Owner selection not confirmed' }
+        if (-not $NonInteractive -and (Read-Host 'Type CONFIRM to attest this exact config belongs to this native task') -cne 'CONFIRM') { throw 'Owner selection not confirmed' }
         if (-not $RecoveryDir) { $RecoveryDir=Join-Path $env:USERPROFILE ('.animus-recovery-'+[Guid]::NewGuid().ToString('N')) }
         $RecoveryDir=[IO.Path]::GetFullPath($RecoveryDir)
         $public=Invoke-Helper @('prepare','--config',$ConfigPath,'--work-dir',$RecoveryDir,'--owner-sid',$owner,'--config-owner-sid',$configOwner,'--ttl-seconds',"$TTLSeconds")
-        $runtime=@{task_name=$TaskName; task_path=$TaskPath; python=$PythonExe; runtime_fingerprint=$selected.Fingerprint; environment_fingerprint=$environmentFingerprint; config_path=$ConfigPath; owner_sid=$owner; config_owner_sid=$configOwner}
+        Assert-RecoveryNodeIdentity $identity.node_id $public.node_id
+        Assert-RecoveryNodeIdentity $ExpectedNodeId $public.node_id
+        $runtime=@{node_id=$identity.node_id; task_name=$TaskName; task_path=$TaskPath; python=$PythonExe; runtime_fingerprint=$selected.Fingerprint; environment_fingerprint=$environmentFingerprint; config_path=$ConfigPath; owner_sid=$owner; config_owner_sid=$configOwner}
         $runtimePath=Join-Path $RecoveryDir 'runtime.json'
         [IO.File]::WriteAllText($runtimePath,($runtime | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
         & (Join-Path $PSScriptRoot 'Protect-PrivateState.ps1') -LiteralPath $runtimePath -OwnerSid $owner
@@ -119,13 +125,18 @@ try {
         if (-not $RecoveryDir -or -not $EnvelopePath -or $ExpectedDigest -notmatch '^[0-9a-f]{64}$') { throw 'Apply requires private recovery directory, envelope and independently received canonical SHA256' }
         $runtime=Get-Content -LiteralPath (Join-Path $RecoveryDir 'runtime.json') -Raw | ConvertFrom-Json
         if ($runtime.owner_sid -ne $owner) { throw 'Use the same independently verified local owner account' }
+        $PythonExe=$runtime.python
+        $actual=Invoke-Helper @('inspect','--config',$runtime.config_path)
+        $explicitConfig=$ConfigPath
+        if ($NonInteractive) { $explicitConfig=Full-Path $ConfigPath }
+        Assert-RecoveryTargetBinding ([bool]$NonInteractive) $TaskName $TaskPath $explicitConfig $ExpectedNodeId $runtime $actual.node_id
         $selected=Get-SelectedTask $runtime.task_name $runtime.task_path
         if ($selected.Fingerprint -ne $runtime.runtime_fingerprint) { throw 'Native runtime changed; do not stop or activate' }
         $PythonExe=$selected.Python; Verify-Native
         if ((Verify-TaskEnvironment $selected) -ne $runtime.environment_fingerprint) { throw 'Task .env/DataDir changed; prepare a fresh owner-confirmed enrollment' }
         $configOwner=Resolve-Sid ((Get-Acl -LiteralPath $runtime.config_path).Owner)
         if ($configOwner -ne $runtime.config_owner_sid) { throw 'Config ownership changed' }
-        if ((Read-Host ('Type APPLY to replace only server_secret and restart task '+$runtime.task_name)) -cne 'APPLY') { throw 'Owner application not confirmed' }
+        if (-not $NonInteractive -and (Read-Host ('Type APPLY to replace only server_secret and restart task '+$runtime.task_name)) -cne 'APPLY') { throw 'Owner application not confirmed' }
         $running=@(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $PythonExe -and $_.CommandLine -and $_.CommandLine.Trim().EndsWith($selected.Action.Arguments.Trim(),[StringComparison]::Ordinal)})
         if ($running.Count -gt 1 -or ($selected.Task.State -eq 'Running' -and $running.Count -ne 1) -or ($selected.Task.State -ne 'Running' -and $running.Count -gt 0)) { throw 'Task/process attribution ambiguous; no stop or activation' }
         $null=Invoke-Helper @('stage','--work-dir',$RecoveryDir,'--envelope',(Full-Path $EnvelopePath),'--expected-digest',$ExpectedDigest)
