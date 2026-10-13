@@ -28,7 +28,7 @@ while installing. It refuses any remaining matching daemon; does not kill other
 applications/MCPs. Pip is the exact existing native interpreter, local wheel,
 --no-index/--no-deps,600s cap and private output; only that child can be killed
 on timeout. Existing config hash/node must remain unchanged after install.
-Package-version validation precedes re-enabling/start of the original task.
+Package-version validation and a bounded real pip check precede re-enabling/start of the original task. A blocked receipt separately preserves installed=true when version was verified but restart remains unproven.
 Actual Running state plus exactly one newly created matching native process,
 PID/creationTime and3second survival are required before completed receipt.
 Start request alone is not restart_verified. Server reconnection remains false
