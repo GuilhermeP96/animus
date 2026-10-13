@@ -38,6 +38,8 @@ def build_spec(package,latest,config,python=sys.executable,pid=None):
     if config_path.resolve()!=config_path or not config_path.is_file() or config_path.stat().st_size>1024**2:
         raise ValueError('Exact existing native config required')
     data=json.loads(config_path.read_text(encoding='utf-8-sig'))
+    if not isinstance(data.get('data_dir'),str) or Path(data['data_dir']).absolute()!=Path(config.data_dir).absolute():
+        raise ValueError('Persistent native data directory differs from loaded daemon')
     if data.get('node_id')!=config.node_id or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',config.node_id):
         raise ValueError('Current daemon and persistent native identity differ')
     if package.parent!=Path(config.data_dir).absolute()/'updates':
