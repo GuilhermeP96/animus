@@ -26,7 +26,7 @@ function Invoke-Helper([string[]]$Arguments) {
     return ($captured -join "`n") | ConvertFrom-Json
 }
 function Verify-Native {
-    if ($script:PythonExe -match '(?i)([\/]\.codex[\/]|[\/]codex[\/]|vscode|claude|antigravity|[\/]agy[\/])') { throw 'Use only the existing native Animus interpreter' }
+    if (($script:PythonExe.Replace('\','/')) -match '(?i)(/\.codex/|/codex/|vscode|claude|antigravity|/agy/)') { throw 'Use only the existing native Animus interpreter' }
     $probe=@(& $script:PythonExe -c 'import sys,cryptography; from animus.config import AnimusConfig; from animus.network.crypto import create_auth_header; assert sys.version_info >= (3,10); assert create_auth_header("recovery-preflight","temporary-probe-credential-never-used") .get("X-Animus-Nonce"); print("native-ok")' 2>&1)
     if ($LASTEXITCODE -ne 0 -or ($probe -join '') -ne 'native-ok') { throw 'Existing native Python/Animus/cryptography or strict nonce support unavailable' }
     foreach ($scope in @('Process','User','Machine')) {
