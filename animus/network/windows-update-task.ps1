@@ -124,11 +124,19 @@ function Write-PrivateJson([string]$Path,$Value,[string]$Owner) {
 }
 function Task-Binding($Task) {
     $xml=Export-ScheduledTask -TaskName $Task.TaskName -TaskPath $Task.TaskPath
-    # Ignore only Enabled while the qualified own job temporarily disables it.
+    # Ignore only Settings/Enabled while the qualified own job temporarily
+    # disables it. Windows exports may omit this schema-default-true element.
+    # Removing the one permitted flag also normalizes its insertion position;
+    # every other task field remains bound to the exported XML hash.
     $document=[xml]$xml
-    $enabled=$document.SelectSingleNode('/*[local-name()="Task"]/*[local-name()="Settings"]/*[local-name()="Enabled"]')
-    if ($null -eq $enabled) { throw 'Native enabled setting must be explicit' }
-    $enabled.InnerText='BOUND-TEMPORARY'
+    $settings=$document.SelectNodes('/*[local-name()="Task"]/*[local-name()="Settings"]')
+    if ($settings.Count -ne 1) { throw 'Exactly one native task Settings element required' }
+    $enabled=$settings[0].SelectNodes('./*[local-name()="Enabled"]')
+    if ($enabled.Count -gt 1) { throw 'Duplicate native enabled settings refused' }
+    if ($enabled.Count -eq 1) {
+        if ($enabled[0].InnerText -cnotin @('true','false','1','0')) { throw 'Native enabled setting is not a schema boolean' }
+        $null=$settings[0].RemoveChild($enabled[0])
+    }
     $xml=$document.OuterXml
     $sha=[Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($xml)))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
