@@ -122,6 +122,47 @@ function Write-PrivateJson([string]$Path,$Value,[string]$Owner) {
     [IO.File]::WriteAllText($temp,($Value | ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
     if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temp,$Path,$null) } else { [IO.File]::Move($temp,$Path) }
 }
+function Invoke-PrivateChild([string]$Executable,[string]$Arguments,[string]$Stdout,[string]$Stderr,[string]$Owner,[int]$TimeoutMs,[long]$MaxOutputBytes=1048576) {
+    # Own the Process handle from creation. Start-Process redirected streams can
+    # lose ExitCode on Windows PowerShell5.1 (PowerShell issue5421).
+    if ($TimeoutMs -lt 100 -or $TimeoutMs -gt 600000 -or $MaxOutputBytes -lt 1 -or $MaxOutputBytes -gt 10485760 -or $Stdout -eq $Stderr) { throw 'Invalid bounded child parameters' }
+    foreach ($path in @($Executable,(Split-Path $Stdout -Parent),(Split-Path $Stderr -Parent))) { Guard-Ancestry $path $Owner }
+    $outputStream=$null;$errorStream=$null;$child=$null;$launched=$false
+    try {
+        foreach ($path in @($Stdout,$Stderr)) {
+            $new=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);$new.Dispose();Private $path $Owner
+        }
+        $outputStream=[IO.File]::Open($Stdout,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $errorStream=[IO.File]::Open($Stderr,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$Executable;$start.Arguments=$Arguments;$start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
+        $child=[Diagnostics.Process]::new();$child.StartInfo=$start
+        $launched=$child.Start();if(-not $launched){throw 'Owned native child did not start'};$child.StandardInput.Close()
+        $outBuffer=New-Object byte[] 8192;$errBuffer=New-Object byte[] 8192
+        $readOut=$child.StandardOutput.BaseStream.ReadAsync($outBuffer,0,$outBuffer.Length)
+        $readErr=$child.StandardError.BaseStream.ReadAsync($errBuffer,0,$errBuffer.Length)
+        $outDone=$false;$errDone=$false;$total=0L;$drain=$null;$clock=[Diagnostics.Stopwatch]::StartNew()
+        while ($true) {
+            if (-not $outDone -and $readOut.IsCompleted) {
+                $count=$readOut.GetAwaiter().GetResult()
+                if($count -eq 0){$outDone=$true}else{if($total+$count -gt $MaxOutputBytes){throw 'Owned native child output limit exceeded'};$outputStream.Write($outBuffer,0,$count);$total+=$count;$readOut=$child.StandardOutput.BaseStream.ReadAsync($outBuffer,0,$outBuffer.Length)}
+            }
+            if (-not $errDone -and $readErr.IsCompleted) {
+                $count=$readErr.GetAwaiter().GetResult()
+                if($count -eq 0){$errDone=$true}else{if($total+$count -gt $MaxOutputBytes){throw 'Owned native child output limit exceeded'};$errorStream.Write($errBuffer,0,$count);$total+=$count;$readErr=$child.StandardError.BaseStream.ReadAsync($errBuffer,0,$errBuffer.Length)}
+            }
+            if($child.HasExited){if($outDone -and $errDone){break};if($null -eq $drain){$drain=[Diagnostics.Stopwatch]::StartNew()};if($drain.ElapsedMilliseconds -ge 5000){throw 'Owned native child stream deadline exceeded'}}
+            elseif($clock.ElapsedMilliseconds -ge $TimeoutMs){throw 'Owned native child deadline exceeded'}
+            $pending=@();if(-not $outDone){$pending+=,$readOut};if(-not $errDone){$pending+=,$readErr}
+            if($pending.Count){$null=[Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]$pending,50)}else{$null=$child.WaitForExit(50)}
+        }
+        $outputStream.Flush($true);$errorStream.Flush($true)
+        $code=$child.ExitCode;if($null -eq $code){throw 'Owned native child exit status unavailable'}
+        return [int]$code
+    } finally {
+        if($launched -and $null -ne $child){try{if(-not $child.HasExited){$child.Kill();$null=$child.WaitForExit(5000)}}catch{}}
+        if($null -ne $outputStream){$outputStream.Dispose()};if($null -ne $errorStream){$errorStream.Dispose()};if($null -ne $child){$child.Dispose()}
+    }
+}
 function Task-Binding($Task) {
     $xml=Export-ScheduledTask -TaskName $Task.TaskName -TaskPath $Task.TaskPath
     # Ignore only Settings/Enabled while the qualified own job temporarily
@@ -253,21 +294,17 @@ try {
     Write-PrivateJson $receipt @{status='installing';installed=$false;restart_verified=$false;owner='agent'} $plan.owner_sid
     $script:Gate='bounded_local_wheel_install'
     $stdout=Join-Path (Split-Path $PlanPath -Parent) 'pip.stdout'; $stderr=Join-Path (Split-Path $PlanPath -Parent) 'pip.stderr'
-    foreach ($file in @($stdout,$stderr)) { [IO.File]::WriteAllBytes($file,[byte[]]@()); Private $file $plan.owner_sid }
     $arguments='-m pip install --upgrade --quiet --disable-pip-version-check --no-index --no-deps "'+$plan.wheel+'"'
-    $pip=Start-Process -FilePath $plan.python -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
-    if (-not $pip.WaitForExit(600000)) { $pip.Kill(); throw 'Exact pip child timed out' }
-    if ($pip.ExitCode -ne 0) { throw 'Native wheel install failed; no other process was killed' }
+    $pipCode=Invoke-PrivateChild $plan.python $arguments $stdout $stderr $plan.owner_sid 600000
+    if ($pipCode -ne 0) { throw 'Native wheel install failed; no other process was killed' }
     $script:Gate='installed_version_and_config'
     $version=@(& $plan.python -c 'import animus;print(animus.__version__)' 2>&1)
     if ($LASTEXITCODE -ne 0 -or ($version -join '').Trim() -cne $plan.expected_version) { throw 'Installed version mismatch' }
     $script:InstalledVerified=$true
     $script:Gate='native_dependency_integrity'
     $checkOut=Join-Path (Split-Path $PlanPath -Parent) 'dependency.stdout'; $checkErr=Join-Path (Split-Path $PlanPath -Parent) 'dependency.stderr'
-    foreach ($file in @($checkOut,$checkErr)) { [IO.File]::WriteAllBytes($file,[byte[]]@()); Private $file $plan.owner_sid }
-    $check=Start-Process -FilePath $plan.python -ArgumentList '-m pip check' -RedirectStandardOutput $checkOut -RedirectStandardError $checkErr -PassThru -WindowStyle Hidden
-    if (-not $check.WaitForExit(30000)) { $check.Kill(); throw 'Exact dependency-check child timed out' }
-    if ($check.ExitCode -ne 0) { throw 'Native package dependency constraints are not satisfied' }
+    $checkCode=Invoke-PrivateChild $plan.python '-m pip check' $checkOut $checkErr $plan.owner_sid 30000
+    if ($checkCode -ne 0) { throw 'Native package dependency constraints are not satisfied' }
     Validate-Plan $plan
     $script:Gate='verify_actual_native_restart'
     $started=[DateTime]::UtcNow
