@@ -120,7 +120,7 @@ function Write-PrivateJson([string]$Path,$Value,[string]$Owner) {
     $stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     $stream.Dispose(); Private $temp $Owner
     [IO.File]::WriteAllText($temp,($Value | ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
-    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temp,$Path,$null) } else { [IO.File]::Move($temp,$Path) }
+    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temp,$Path,[System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($temp,$Path) }
 }
 function Invoke-PrivateChild([string]$Executable,[string]$Arguments,[string]$Stdout,[string]$Stderr,[string]$Owner,[int]$TimeoutMs,[long]$MaxOutputBytes=1048576) {
     # Own the Process handle from creation. Start-Process redirected streams can
@@ -247,7 +247,11 @@ try {
         Validate-Plan $plan
         $script:Gate='register_independent_update_task'
         $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $command="& '"+$runner.Replace("'","''")+"' -Mode Run -PlanPath '"+$PlanPath.Replace("'","''")+"'"
+        $consoleOut=Join-Path $jobDir 'runner.stdout';$consoleErr=Join-Path $jobDir 'runner.stderr'
+        foreach($file in @($consoleOut,$consoleErr)){$new=[IO.File]::Open($file,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);$new.Dispose();Private $file $owner}
+        # Preserve even parser/loader failures from the independent scheduler
+        # process. Private console files are diagnostic, never completion proof.
+        $command="& '"+$runner.Replace("'","''")+"' -Mode Run -PlanPath '"+$PlanPath.Replace("'","''")+"' 1> '"+$consoleOut.Replace("'","''")+"' 2> '"+$consoleErr.Replace("'","''")+"'"
         $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -EncodedCommand '+$encoded)
         $trigger=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddSeconds(10))

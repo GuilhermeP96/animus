@@ -47,3 +47,41 @@ retaining both pipes beyond the5s drain deadline). These are disposable scripts/
 or production task update. The lifecycle fixture advanced through baseline pip
 and created its private daemon task, but independent helper start/completion
 remains a separate qualification gate. No native production update is claimed.
+
+## Atomic native receipts
+
+The independent Scheduler job entered the source-exit gate but its waiting and
+blocked receipts stayed registered. Native comparison proved File.Replace with
+PowerShell `$null` throws an invalid-path error; NullString.Value produces the
+actual null backup argument required by .NET. The writer now passes
+System.Management.Automation.Language.NullString.Value. Four native create/replace
+cycles read back exact JSON, preserved protected owner ACL and left no tmp file.
+See tests/security/Test-WindowsPrivateJson.ps1. Private independent-job console
+files now preserve loader/runtime diagnostics without becoming success proof.
+
+The next private lifecycle advanced through task termination and actually
+installed the target package, then correctly blocked on pip check. Diagnosis
+showed the fixture's system_site_packages inherited the GLOBAL base Python,
+including unrelated Streamlit conflicts and PyJWT2.13, rather than the native
+venv. A direct read-only production-native pip check passed with PyJWT2.15.1.
+The Hub fixture therefore uses a separate venv with global/user sites disabled,
+references only the protected native venv library path, and hashes native code
+before/after. No production dependency has been rewritten to make the test pass.
+Automatic recovery after an actual production install failure remains separate.
+
+## Final assisted qualification / source preview
+
+The corrected Hub fixture completed the real independent Scheduler helper on
+Panthro: baseline0.8.10 to target0.8.11 inside a private venv, source task stopped,
+wheel installed, pip check passed, task restarted with a new PID/creationTime and
+read-back package version. Its own task was then stopped/unregistered. Production
+task/config/credentials/processes and native package code remained unchanged.
+This used an explicitly SHA-bound corrected runner outside the historical wheel.
+
+Version0.8.12a1 is a SOURCE PREVIEW containing these fixes. No replacement0.8.11
+wheel is published. The production server/native VPS stay0.8.11, Windows peer
+production stays0.8.10, and server pin0.8.10 remains. The scheduled automatic
+exit75 path, production reconnection and automatic failure recovery remain gates
+before stable native promotion. This preview release does not activate them.
+Rollback: retain prior source1220082 or its parents and existing authenticated
+recovery artifacts; do not restore revoked credentials or overwrite live data.
