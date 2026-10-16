@@ -85,3 +85,9 @@ exit75 path, production reconnection and automatic failure recovery remain gates
 before stable native promotion. This preview release does not activate them.
 Rollback: retain prior source1220082 or its parents and existing authenticated
 recovery artifacts; do not restore revoked credentials or overwrite live data.
+
+Final source validation on the VPS:141 focused offline Python tests passed
+using the prepared test overlay; one dependency deprecation warning. Native
+PowerShell proofs above are separate from this Python suite. Four prior private
+fixture tasks were read back Ready (none running); their private workspaces and
+receipts are preserved for bounded cleanup in the next maintenance window.
