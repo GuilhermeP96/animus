@@ -19,7 +19,8 @@ function Private([string]$Path,[string]$Owner,[bool]$Directory=$false) {
         $rule=if ($Directory) { [Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow') } else { [Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','Allow') }
         $acl.AddAccessRule($rule)
     }
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    if ($Directory) { [IO.Directory]::SetAccessControl($Path,$acl) }
+    else { [IO.File]::SetAccessControl($Path,$acl) }
     $observed=Get-Acl -LiteralPath $Path
     if (-not $observed.AreAccessRulesProtected -or $observed.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $Owner) { throw 'Private ACL mismatch' }
     foreach ($rule in $observed.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
@@ -253,7 +254,7 @@ try {
         # process. Private console files are diagnostic, never completion proof.
         $command="& '"+$runner.Replace("'","''")+"' -Mode Run -PlanPath '"+$PlanPath.Replace("'","''")+"' 1> '"+$consoleOut.Replace("'","''")+"' 2> '"+$consoleErr.Replace("'","''")+"'"
         $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-        $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -EncodedCommand '+$encoded)
+        $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand '+$encoded)
         $trigger=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddSeconds(10))
         $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable
         $principal=New-ScheduledTaskPrincipal -UserId $task.Principal.UserId -LogonType S4U -RunLevel $task.Principal.RunLevel

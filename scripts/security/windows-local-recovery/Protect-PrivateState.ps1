@@ -28,7 +28,10 @@ foreach ($sid in $allowed) {
     } else { $rule = New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow') }
     $acl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $LiteralPath -AclObject $acl
+# Persist only the modified owner/DACL sections. Set-Acl may request SACL
+# privileges even though this operation does not change audit policy.
+if ($Directory) { [IO.Directory]::SetAccessControl($LiteralPath,$acl) }
+else { [IO.File]::SetAccessControl($LiteralPath,$acl) }
 $observed = Get-Acl -LiteralPath $LiteralPath
 if (-not $observed.AreAccessRulesProtected) { throw 'Private ACL inheritance was not disabled' }
 foreach ($rule in $observed.Access) {

@@ -57,7 +57,7 @@ def stage(package,latest,config):
     spec=build_spec(package,latest,config)
     root=os.environ.get('SystemRoot','C:\\Windows')
     powershell=str(Path(root)/'System32/WindowsPowerShell/v1.0/powershell.exe')
-    result=subprocess.run([powershell,'-NoProfile','-NonInteractive','-File',str(RUNNER),'-Mode','Register'],
+    result=subprocess.run([powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',str(RUNNER),'-Mode','Register'],
                           input=json.dumps(spec),capture_output=True,text=True,timeout=60)
     if result.returncode: return False
     try:
