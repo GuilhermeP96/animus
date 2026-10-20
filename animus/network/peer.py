@@ -72,6 +72,10 @@ class AnimusPeer:
         memories.extend(self.obsidian_collector.collect_all())
         memories.extend(self.codex_collector.collect_all())
         new_count = self.engine.index_batch(memories)
+        from ..knowledge_feedback import export_new_candidates
+        exported = export_new_candidates(self.config, self.engine, memories)
+        if exported:
+            logger.info("Exported %d candidate notes; no automatic verification", exported)
         for vault, active_ids in self.obsidian_collector.seen_by_vault.items():
             self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
         logger.info("Collected %d memories, %d new", len(memories), new_count)
