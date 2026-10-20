@@ -1,0 +1,88 @@
+{
+  "date": "2026-10-20",
+  "source_commit": "2820e3a32443e0b7f55a5ed45feeabb9b8b68c8c",
+  "runtime_version": "0.8.14",
+  "wheel_sha256": "c417708a5da16dd4417fc1840f883ac3072d4a6a222179b97b114b9eab0995bf",
+  "image_sha256": "49f731acfe1d7c2d4ff1ea8c2954e215d00b5d5ee6e5a551124d1963c95d1cee",
+  "tests": {
+    "debian_passed": 437,
+    "debian_warnings": 5,
+    "windows_launcher_binding_checks": 7,
+    "windows_private_json_checks": 4,
+    "windows_private_child_checks": 8,
+    "windows_task_binding_checks": 11
+  },
+  "hp": {
+    "version": "0.8.14",
+    "authenticated_pull": 200,
+    "unauthenticated_denied": 401,
+    "automatic_stable_transition": "0.8.13 -> 0.8.14",
+    "native_receipt": {
+      "status": "completed",
+      "version": "0.8.14",
+      "installed": true,
+      "restart_verified": true,
+      "pid": 35964,
+      "creation_ticks": 639281065757689340,
+      "server_reconnection_verified": false
+    },
+    "separate_network_reconnection_verified": true,
+    "codex_scope": "C:/repo",
+    "federated_rag": true,
+    "candidate_exports": true
+  },
+  "knowledge": {
+    "memory_id": "826b9d2e23c8c339",
+    "vault": "datano-local",
+    "verified_search_passed": true,
+    "native_receipt_verified": true,
+    "authenticated_reconnection": 200,
+    "training_approved": false
+  },
+  "mcp": {
+    "animus_hp": {
+      "transport": "owned-configured-runtime-stdio",
+      "tools": 16,
+      "federated_search_passed": true,
+      "verified_obsidian_search_passed": true,
+      "existing_chat_mcp_restarted": false
+    },
+    "datano_hp": {
+      "configured_datano_memory_recall_passed": true,
+      "active_animus_bindings": true,
+      "existing_mcp_restarted": false
+    },
+    "vps": {
+      "animus": {
+        "configured_stdio_passed": true,
+        "tools": 16,
+        "active_data_dir": true
+      },
+      "datano": {
+        "configured_stdio_passed": true,
+        "tools": 14,
+        "active_data_dir": true
+      }
+    }
+  },
+  "limits": [
+    "Owned fresh stdio qualification does not reload an existing chat connection",
+    "Local cache is not complete hub replication",
+    "Candidates are not automatically verified or approved for training",
+    "Hub vault mount is read-only; authenticated visual UI not tested"
+  ],
+  "vps_visibility": {
+    "codex_animus_active_data_dir": true,
+    "datano_active_db": true,
+    "hub_vault_readonly": true,
+    "verified_knowledge_search": true,
+    "sessions_restarted": false
+  },
+  "existing_chat_stats_readback": {
+    "memories": 360,
+    "nodes": 6,
+    "workspaces": 41,
+    "pending_sync": 0,
+    "health_not_inferred_from_queue": true
+  }
+}

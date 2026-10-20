@@ -25,6 +25,7 @@ A coleta Codex exige opt-in e workspaces autorizados; exclui instruções, racio
 
 - `pending sync: 0` mede fila; não prova daemon ativo, autenticação ou coleta recente. Confira processo/tarefa, datas e logs minimizados, HTTP autenticado e resultado de coleta.
 - Descubra o runtime pela tarefa/serviço, sem imprimir configuração privada. Windows pode usar `~/.animus/runtime/Scripts/python.exe`; VPS usa o ExecStart efetivo. Evite executar de um checkout antigo que sombreie o pacote instalado.
+- Reproduza também WorkingDirectory e `ANIMUS_DATA_DIR` do serviço. Um shell interativo pode carregar outra base/configuração; não copie nem imprima segredos do ambiente. Vincule os MCPs e adapters à mesma base efetiva.
 - Atualização confiável exige versão/hash do wheel entregue pelo hub, vínculo exato com tarefa/config/processo, recibo de instalação e novo processo, seguido de reconexão autenticada real. Pin antigo no hub pode impedir a convergência.
 - O Python Store pode usar launcher mais processo filho: comprove proprietário, executáveis, argumentos e ordem de criação. Não adote PID por nome nem encerre clientes MCP para liberar arquivos.
 - Preserve configurações, SQLite, notas humanas, registry e backups. Não reduza autenticação para sanar401 nem restaure segredo revogado.
