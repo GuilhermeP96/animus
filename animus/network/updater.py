@@ -338,7 +338,11 @@ def restart_in_place() -> None:
         logger.info("Exiting with %d so the Windows update helper can run", RESTART_EXIT_CODE)
         sys.exit(RESTART_EXIT_CODE)
     try:
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        # Preserve `python -m animus.cli`: sys.argv[0] is cli.py, which cannot
+        # be executed as a bare script because it uses package-relative imports.
+        original = getattr(sys, 'orig_argv', None)
+        arguments = original[1:] if original else ['-m', 'animus.cli', *sys.argv[1:]]
+        os.execv(sys.executable, [sys.executable, *arguments])
     except OSError as exc:
         logger.warning("os.execv failed (%s) — exiting with %d for supervisor restart",
                        exc, RESTART_EXIT_CODE)

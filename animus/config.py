@@ -240,6 +240,7 @@ class AnimusConfig(BaseSettings):
     # ── Indexer ──
     fts_enabled: bool = True
     vector_enabled: bool = False
+    rag_hub_enabled: bool = False  # Explicit opt-in to authenticated query-time hub retrieval.
 
     # ── Self-update ──
     auto_update_enabled: bool = True

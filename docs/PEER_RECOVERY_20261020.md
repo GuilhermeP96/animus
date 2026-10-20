@@ -1,5 +1,14 @@
 # Peer recovery and governed feedback — 2026-10-20
 
+Stable0.8.14 adds opt-in authenticated query-time retrieval (`rag_hub_enabled`
+or per-call `remote`) to MCP search/recall. At most20 relevant results are
+cached and marked synced, preserving workspace/type filters and explicit local
+fallback on hub errors. This avoids silently treating a recent local cache as
+the complete hub history. It does not backfill or replicate all hub records.
+POSIX re-exec retains `sys.orig_argv` so `python -m animus.cli` remains a module
+invocation instead of executing cli.py without its package context. An owned
+subprocess test verifies the module survives re-exec with the same PID.
+
 Stable0.8.13 additionally binds the Microsoft Store Python real image to its
 immediate task launcher (same owner, interpreter/action and creation ordering),
 covering both source exit and restarted-process verification. The venv executable
