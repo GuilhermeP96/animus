@@ -1,6 +1,7 @@
 """End-to-end integration tests — collect → index → search → push → pull."""
 
 import json
+import secrets
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from animus.collector.models import Memory, MemoryBatch, MemoryType
 from animus.config import AnimusConfig
 from animus.indexer.engine import IndexEngine
 from animus.network.sync import SyncProtocol
+from animus.network.crypto import create_auth_header
 import animus.server.app as server_module
 from animus.server.app import app
 
@@ -23,7 +25,7 @@ def e2e_env(tmp_path):
         node_role="hub",
         data_dir=tmp_path / "hub",
         vscode_user_dir=tmp_path / "vscode",
-        server_secret="",
+        server_secret=secrets.token_urlsafe(48),
     )
     hub_cfg.ensure_dirs()
     engine = IndexEngine(hub_cfg.db_path)
@@ -45,7 +47,19 @@ def e2e_env(tmp_path):
     server_module._engine = engine
     server_module._connected_peers = {}
 
-    client = TestClient(app)
+    class AuthenticatedPeerClient(TestClient):
+        def request(self, method, url, **kwargs):
+            body = kwargs.get('content')
+            if kwargs.get('json') is not None:
+                body = json.dumps(kwargs.pop('json'), separators=(',', ':'), ensure_ascii=False)
+                kwargs['content'] = body
+            headers = dict(kwargs.pop('headers', {}) or {})
+            headers.update(create_auth_header(hub_cfg.server_secret, 'peer-e2e', body=body))
+            if body is not None:
+                headers['Content-Type'] = 'application/json'
+            return super().request(method, url, headers=headers, **kwargs)
+
+    client = AuthenticatedPeerClient(app)
 
     yield {
         "hub_cfg": hub_cfg,
