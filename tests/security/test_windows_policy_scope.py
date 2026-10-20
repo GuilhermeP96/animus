@@ -13,3 +13,4 @@ def test_native_helpers_use_process_local_policy_and_no_audit_acl_write():
     assert '[IO.Directory]::SetAccessControl' in acl and '[IO.File]::SetAccessControl' in acl
     assert 'Set-ExecutionPolicy' not in stage+runner+recovery+acl
     assert 'Bypass' not in stage+runner+recovery+acl
+    assert '-LogonType $task.Principal.LogonType' in runner

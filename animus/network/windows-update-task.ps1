@@ -257,7 +257,8 @@ try {
         $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand '+$encoded)
         $trigger=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddSeconds(10))
         $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable
-        $principal=New-ScheduledTaskPrincipal -UserId $task.Principal.UserId -LogonType S4U -RunLevel $task.Principal.RunLevel
+        if ($task.Principal.LogonType -notin @('Interactive','S4U')) { throw 'Unsupported native task logon type; do not change credentials' }
+        $principal=New-ScheduledTaskPrincipal -UserId $task.Principal.UserId -LogonType $task.Principal.LogonType -RunLevel $task.Principal.RunLevel
         Register-ScheduledTask -TaskName $jobName -TaskPath '\' -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
         $registered=Get-ScheduledTask -TaskName $jobName -TaskPath '\'
         if ((Sid $registered.Principal.UserId) -ne $owner -or $registered.Actions.Count -ne 1 -or $registered.Actions[0].Execute -ne $ps -or $registered.Actions[0].Arguments -ne $action.Arguments) { throw 'Registered helper binding mismatch' }
