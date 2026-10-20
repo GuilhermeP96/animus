@@ -14,6 +14,16 @@ RUNNER=Path(__file__).with_name('windows-update-task.ps1')
 MAX_WHEEL=64*1024**2
 
 
+def process_image():
+    if os.name != 'nt':
+        return sys.executable
+    import ctypes
+    buffer = ctypes.create_unicode_buffer(32768)
+    if not ctypes.windll.kernel32.GetModuleFileNameW(None, buffer, len(buffer)):
+        raise OSError('Native interpreter image unavailable')
+    return buffer.value
+
+
 def verified_local_wheel(path,expected_version):
     path=Path(path).absolute()
     if path.resolve()!=path or not path.is_file() or path.stat().st_size>MAX_WHEEL or path.suffix!='.whl':
@@ -49,6 +59,7 @@ def build_spec(package,latest,config,python=sys.executable,pid=None):
             'data_dir':str(Path(config.data_dir).absolute()),'config_path':str(config_path),
             'config_sha256':hashlib.sha256(config_path.read_bytes()).hexdigest(),'node_id':config.node_id,
             'source_pid':os.getpid() if pid is None else pid,'wheel':str(package),
+            'process_python':process_image(),'source_launcher_pid':os.getppid(),
             'wheel_sha256':digest,'expected_version':latest}
 
 
@@ -57,7 +68,7 @@ def stage(package,latest,config):
     spec=build_spec(package,latest,config)
     root=os.environ.get('SystemRoot','C:\\Windows')
     powershell=str(Path(root)/'System32/WindowsPowerShell/v1.0/powershell.exe')
-    result=subprocess.run([powershell,'-NoProfile','-NonInteractive','-File',str(RUNNER),'-Mode','Register'],
+    result=subprocess.run([powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',str(RUNNER),'-Mode','Register'],
                           input=json.dumps(spec),capture_output=True,text=True,timeout=60)
     if result.returncode: return False
     try:

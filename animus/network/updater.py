@@ -118,8 +118,8 @@ def _parse(version: str) -> tuple[int, ...]:
     base = (version or "").split("-", 1)[0].split("+", 1)[0]
     out: list[int] = []
     for chunk in base.split("."):
-        digits = "".join(ch for ch in chunk if ch.isdigit())
-        out.append(int(digits) if digits else 0)
+        digits = re.match(r"\d+", chunk)
+        out.append(int(digits.group()) if digits else 0)
     # Pad to length 3 so 0.5 vs 0.5.0 compare equal.
     while len(out) < 3:
         out.append(0)
@@ -129,7 +129,11 @@ def _parse(version: str) -> tuple[int, ...]:
 def is_newer(remote: str, local: str) -> bool:
     if not remote:
         return False
-    return _parse(remote) > _parse(local)
+    remote_base, local_base = _parse(remote), _parse(local)
+    if remote_base != local_base:
+        return remote_base > local_base
+    preview = r"^\d+(?:\.\d+){1,2}(?:a|b|rc|-)"
+    return bool(re.match(preview, local)) and not bool(re.match(preview, remote))
 
 
 # ── hub query ───────────────────────────────────────────────────────────
@@ -334,7 +338,11 @@ def restart_in_place() -> None:
         logger.info("Exiting with %d so the Windows update helper can run", RESTART_EXIT_CODE)
         sys.exit(RESTART_EXIT_CODE)
     try:
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        # Preserve `python -m animus.cli`: sys.argv[0] is cli.py, which cannot
+        # be executed as a bare script because it uses package-relative imports.
+        original = getattr(sys, 'orig_argv', None)
+        arguments = original[1:] if original else ['-m', 'animus.cli', *sys.argv[1:]]
+        os.execv(sys.executable, [sys.executable, *arguments])
     except OSError as exc:
         logger.warning("os.execv failed (%s) — exiting with %d for supervisor restart",
                        exc, RESTART_EXIT_CODE)

@@ -1,0 +1,11 @@
+# Applied on the existing Debian VPS; build the qualified local image first.
+# Secrets and the per-node registry remain in the existing private configuration.
+services:
+  animus-hub:
+    image: vps-hub-animus:peer-recovery-20261020-0.8.14
+    pull_policy: never
+    environment:
+      ANIMUS_PIN_VERSION: 0.8.14
+      ANIMUS_GIT_REF: licensing-managment
+    volumes:
+      - /opt/animus-peer/vaults/VPS-Hub-Knowledge:/data/knowledge/vps-hub:ro

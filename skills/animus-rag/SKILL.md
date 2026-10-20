@@ -1,67 +1,31 @@
 ---
 name: animus-rag
-description: >-
-  Retrieves contextual memories, past solutions, architecture decisions, and transcripts from the local Animus Peer memory network (indexing Copilot, Claude Code, and Antigravity). Use this skill whenever you need context from past work, troubleshooting history, server configs, codebase background, or want to persist new decisions and insights.
+description: Recupera contexto histórico, decisões e evidências no Animus e consulta conhecimento verificado no Obsidian; diagnostica coleta, sincronização e atualização do peer quando solicitado.
 ---
 
-# Animus RAG Skill (Eagle Vision Memory Network)
+# Animus e Obsidian
 
-This skill connects the agent to the **Animus Peer** running on this server (`vps-hub-cc`), providing Retrieval-Augmented Generation (RAG) and Full-Text Search (Eagle Vision) across 100,000+ interactions from GitHub Copilot, Claude Code, Antigravity, and developer notes.
+Use esta skill quando a tarefa depender de histórico, decisões anteriores ou operação da memória. Informação histórica não substitui arquivos, testes e estado atual.
 
----
+## Consulta proporcional
 
-## Capabilities & Available Helpers
+1. Identifique projeto e sensibilidade. Para Obsidian, leia `animus_obsidian_guide`, descubra os vaults configurados com `animus obsidian status` e consulte primeiro notas verificadas pelo mapa do projeto e `animus_obsidian_search`.
+2. Use `animus_recall` para contexto e `animus_search` para origem, data e texto específico. Prefira consultas pequenas, workspace e limites explícitos.
+3. O índice local pode ser apenas um cache de recentes; não conclua ausência de histórico pela contagem local. Em servidores com suporte, passe `remote: true` para busca/recall autenticado no hub. `rag_hub_enabled` torna isso padrão somente quando a instalação optou por esse acesso. A resposta distingue hub consultado, não configurado e indisponível.
+4. Se esta conversa ainda usa um MCP antigo, use o runtime nativo real e `-m animus.cli search "consulta curta" --remote --limit 5`. Isso consulta o hub sem reiniciar o chat. Não alegue qualificação de uma nova conexão antes de testá-la.
+5. Trate conversas e candidatos como evidências não verificadas. Compare fontes e datas; cite títulos/IDs e declare lacunas. Busca remota guarda no cache apenas os resultados relevantes e não implica replicação completa do hub.
 
-The skill provides executable Python scripts located in [`scripts/`](./scripts/):
+## Retroalimentação governada
 
-1. **Contextual RAG Recall** ([`scripts/rag_recall.py`](./scripts/rag_recall.py)):
-   Multi-query decomposition, workspace-aware boosting, recency weighting, and token budgeting.
-   ```bash
-   .agents/skills/animus-rag/scripts/rag_recall.py -c "<context or query>" [-w "<workspace>"] [-t <max_tokens>] [--detailed]
-   ```
+Com autorização para registrar/consolidar conhecimento, prefira atualizar o assunto existente e guardar decisões reutilizáveis com fonte e sensibilidade. Não registre segredos, logs transitórios nem raciocínio interno. Exportação não é validação.
 
-2. **Full-Text Search / Eagle Vision** ([`scripts/search.py`](./scripts/search.py)):
-   Direct SQLite FTS5 search across all nodes, memory types, and tags.
-   ```bash
-   .agents/skills/animus-rag/scripts/search.py "<query>" [-t <memory_type>] [-w <workspace>] [-n <limit>]
-   ```
+A coleta Codex exige opt-in e workspaces autorizados; exclui instruções, raciocínio, ferramentas e padrões reconhecidos de segredo. A exportação automática tem opt-in separado e limite por ciclo. Ela escreve somente candidatos em `.animus/exported`, com auditoria e sem sobrescrever notas humanas. Confira fatos contra fontes antes de promover para `verificado`; treino exige autorização e critérios próprios. Após curadoria, regenere catálogo e teste a busca verificada.
 
-3. **Session & Transcript Inspector** ([`scripts/session.py`](./scripts/session.py)):
-   List conversation sessions or view full chronological turns from past AI assistant sessions.
-   ```bash
-   .agents/skills/animus-rag/scripts/session.py --list [-w <workspace>]
-   .agents/skills/animus-rag/scripts/session.py -s "<session_id>" [--limit <turns>]
-   ```
+## Saúde e atualização, quando no escopo
 
-4. **Remember & Persist** ([`scripts/remember.py`](./scripts/remember.py)):
-   Store new memories, insights, runbooks, or architectural decisions that automatically sync to the Brotherhood network.
-   ```bash
-   printf '%s\n' '<Content>' | .agents/skills/animus-rag/scripts/remember.py -t "<Title>" -w "<workspace>" --tags "<tag1,tag2>"
-   .agents/skills/animus-rag/scripts/remember.py -t "<Title>" --content-file /path/to/note.md -w "<workspace>" --tags "<tag1,tag2>"
-   ```
-   Use `--content-file` or stdin for Markdown so line breaks remain real LF
-   characters. Reserve `--content` for short plain text; suspicious Markdown
-   containing literal `\\n` escapes is rejected unless explicitly allowed.
-
-5. **Peer Stats & Health** ([`scripts/stats.py`](./scripts/stats.py)):
-   View memory bank totals, node counts, sync state, and memory distribution.
-   ```bash
-   .agents/skills/animus-rag/scripts/stats.py
-   ```
-
----
-
-## When to Use This Skill
-
-- **Resolving Complex or Ambiguous Errors**: Search for previous occurrences of similar error logs or stack traces.
-- **Understanding Architecture Decisions**: Retrieve why a specific service, proxy, port, or database schema was configured in a certain way.
-- **Revisiting Past Assistant Sessions**: Check commands executed, configurations written, or issues resolved in Claude Code, Copilot, or Antigravity sessions.
-- **Saving Critical Learnings**: When a complex problem is solved or an important decision is taken, persist it via `remember.py`.
-
----
-
-## Supporting Documentation
-
-- [Memory Types Reference](./references/memory_types.md) — Explains each memory type (`copilot_chat`, `claude_chat`, `antigravity_chat`, etc.).
-- [RAG Workflows & Best Practices](./references/rag_workflows.md) — Patterns for effective search and recall.
-- [Sample Queries](./examples/sample_queries.md) — Reference examples and CLI commands.
+- `pending sync: 0` mede fila; não prova daemon ativo, autenticação ou coleta recente. Confira processo/tarefa, datas e logs minimizados, HTTP autenticado e resultado de coleta.
+- Descubra o runtime pela tarefa/serviço, sem imprimir configuração privada. Windows pode usar `~/.animus/runtime/Scripts/python.exe`; VPS usa o ExecStart efetivo. Evite executar de um checkout antigo que sombreie o pacote instalado.
+- Reproduza também WorkingDirectory e `ANIMUS_DATA_DIR` do serviço. Um shell interativo pode carregar outra base/configuração; não copie nem imprima segredos do ambiente. Vincule os MCPs e adapters à mesma base efetiva.
+- Atualização confiável exige versão/hash do wheel entregue pelo hub, vínculo exato com tarefa/config/processo, recibo de instalação e novo processo, seguido de reconexão autenticada real. Pin antigo no hub pode impedir a convergência.
+- O Python Store pode usar launcher mais processo filho: comprove proprietário, executáveis, argumentos e ordem de criação. Não adote PID por nome nem encerre clientes MCP para liberar arquivos.
+- Preserve configurações, SQLite, notas humanas, registry e backups. Não reduza autenticação para sanar401 nem restaure segredo revogado.
