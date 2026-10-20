@@ -194,7 +194,7 @@ function Validate-Task($Plan) {
 function Validate-Plan($Plan) {
     $script:Gate='plan_identity'
     if ($Plan.owner_sid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or [DateTime]::UtcNow.Ticks -gt [long]$Plan.deadline_ticks) { throw 'Plan owner/expiry mismatch' }
-    foreach ($path in @($Plan.python,$Plan.config_path,$Plan.wheel,$Plan.runner)) {
+    foreach ($path in @($Plan.python,$Plan.process_python,$Plan.config_path,$Plan.wheel,$Plan.runner)) {
         $item=Get-Item -LiteralPath $path -Force
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Plan reparse forbidden' }
     }
@@ -215,7 +215,17 @@ function Assert-VerifiedRestartEvidence([string]$ExpectedVersion,[string]$Instal
 function Source-Alive($Plan) {
     $process=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$Plan.source_pid) -ErrorAction SilentlyContinue
     if ($null -eq $process) { return $false }
-    return $process.ExecutablePath -eq $Plan.python -and $process.CreationDate.ToUniversalTime().Ticks -eq [long]$Plan.source_creation_ticks
+    return $process.ExecutablePath -eq $Plan.process_python -and $process.CreationDate.ToUniversalTime().Ticks -eq [long]$Plan.source_creation_ticks
+}
+function Native-ProcessMatches($Process,$Plan,$Task) {
+    if ($null -eq $Process -or $Process.ExecutablePath -ne $Plan.process_python -or -not $Process.CommandLine -or -not $Process.CommandLine.Trim().EndsWith($Task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)) { return $false }
+    if ($Plan.process_python -eq $Plan.python) { return $true }
+    # Windows venv/Store launchers spawn the real image. Bind its immediate
+    # parent to this exact task interpreter and action, never another Python.
+    $launcher=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$Process.ParentProcessId) -ErrorAction SilentlyContinue
+    if ($null -eq $launcher -or $launcher.ExecutablePath -ne $Plan.python -or -not $launcher.CommandLine -or -not $launcher.CommandLine.Trim().EndsWith($Task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal) -or $launcher.CreationDate -gt $Process.CreationDate) { return $false }
+    $identity=Invoke-CimMethod -InputObject $launcher -MethodName GetOwnerSid
+    return $identity.ReturnValue -eq 0 -and $identity.Sid -eq $Plan.owner_sid
 }
 try {
     if ($Mode -eq 'Register') {
@@ -227,8 +237,9 @@ try {
         $source=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$spec.source_pid)
         $sourceOwner=Invoke-CimMethod -InputObject $source -MethodName GetOwnerSid
         if ($sourceOwner.ReturnValue -ne 0 -or $sourceOwner.Sid -ne $owner) { throw 'Source process belongs to another principal' }
-        if ($source.ExecutablePath -ne $spec.python -or -not $source.CommandLine.Trim().EndsWith($task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)) { throw 'Daemon task/process attribution mismatch' }
         $spec | Add-Member -NotePropertyName owner_sid -NotePropertyValue $owner
+        if (-not (Native-ProcessMatches $source $spec $task)) { throw 'Daemon task/process attribution mismatch' }
+        if ($spec.process_python -ne $spec.python -and $source.ParentProcessId -ne $spec.source_launcher_pid) { throw 'Native launcher identity drift' }
         $environmentFingerprint=Environment-Binding $spec $task
         Parent $spec.data_dir $owner
         Parent (Split-Path $spec.config_path -Parent) $owner
@@ -243,7 +254,7 @@ try {
         [IO.File]::WriteAllBytes($runner,[IO.File]::ReadAllBytes($PSCommandPath)); Private $runner $owner
         $jobName='AnimusPeerUpdate-'+[Guid]::NewGuid().ToString('N')
         $PlanPath=Join-Path $jobDir 'plan.json'
-        $plan=@{version=1;data_dir=$spec.data_dir;environment_fingerprint=$environmentFingerprint;task_name=$spec.task_name;task_path=$spec.task_path;task_sha256=(Task-Binding $task);owner_sid=$owner;python=$spec.python;config_path=$spec.config_path;config_sha256=$spec.config_sha256;node_id=$spec.node_id;wheel=$spec.wheel;wheel_sha256=$spec.wheel_sha256;expected_version=$spec.expected_version;source_pid=$spec.source_pid;source_creation_ticks=$source.CreationDate.ToUniversalTime().Ticks;deadline_ticks=[DateTime]::UtcNow.AddMinutes(15).Ticks;job_name=$jobName;runner=$runner;runner_sha256=(Hash $runner)}
+        $plan=@{version=1;data_dir=$spec.data_dir;environment_fingerprint=$environmentFingerprint;task_name=$spec.task_name;task_path=$spec.task_path;task_sha256=(Task-Binding $task);owner_sid=$owner;python=$spec.python;process_python=$spec.process_python;config_path=$spec.config_path;config_sha256=$spec.config_sha256;node_id=$spec.node_id;wheel=$spec.wheel;wheel_sha256=$spec.wheel_sha256;expected_version=$spec.expected_version;source_pid=$spec.source_pid;source_creation_ticks=$source.CreationDate.ToUniversalTime().Ticks;deadline_ticks=[DateTime]::UtcNow.AddMinutes(15).Ticks;job_name=$jobName;runner=$runner;runner_sha256=(Hash $runner)}
         Write-PrivateJson $PlanPath $plan $owner
         Validate-Plan $plan
         $script:Gate='register_independent_update_task'
@@ -295,7 +306,7 @@ try {
     if ($task.State -eq 'Running' -or (Source-Alive $plan)) { throw 'Exact native task did not stop' }
     Validate-Plan $plan
     $task=Validate-Task $plan
-    $remaining=@(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $plan.python -and $_.CommandLine -and $_.CommandLine.Trim().EndsWith($task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)})
+    $remaining=@(Get-CimInstance Win32_Process | Where-Object {($_.ExecutablePath -eq $plan.python -or $_.ExecutablePath -eq $plan.process_python) -and $_.CommandLine -and $_.CommandLine.Trim().EndsWith($task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)})
     if ($remaining.Count) { throw 'Native daemon still alive; no broad process kill permitted' }
     Write-PrivateJson $receipt @{status='installing';installed=$false;restart_verified=$false;owner='agent'} $plan.owner_sid
     $script:Gate='bounded_local_wheel_install'
@@ -319,14 +330,14 @@ try {
     $deadline=[DateTime]::UtcNow.AddSeconds(60); $verified=$false; $pidValue=$null; $creation=$null
     do {
         $task=Validate-Task $plan
-        $processes=@(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $plan.python -and $_.CreationDate.ToUniversalTime() -ge $started -and $_.CommandLine -and $_.CommandLine.Trim().EndsWith($task.Actions[0].Arguments.Trim(),[StringComparison]::Ordinal)})
+        $processes=@(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $plan.process_python -and $_.CreationDate -and $_.CreationDate.ToUniversalTime() -ge $started -and (Native-ProcessMatches $_ $plan $task)})
         if ($task.State -eq 'Running' -and $processes.Count -eq 1) { $verified=$true; $pidValue=$processes[0].ProcessId; $creation=$processes[0].CreationDate.ToUniversalTime().Ticks; break }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     if (-not $verified) { throw 'Task start requested but native process not verified' }
     Start-Sleep -Seconds 3
     $process=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$pidValue) -ErrorAction SilentlyContinue
-    if ($null -eq $process -or $process.CreationDate.ToUniversalTime().Ticks -ne $creation -or $process.ExecutablePath -ne $plan.python) { throw 'Native restarted process did not remain alive' }
+    if ($null -eq $process -or $process.CreationDate.ToUniversalTime().Ticks -ne $creation -or -not (Native-ProcessMatches $process $plan $task)) { throw 'Native restarted process did not remain alive' }
     $task=Validate-Task $plan
     $processOwner=Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid
     if ($processOwner.ReturnValue -ne 0 -or $processOwner.Sid -ne $plan.owner_sid) { throw 'Restart process principal mismatch' }
