@@ -8,7 +8,8 @@ archive="${ANIMUS_SKILL_BACKUP:-/var/lib/vps-hub/rollback/animus-rag}"
 mkdir -p "$archive" "$destination"
 chmod 700 "$archive"
 if [[ -f "$destination/SKILL.md" ]]; then
-    tar czf "$archive/pre-install-$(date -u +%Y%m%dT%H%M%S).tar.gz" -C "$destination" .
+    backup="$(mktemp --suffix=.tar.gz "$archive/pre-install-$(date -u +%Y%m%dT%H%M%S)-XXXXXX")"
+    tar czf "$backup" -C "$destination" .
 fi
 cp -a "$source_dir/." "$destination/"
 while IFS= read -r -d '' file; do
