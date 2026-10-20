@@ -176,13 +176,15 @@ class AnimusPeer:
             logger.error("Hub pull error: %s", e)
         return 0
 
-    async def remote_search(self, query: str) -> list[dict]:
+    async def remote_search(self, query: str, *, workspace: str = '', mem_type: str = '', limit: int = 20, strict: bool = False) -> list[dict]:
         """Search memories via the hub (across all peers)."""
         if not self.config.hub_url:
             return []
 
         try:
-            body_str = json.dumps({"query": query, "node_id": self.config.node_id})
+            body_str = json.dumps({"query": query, "node_id": self.config.node_id,
+                                   "workspace": workspace or None, "mem_type": mem_type or None,
+                                   "limit": max(1, min(int(limit), 20))})
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
             async with httpx.AsyncClient(timeout=15, headers=self.config.cloudflare_access_headers()) as client:
@@ -193,7 +195,11 @@ class AnimusPeer:
                 )
                 if resp.status_code == 200:
                     return resp.json().get("results", [])
+                if strict:
+                    raise RuntimeError('Authenticated hub search unavailable')
         except Exception as e:
+            if strict:
+                raise RuntimeError('Authenticated hub search unavailable') from None
             logger.error("Remote search error: %s", e)
         return []
 

@@ -83,6 +83,7 @@ class AnimusMCPServer:
                         "description": "Maximum results (default: 10)",
                         "default": 10,
                     },
+                    "remote": {"type": "boolean", "description": "Also query the authenticated hub; defaults to local rag_hub_enabled policy"},
                 },
                 "required": ["query"],
             },
@@ -110,6 +111,7 @@ class AnimusMCPServer:
                         "description": "Approximate max tokens of context to return (default: 2000)",
                         "default": 2000,
                     },
+                    "remote": {"type": "boolean", "description": "Retrieve bounded relevant hub memories before local RAG; defaults to rag_hub_enabled"},
                 },
                 "required": ["context"],
             },
@@ -606,10 +608,35 @@ class AnimusMCPServer:
 
     # ── Tool Implementations ──
 
+    def _hydrate_hub(self, query: str, args: dict) -> str:
+        if not args.get('remote', self.config.rag_hub_enabled):
+            return 'not_requested'
+        if not self.config.hub_url:
+            return 'not_configured'
+        import asyncio
+        from ..network.peer import AnimusPeer
+        from ..network.sync import SyncProtocol
+        peer = AnimusPeer(self.config)
+        try:
+            rows = asyncio.run(peer.remote_search(query, workspace=args.get('workspace') or '',
+                    mem_type=args.get('type') or '', limit=20, strict=True))
+            memories, _ = SyncProtocol.memories_from_push({'memories': rows})
+            # Query-time cache is not a complete hub replica. Do not re-upload
+            # remote-owned results as fresh local collection.
+            remote = [m for m in memories if m.source_node != self.config.node_id]
+            self.engine.index_batch(remote)
+            self.engine.mark_synced([m.id for m in remote])
+            return f'queried ({len(remote)} relevant remote records)'
+        except (RuntimeError, OSError, ValueError):
+            return 'unavailable; results below are local only'
+        finally:
+            peer.engine.close()
+
     def _tool_search(self, args: dict) -> str:
         query = args.get("query", "")
         if not query:
             return "Error: query is required"
+        hub = self._hydrate_hub(query, args)
 
         results = self.engine.search(
             query,
@@ -619,9 +646,10 @@ class AnimusMCPServer:
         )
 
         if not results:
-            return f"No memories found for: {query}"
+            return f"No memories found for: {query}. Hub: {hub}"
 
         output = [f"🦅 Eagle Vision — {len(results)} memories found for '{query}':\n"]
+        output.append(f'Hub retrieval: {hub}\n')
         for i, r in enumerate(results, 1):
             metadata = json.loads(r.get("metadata") or "{}")
             location = ""
@@ -643,6 +671,7 @@ class AnimusMCPServer:
         context = args.get("context", "")
         if not context:
             return "Error: context is required"
+        hub = self._hydrate_hub(context, args)
 
         workspace = args.get("workspace", "")
         max_tokens = args.get("max_tokens", 2000)
@@ -653,9 +682,10 @@ class AnimusMCPServer:
         results = rag.contextual_recall(context, workspace=workspace, max_tokens=max_tokens)
 
         if not results:
-            return "No relevant memories found for this context."
+            return f"No relevant memories found for this context. Hub: {hub}"
 
         output = ["⟁ Animus Recall — relevant memories from your past interactions:\n"]
+        output.append(f'Hub retrieval: {hub}\n')
         for chunk in results:
             output.append(
                 f"── {chunk['title']} ({chunk['type']}) ──\n"
