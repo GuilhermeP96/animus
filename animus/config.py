@@ -210,6 +210,9 @@ class AnimusConfig(BaseSettings):
     collect_claude_chat: bool = True       # Claude Code session transcripts
     collect_claude_memory: bool = True     # Claude Code auto-memory .md files
     collect_copilot_cli_chat: bool = True  # GitHub Copilot CLI session turns/checkpoints
+    collect_codex_chat: bool = False  # Explicit opt-in: local conversations can be sensitive.
+    codex_data_dir: Path = Field(default_factory=lambda: Path.home() / '.codex')
+    codex_allowed_workspaces: list[Path] = Field(default_factory=list)
     collect_antigravity_chat: bool = True      # Antigravity CLI/IDE conversation turns
     collect_antigravity_memory: bool = True    # Antigravity brain / GEMINI.md memory files
     collect_antigravity_knowledge: bool = True # Antigravity .antigravity project context

@@ -32,6 +32,7 @@ class MemoryType(str, Enum):
     ANTIGRAVITY_MEMORY = "antigravity_memory" # Google Antigravity persistent memory files (brain/GEMINI.md)
     ANTIGRAVITY_KNOWLEDGE = "antigravity_knowledge" # Google Antigravity project context / .antigravity config
     OBSIDIAN_NOTE = "obsidian_note"         # Curated Markdown note from an Obsidian vault
+    CODEX_CHAT = "codex_chat"               # Opt-in scoped user/final-answer messages only
 
 
 class Memory(BaseModel):

@@ -24,6 +24,11 @@ from animus.network.updater import (
 
 
 class TestIsNewer:
+    def test_pep440_preview_number_is_not_a_patch_digit(self):
+        assert not is_newer('0.8.12a1', '0.8.12')
+        assert is_newer('0.8.12', '0.8.12a1')
+        assert is_newer('0.8.13', '0.8.12a1')
+
     @pytest.mark.parametrize("remote, local, expected", [
         ("0.5.1", "0.5.0", True),
         ("0.5.0", "0.5.0", False),

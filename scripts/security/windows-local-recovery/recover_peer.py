@@ -46,7 +46,7 @@ def protect(path: Path, owner_sid: str | None = None, directory=False):
     if os.name == 'nt':
         if not owner_sid or not re.fullmatch(r'S-1-[0-9-]+', owner_sid):
             raise RecoveryError('Verified Windows owner SID required')
-        command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-File',
+        command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File',
                    str(HERE / 'Protect-PrivateState.ps1'), '-LiteralPath', str(path), '-OwnerSid', owner_sid]
         if directory:
             command.append('-Directory')
@@ -62,7 +62,7 @@ def verify_parent(path: Path, owner_sid):
     if not path.is_dir():
         raise RecoveryError('Existing parent directory required')
     if os.name == 'nt':
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File',
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File',
              str(HERE / 'Protect-PrivateState.ps1'), '-LiteralPath', str(path),
              '-OwnerSid', owner_sid or '', '-VerifyParent'], capture_output=True, timeout=30)
         if result.returncode:

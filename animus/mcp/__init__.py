@@ -25,6 +25,7 @@ from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.copilot_cli import CopilotCliCollector
 from ..collector.obsidian import ObsidianCollector
+from ..collector.codex import CodexCollector
 from ..collector.models import Memory, MemoryType
 
 logger = logging.getLogger("animus.mcp")
@@ -457,6 +458,7 @@ class AnimusMCPServer:
         self.antigravity_collector = AntigravityCollector(self.config)
         self.copilot_cli_collector = CopilotCliCollector(self.config)
         self.obsidian_collector = ObsidianCollector(self.config)
+        self.codex_collector = CodexCollector(self.config)
 
     def handle_message(self, message: dict) -> dict | None:
         """Handle a JSON-RPC message."""
@@ -761,6 +763,7 @@ class AnimusMCPServer:
             f"  Unique nodes:    {stats['unique_nodes']}",
             f"  Workspaces:      {stats['unique_workspaces']}",
             f"  Pending sync:    {stats['unsynced']}",
+            "  Queue size does not establish daemon health or authenticated hub connectivity.",
         ]
         if stats.get("by_type"):
             lines.append("\n  By type:")
@@ -775,6 +778,7 @@ class AnimusMCPServer:
         memories.extend(self.antigravity_collector.collect_all())
         memories.extend(self.copilot_cli_collector.collect_all())
         memories.extend(obsidian_collector.collect_all())
+        memories.extend(getattr(self, 'codex_collector', CodexCollector(self.config)).collect_all())
         new_count = self.engine.index_batch(memories)
         for vault, active_ids in obsidian_collector.seen_by_vault.items():
             self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
