@@ -54,7 +54,7 @@ def e2e_env(tmp_path):
                 body = json.dumps(kwargs.pop('json'), separators=(',', ':'), ensure_ascii=False)
                 kwargs['content'] = body
             headers = dict(kwargs.pop('headers', {}) or {})
-            headers.update(create_auth_header(hub_cfg.server_secret, 'peer-e2e', body=body))
+            headers.update(create_auth_header(hub_cfg.server_secret, headers.get('X-Animus-Node', 'peer-e2e'), body=body))
             if body is not None:
                 headers['Content-Type'] = 'application/json'
             return super().request(method, url, headers=headers, **kwargs)
