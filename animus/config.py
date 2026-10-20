@@ -219,6 +219,7 @@ class AnimusConfig(BaseSettings):
     # Obsidian is intentionally opt-in: vault content may be private and is
     # eligible for peer sync after it enters the Animus index.
     collect_obsidian: bool = False
+    obsidian_auto_export_candidates: bool = False  # Separate opt-in; no automatic verification.
     obsidian_vaults: list[ObsidianVaultConfig] = Field(default_factory=list)
     obsidian_exclude_patterns: list[str] = Field(default_factory=lambda: [
         ".obsidian/**", ".git/**", "node_modules/**", "attachments/**", ".animus/**",
