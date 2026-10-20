@@ -1,5 +1,12 @@
 # Peer recovery and governed feedback — 2026-10-20
 
+Stable0.8.13 additionally binds the Microsoft Store Python real image to its
+immediate task launcher (same owner, interpreter/action and creation ordering),
+covering both source exit and restarted-process verification. The venv executable
+and actual interpreter image can differ; never accept an unrelated Python PID.
+Native PowerShell regression checks cover direct process, correct launcher,
+foreign owner, different parent/child images, action drift and parent PID reuse.
+
 The HP peer was installed as0.8.9, not present in the current per-node registry,
 and stopped after its old detached updater exited75. Queue size zero did not
 prove authentication or collection. Never reinstate the retired shared secret.
