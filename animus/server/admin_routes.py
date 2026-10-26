@@ -21,6 +21,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse,
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from .turnstile import TurnstileError, public_config, verify_turnstile
+
 from .admin_auth import (
     AdminSession,
     clear_session_cookie,
@@ -57,27 +59,36 @@ async def login_page(request: Request):
     session = get_current_admin(request)
     if session:
         return RedirectResponse(url="/admin", status_code=302)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None, "turnstile":public_config()})
 
 
-@router.post("/login", response_class=HTMLResponse)
+@router.get('/login-security.js', include_in_schema=False)
+async def login_security_script():
+    return Response(content=(_template_dir.parent/'static/login-security.js').read_text(),
+                    media_type='application/javascript', headers={'Cache-Control':'no-store'})
+
+@router.post('/login', response_class=HTMLResponse)
 async def login_submit(request: Request):
-    form = await request.form()
-    username = form.get("username", "")
-    password = form.get("password", "")
-
-    if not validate_credentials(str(username), str(password)):
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"error": "Accesso negado — credenciais inválidas"},
-            status_code=401,
-        )
-
-    token = create_session_token(str(username))
-    response = RedirectResponse(url="/admin", status_code=302)
-    set_session_cookie(response, token)
-    return response
+    size=request.headers.get('content-length', '0')
+    if not size.isdecimal() or int(size) > 16384:
+        raise HTTPException(status_code=413, detail='Formulário muito grande.')
+    form = await request.form(max_files=0, max_fields=8)
+    username, password = form.get('username', ''), form.get('password', '')
+    status, error = 401, 'Acesso negado — credenciais inválidas'
+    try:
+        await verify_turnstile(form.get('cf-turnstile-response'))
+        if not isinstance(username,str) or not isinstance(password,str) or len(username)>128 or len(password)>1024:
+            raise TurnstileError()
+        if validate_credentials(username, password):
+            token = create_session_token(username)
+            response = JSONResponse({'redirect':'/admin'}) if 'application/json' in request.headers.get('accept','') else RedirectResponse(url='/admin', status_code=302)
+            set_session_cookie(response, token)
+            return response
+    except TurnstileError as denied:
+        status, error = denied.status, str(denied)
+    if 'application/json' in request.headers.get('accept',''):
+        return JSONResponse({'error':error}, status_code=status)
+    return templates.TemplateResponse(request,'login.html',{'error':error,'turnstile':public_config()},status_code=status)
 
 
 @router.get("/logout")

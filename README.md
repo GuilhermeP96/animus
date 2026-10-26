@@ -482,3 +482,7 @@ oficial, áudio, código ou roteiro.
 Se você é representante da Ubisoft e considera que algum elemento deveria
 ser ajustado, abra uma issue ou contate o mantenedor antes de qualquer
 ação formal: estamos abertos a remover/renomear o que for solicitado.
+
+## Proteção do painel administrativo
+
+[Turnstile no login humano](docs/TURNSTILE.md). Esta configuração não altera autenticação dos peers nem do MCP.
