@@ -7,7 +7,7 @@
         if(!sdk)sdk=new Promise((resolve,reject)=>{
             const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
             script.async=true;script.defer=true;script.dataset.turnstileSdk='true';
-            script.onload=()=>window.turnstile?.ready?window.turnstile.ready(resolve):reject(Error(message));
+            script.onload=()=>typeof window.turnstile?.render==='function'?resolve():reject(Error(message));
             script.onerror=()=>reject(Error(message));document.head.append(script);
         });
         try{await timeout(sdk,15000);}catch{document.querySelector('[data-turnstile-sdk]')?.remove();sdk=null;throw Error(message);}

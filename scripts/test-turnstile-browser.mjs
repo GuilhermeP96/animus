@@ -20,9 +20,9 @@ try{
    if(url.hostname==='challenges.cloudflare.com'){
     if(scenario==='load'&&sdkRequests++===0)return route.abort('failed');
     return route.fulfill({contentType:'application/javascript',body:`
-      let options,expired=false;window.fixtureResets=0;
+      let options,expired=false;window.fixtureResets=0;window.fixtureReadyCalls=0;
       function complete(){setTimeout(()=>options.callback('fixture-'+crypto.randomUUID()),10);}
-      window.turnstile={ready:fn=>fn(),render:(container,settings)=>{options=settings;if(${scenario==='expiry'}&&!expired){expired=true;setTimeout(settings['expired-callback'],10);}else complete();return 'fixture-widget';},reset:()=>{window.fixtureResets++;complete();}};
+      window.turnstile={ready:()=>{window.fixtureReadyCalls++;throw Error('3857: ready is unavailable for an async/defer SDK');},render:(container,settings)=>{options=settings;if(${scenario==='expiry'}&&!expired){expired=true;setTimeout(settings['expired-callback'],10);}else complete();return 'fixture-widget';},reset:()=>{window.fixtureResets++;complete();}};
     `});
    }
    if(url.origin!==base)return route.abort('blockedbyclient');
@@ -43,6 +43,7 @@ try{
   await page.waitForFunction(()=>document.body.textContent.includes('preservados'));
   assert.equal(await form.locator(userSelector).inputValue(),'fixture');assert.equal(await form.locator(passwordSelector).inputValue(),'fixture-password-12');
   assert.equal(attempts.length,scenario==='rejected'?1:0);
+  assert.equal(await page.evaluate(()=>window.fixtureReadyCalls??0),0);
   const storage=await page.evaluate(()=>JSON.stringify({local:{...localStorage},session:{...sessionStorage}}));assert(!storage.includes('fixture-password-12'));
   await form.locator('button[type="submit"]').click();
   if(native)await page.waitForURL('**/done');else await page.waitForFunction(()=>document.querySelector('#login-screen').hidden);

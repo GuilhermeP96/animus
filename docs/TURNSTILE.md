@@ -25,6 +25,11 @@ O SDK oficial é carregado diretamente de `challenges.cloudflare.com`; o widget
 do SDK preservam campos e permitem nova tentativa. Tokens ficam somente em
 memória. O formulário contém aviso e links para privacidade e termos aplicáveis.
 
+O evento `load` do SDK `async/defer` confirma a presença de `render` e libera
+o widget diretamente. A fixture lança o erro 3857 se `ready()` for chamado
+nesse modo. Renderização, reset, expiração e retry continuam exercitados;
+sem `render`, o fluxo falha fechado. O helper é servido com `no-store`.
+
 ## Qualificação da fonte
 
 Os testes de provider usam mocks e verificam contrato estrito, transporte com
