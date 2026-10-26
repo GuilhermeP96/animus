@@ -795,6 +795,21 @@ class AnimusMCPServer:
             f"  Pending sync:    {stats['unsynced']}",
             "  Queue size does not establish daemon health or authenticated hub connectivity.",
         ]
+        if stats.get("stats_degraded") or stats.get("stats_reason") is not None:
+            reason = stats.get("stats_reason")
+            # Only stable engine codes may cross the MCP boundary, never error text.
+            if reason not in (
+                "query_timeout", "database_busy", "database_unavailable",
+                "refresh_busy", "index_changed", "ttl_expired",
+            ):
+                reason = "unknown"
+            retry_after = stats.get("stats_retry_after_seconds")
+            if type(retry_after) is not int or retry_after < 0:
+                retry_after = "unknown"
+            lines.extend([
+                f"  Reason: {reason}",
+                f"  Retry after seconds: {retry_after}",
+            ])
         if stats.get("by_type"):
             lines.append("\n  By type:")
             for t, c in sorted(stats["by_type"].items(), key=lambda x: x[1], reverse=True):
