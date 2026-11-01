@@ -77,3 +77,12 @@ Hosted Dependabot configuration was removed according to machine policy. `script
 Validation: the final persisted focused gate passed140 tests; earlier137 tests passed in1.96s and136 tests in11.34s using the existing prepared /opt/animus-peer Python environment, source isolated, no package installation/container/new service/external peer. Coverage includes real SQLite/HMAC/thread race/cache saturation/future timestamp expiry/deletion invalidation, per-node authority/file modes/atomic replacement, encrypted-envelope integrity/binding and private preparation artifacts, auth profile regression and existing licensing/config/server/engine tests. Seven edited Python sources parsed and git diff --check passed. Two initial fixture tests failed (WAL recovery kept the intentionally damaged old fixture valid; sample count was 7 not 6); corrected to a separate genuinely corrupt DB and actual fixture cardinality, then focused 90 tests passed before the expanded 136-test run and 137-test persisted gate.
 
 DatanO AppSec/SRE source guidance applied: independently verified trust, bounded resources, gradual release, recoverable evidence and no simulated native gate. No claim of physical rotation, deployed latency improvement, final package qualification or pentest approval is made by this source preparation.
+
+## Verificação posterior — 2026-11-01
+
+A pendência histórica de credencial compartilhada foi verificada no ambiente:
+registro com chaves individuais, segredo antigo revogado e HTTP 401 para
+credencial antiga/replay/anônimo; credenciais atuais e consumidores Windows/VPS
+autenticaram com HTTP 200. O histórico publicado também foi saneado com backup
+privado. Consulte [a revisão atual](../OPEN-SOURCE-READINESS.md) para escopo e
+limites; os relatos acima preservam o estado da auditoria original.

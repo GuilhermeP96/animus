@@ -1,8 +1,10 @@
 # Segurança e privacidade
 
 Não publique credenciais, transcrições ou detalhes exploráveis em issues.
-Use o canal privado do mantenedor em https://datano.com.br/contato para
-combinar o recebimento seguro do relato; não envie segredos no formulário.
+Use o canal privado de vulnerabilidades do GitHub em
+https://github.com/GuilhermeP96/animus/security/advisories/new.
+Para combinar outro canal seguro, contate o mantenedor em
+https://datano.com.br/contato; não envie segredos no formulário.
 
 O código open source não dá acesso ao hub privado da Datano, a contas nem
 às memórias de qualquer usuário. Configure seu próprio hub, HTTPS e segredos
