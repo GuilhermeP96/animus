@@ -27,31 +27,19 @@ from animus.indexer.engine import IndexEngine
 #  Constants
 # ═══════════════════════════════════════════════════════════════
 
-VSCODE_USER_DIR = Path("/root/.vscode-server/data/User")
-HUB_INTERNAL_URL = "http://127.0.0.1:8314"
-SERVER_SECRET = os.environ.get(
-    "ANIMUS_SERVER_SECRET",
-    "REVOKED-CREDENTIAL-CONFIGURE-LOCALLY",
-)
+# Native diagnostic: never infer the operator's workspace or credentials.
+VSCODE_USER_DIR = Path(os.environ.get("ANIMUS_DIAGNOSTIC_VSCODE_DIR", "."))
+HUB_INTERNAL_URL = os.environ.get("ANIMUS_DIAGNOSTIC_HUB_URL", "")
+SERVER_SECRET = os.environ.get("ANIMUS_SERVER_SECRET", "")
+EXPECTED_WORKSPACES = set()
+EXPECTED_MEMORY_TOOL_FILES = set()
+EXPECTED_TRANSCRIPT_FILES = set()
 
-# Expected data sources found during audit
-EXPECTED_WORKSPACES = {
-    "example-workspace-4",
-    "example-workspace-4-1",
-    "example-workspace-1",
-    "example-workspace-1-1",
-    "example-workspace-3",
-}
-
-EXPECTED_MEMORY_TOOL_FILES = {
-    "example-note-2.md",
-    "example-note-3.md",
-    "example-note-1.md",
-}
-
-EXPECTED_TRANSCRIPT_FILES = {
-    "example-transcript-1.jsonl",
-}
+# This script reads real local histories and can write/sync memories. It must
+# only run directly after the operator explicitly selects that environment.
+if __name__ != "__main__":
+    import pytest
+    pytestmark = pytest.mark.skip(reason="Native diagnostic requires explicit operator invocation")
 
 
 def _header(text: str) -> None:
@@ -294,13 +282,13 @@ def test_indexer() -> bool:
             _info(f"  {t}: {c}")
 
     # Test search
-    search_results = engine.search("DataAlchemy")
+    search_results = engine.search("example-project")
     if search_results:
-        _ok(f"Search 'DataAlchemy' returned {len(search_results)} results")
+        _ok(f"Search 'example-project' returned {len(search_results)} results")
         for r in search_results[:3]:
             _info(f"  {r.get('title', '?')[:60]}")
     else:
-        _fail("Search 'DataAlchemy' returned no results")
+        _fail("Search 'example-project' returned no results")
         ok = False
 
     # Test re-indexing idempotency
@@ -445,13 +433,13 @@ def test_sync_loop() -> bool:
         headers = create_auth_header(SERVER_SECRET, config.node_id)
         resp = httpx.post(
             f"{HUB_INTERNAL_URL}/api/search",
-            json={"query": "DataAlchemy", "node_id": config.node_id},
+            json={"query": "example-project", "node_id": config.node_id},
             headers=headers,
             timeout=5,
         )
         if resp.status_code == 200:
             results = resp.json().get("results", [])
-            _ok(f"Hub search 'DataAlchemy': {len(results)} results")
+            _ok(f"Hub search 'example-project': {len(results)} results")
             for r in results[:3]:
                 _info(f"  {r.get('title', '?')[:60]}")
         else:
@@ -469,6 +457,11 @@ def test_sync_loop() -> bool:
 # ═══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    required = ("ANIMUS_DIAGNOSTIC_VSCODE_DIR", "ANIMUS_DIAGNOSTIC_HUB_URL", "ANIMUS_SERVER_SECRET")
+    if not all(os.environ.get(name, "").strip() for name in required):
+        raise SystemExit("Configure diagnostic directory, hub URL and server secret explicitly; no network or collection performed.")
+    if os.environ.get("ANIMUS_DIAGNOSTIC_ALLOW_SYNC") != "1":
+        raise SystemExit("Set ANIMUS_DIAGNOSTIC_ALLOW_SYNC=1 only with authorization to collect and sync this environment.")
     print("⟁ Animus VPS Peer — Validation Tests")
     print(f"  VS Code dir: {VSCODE_USER_DIR}")
     print(f"  Hub URL:     {HUB_INTERNAL_URL}")

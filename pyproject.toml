@@ -8,7 +8,8 @@ version = "0.8.8"
 description = "Animus — AI Memory Synchronization Network"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-only"}
+authors = [{name = "Guilherme Pinheiro"}]
 
 dependencies = [
     "fastapi>=0.115",
@@ -27,6 +28,11 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.urls]
+Homepage = "https://datano.com.br/animus"
+Repository = "https://github.com/GuilhermeP96/animus"
+Issues = "https://github.com/GuilhermeP96/animus/issues"
+
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 vector = ["sentence-transformers>=3.0", "numpy"]
@@ -34,6 +40,9 @@ vector = ["sentence-transformers>=3.0", "numpy"]
 [project.scripts]
 animus = "animus.cli:app"
 animus-mcp = "animus.mcp:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "NOTICE", "docs/licenses/LEGACY-MIT.txt"]
 
 [tool.setuptools.packages.find]
 where = ["."]

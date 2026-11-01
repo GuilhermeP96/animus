@@ -11,3 +11,17 @@ build/
 *.sqlite3
 animus_data/
 .venv/
+
+# Private operator state and evidence
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.db-*
+*.sqlite3-*
+.animus/
+*.log
+.pytest_cache/

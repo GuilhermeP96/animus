@@ -447,9 +447,31 @@ animus obsidian rollback # Restaurar a ultima alteracao com backup
 - **Docker** — Hub deployment
 - **Chisel** (opcional) — TCP tunnel
 
-## License
+## Autoria e licença
 
-MIT
+Criado e mantido por **Guilherme Pinheiro**, no ecossistema **Datano**.
+Página do projeto: [datano.com.br/animus](https://datano.com.br/animus).
+
+A partir desta alteração, o código é disponibilizado sob **GNU AGPLv3
+(AGPL-3.0-only)**. Preserve os avisos de copyright e licença; identifique
+alterações e cumpra a oferta de código-fonte correspondente quando aplicável,
+inclusive para versões modificadas acessadas pela rede. Forks e uso comercial
+são permitidos pelos termos da licença.
+
+Consulte [LICENSE](LICENSE), [NOTICE](NOTICE), a [política de marca](TRADEMARKS.md)
+e o [guia de contribuição](CONTRIBUTING.md). As versões anteriormente
+distribuídas sob MIT mantêm suas permissões: veja o
+[aviso legado](docs/licenses/LEGACY-MIT.txt). Componentes de terceiros mantêm
+suas respectivas licenças e atribuições.
+
+### Preparação para abertura pública
+
+O repositório permanece privado enquanto os bloqueios do
+[relatório de revisão](docs/OPEN-SOURCE-READINESS.md) não forem resolvidos.
+Isso inclui o tratamento do segredo histórico e a confirmação de sua rotação.
+O código aberto não concede acesso ao hub privado da Datano nem às memórias
+dos usuários. Para instalar, use seu próprio hub e suas próprias credenciais.
+Consulte [SECURITY.md](SECURITY.md) antes de coletar ou sincronizar dados.
 
 ## 📝 Aviso (marcas e afiliação)
 
@@ -461,7 +483,7 @@ Este projeto **não é afiliado, endossado, patrocinado ou aprovado** pela
 Ubisoft. Todas as marcas e elementos de propriedade da Ubisoft pertencem a
 seus respectivos titulares. O uso aqui é nominativo / referencial — para
 descrever um conceito de "sincronização de memórias" inspirado na franquia
-— em um software open-source sem fins lucrativos, sem reutilizar arte
+— em um software open source que permite uso comercial conforme sua licença, sem reutilizar arte
 oficial, áudio, código ou roteiro.
 
 Se você é representante da Ubisoft e considera que algum elemento deveria

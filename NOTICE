@@ -1,0 +1,16 @@
+Animus — AI Memory Synchronization Network
+Created and maintained by Guilherme Pinheiro (GuilhermeP96), Datano.
+Copyright (c) 2026 Guilherme Pinheiro Consultoria e Serviços de T.I.
+
+Official project: https://datano.com.br/animus
+Canonical source: https://github.com/GuilhermeP96/animus
+
+The code from this licensing change onward is licensed under AGPL-3.0-only.
+Retain applicable copyright and license notices and identify modifications
+as required by that license. This NOTICE records provenance; it does not
+add restrictions to the AGPL or claim ownership of third-party contributions.
+
+Earlier MIT-licensed versions remain available under their original terms;
+see docs/licenses/LEGACY-MIT.txt. Third-party dependencies retain their own
+copyrights and licenses. No affiliation with Ubisoft or the vendors of the
+AI assistants or Obsidian is implied. See TRADEMARKS.md.

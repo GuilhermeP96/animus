@@ -62,7 +62,7 @@ serviço, e — desde v0.5.0 — **registro automático do MCP no
 curl -fsSL https://raw.githubusercontent.com/GuilhermeP96/animus/master/scripts/install-peer.sh \
   -o /tmp/install-peer.sh
 ANIMUS_HUB_URL=https://animus.datano.com.br \
-ANIMUS_SERVER_SECRET=<peça-ao-usuário> \
+ANIMUS_SERVER_SECRET=<configure-localmente> \
 ANIMUS_INSTALL_CLAUDE_MCP=yes \
 bash /tmp/install-peer.sh
 ```
@@ -72,14 +72,13 @@ bash /tmp/install-peer.sh
 ```powershell
 irm https://raw.githubusercontent.com/GuilhermeP96/animus/master/scripts/install-peer.ps1 -OutFile $env:TEMP\install-peer.ps1
 $env:ANIMUS_HUB_URL = 'https://animus.datano.com.br'
-$env:ANIMUS_SERVER_SECRET = '<peça-ao-usuário>'
+$env:ANIMUS_SERVER_SECRET = '<configure-localmente>'
 $env:ANIMUS_INSTALL_CLAUDE_MCP = 'yes'
 & "$env:TEMP\install-peer.ps1"
 ```
 
-> **Segredo**: nunca grave `ANIMUS_SERVER_SECRET` em commit, log, ou no
-> próprio README. Peça ao usuário e use a variável de ambiente — o
-> instalador a consome e descarta.
+> **Segredo**: nunca peça credenciais no chat nem as grave em commit, log ou README.
+> O operador deve fornecê-las por um canal local seguro, fora da conversa.
 
 ## Quando o peer JÁ existe mas o MCP NÃO
 
@@ -148,15 +147,7 @@ No próximo ciclo o log deve mostrar `vX.Y.Z starting` (≥0.5.0), zero avisos
 `MemoryType`, e `Collected ... N new` / `Pulled ... N new` com N>0 — sinal de
 que as memórias do Claude finalmente entram.
 
-> **Git Credential Manager corporativo**: em ambientes gerenciados (VDI), o
-> `git pull` pode falhar com `remote: invalid credentials` mesmo com um token
-> válido, porque o GCM injeta credenciais em cache. Contorne sem desligar o
-> TLS, passando o token na URL e desabilitando o helper só para esse comando:
-> ```bash
-> git -c credential.helper= -C "$dir" \
->   fetch https://x-access-token:$TOKEN@github.com/GuilhermeP96/animus.git master:refs/remotes/origin/master
-> git -C "$dir" merge --ff-only origin/master
-> ```
+> **Credenciais Git**: use o gerenciador de credenciais configurado. Nunca inclua tokens na URL, em argumentos ou logs.
 
 ## Sanity check do MCP
 
