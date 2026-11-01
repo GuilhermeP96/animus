@@ -479,15 +479,15 @@ distribuídas sob MIT mantêm suas permissões: veja o
 [aviso legado](docs/licenses/LEGACY-MIT.txt). Componentes de terceiros mantêm
 suas respectivas licenças e atribuições.
 
-### Preparação para abertura pública
-
-O repositório permanece privado enquanto os bloqueios do
-[relatório de revisão](docs/OPEN-SOURCE-READINESS.md) não forem resolvidos.
-Isso inclui o tratamento do segredo histórico e a confirmação de sua rotação.
-O código aberto não concede acesso ao hub privado da Datano nem às memórias
-dos usuários. Para instalar, use seu próprio hub e suas próprias credenciais.
-Consulte [SECURITY.md](SECURITY.md) antes de coletar ou sincronizar dados.
-
+### Código público e hub privado
++
++O código do Animus está disponível para uso e contribuição sob AGPLv3.
++A publicação não concede acesso ao hub privado da Datano nem às memórias
++dos usuários. Configure seu próprio hub e suas próprias credenciais.
++Consulte [SECURITY.md](SECURITY.md) antes de coletar ou sincronizar dados.
++O [relatório de revisão](docs/OPEN-SOURCE-READINESS.md) registra a revisão,
++o saneamento do histórico e as verificações de autenticação.
++
 ## 📝 Aviso (marcas e afiliação)
 
 "Animus" e a estética visual do projeto (terminologia como *Eagle Vision*,

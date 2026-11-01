@@ -82,3 +82,28 @@ cinco diagnósticos nativos ficaram intencionalmente fora da execução automát
 A execução direta sem configuração explícita foi verificada: encerra antes
 de coletar ou acessar a rede. Metadados TOML e licença foram conferidos.
 Isso não qualifica a instalação produtiva nem comprova rotação de credenciais.
+
+## Execução autorizada — 2026-11-01
+
+O usuário autorizou backup privado, reescrita, coordenação das credenciais,
+abertura pública e publicação da página. Foram reescritos 123 commits e
+atualizadas atomicamente 42 refs remotas, usando leases dos SHAs anteriores.
+A verificação dos blobs alcançáveis não encontrou os valores removidos.
+Backups completos e o mapa de commits ficam em área privada com acesso
+restrito no Windows e na VPS; não são publicados com o projeto.
+
+A conferência ao vivo demonstrou que o hub já havia migrado para três chaves
+individuais: segredo compartilhado vazio, registro 0600, nonce obrigatório
+e revogação explícita do segredo histórico. Todas as três chaves atuais
+receberam HTTP 200; o segredo antigo, replay, ausência de autenticação e
+identidade desconhecida receberam HTTP 401. Os consumidores Windows e VPS
+também autenticaram com suas próprias configurações reais (HTTP 200).
+Dois peers estavam online; uma credencial de peer offline permanece habilitada
+sem usar o segredo revogado. Nenhuma nova chave ou dado de usuário foi alterado.
+
+A fonte endurecida que já estava em produção foi integrada à master pública,
+preservando a AGPL e os avisos de autoria. A atualização de fontes não instala
+ automaticamente outra versão nos runtimes existentes. Referências históricas
+a SHAs anteriores podem exigir o mapa privado para reconciliação. Caches e
+refs internas do provedor não são controlados por um force-push: saneamento
+de refs publicadas e revogação não são promessa de eliminação de toda cópia.
