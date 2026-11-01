@@ -20,3 +20,9 @@ Esta entrega integra fonte na master preservando a AGPL e mudanças posteriores.
 Não publica outro artefato 0.8.14, não reinstala peers e não reinicia MCPs. O
 runtime instalado permanece distinto do código integrado. Distribuir a mudança
 exige próxima versão imutável e teste do consumidor pelo fluxo existente.
+
+A integração original da PR é ancestral da master. O retarget da PR para
+master foi recusado pelo GitHub por não haver commits novos entre as linhas;
+a PR histórica continua aberta na base anterior. Isso é uma pendência de
+metadados de revisão, não uma ausência do patch na master. Seu encerramento
+não foi confundido com distribuição ou qualificação do wheel produtivo.
