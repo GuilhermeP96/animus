@@ -151,7 +151,7 @@ Get-ScheduledTask AnimusPeerDaemon      # Windows
 # Ver / trocar a URL do hub (use sempre a URL pública HTTPS,
 # nunca um IP interno do bridge Docker — ele muda a cada restart)
 animus config-show
-animus config-set hub_url https://animus.datano.com.br
+animus config-set hub_url https://animus.example.com
 
 # Sync manual
 animus sync
@@ -190,7 +190,7 @@ docker compose up -d
 
 ```bash
 # No peer, configurar URL do hub
-animus config set hub_url https://animus.datano.com.br
+animus config set hub_url https://animus.example.com
 
 # Definir o mesmo secret do hub
 animus config set server_secret <MESMO_SECRET_DO_HUB>
@@ -236,12 +236,12 @@ direto na API HTTP do hub:
 
 ```bash
 # Auth: HMAC-SHA256 (ver animus/network/crypto.py) — ou rode em dev sem secret
-curl -s https://animus.datano.com.br/health
-curl -s https://animus.datano.com.br/api/version
+curl -s https://animus.example.com/health
+curl -s https://animus.example.com/api/version
 curl -s -X POST -H 'X-Animus-Node: <node_id>' -H 'X-Animus-Timestamp: <ts>' \
         -H 'X-Animus-Signature: <hmac>' -H 'Content-Type: application/json' \
         -d '{"query":"docker deploy","limit":5}' \
-        https://animus.datano.com.br/api/search
+        https://animus.example.com/api/search
 ```
 
 Endpoints públicos (sem secret): `/`, `/health`, `/api/version`. Os demais
@@ -339,7 +339,7 @@ O Animus usa um modelo **hub-and-spoke**: peers sempre conectam **outbound** ao 
 ### Opção 1: Direto (recomendado)
 Se a VPS tem IP público e porta 8314 aberta:
 ```bash
-animus config set hub_url https://animus.datano.com.br
+animus config set hub_url https://animus.example.com
 ```
 
 ### Opção 2: SSH Tunnel
@@ -478,6 +478,14 @@ e o [guia de contribuição](CONTRIBUTING.md). As versões anteriormente
 distribuídas sob MIT mantêm suas permissões: veja o
 [aviso legado](docs/licenses/LEGACY-MIT.txt). Componentes de terceiros mantêm
 suas respectivas licenças e atribuições.
+
+### Instalação independente
+
+Os instaladores públicos sugerem `http://127.0.0.1:8314` para um hub local.
+Para outra máquina, configure a URL HTTPS do **seu próprio hub** e uma credencial
+emitida pelo seu administrador. `animus.example.com` é apenas um domínio de
+exemplo: não é um serviço compartilhado. Configure também seus domínios
+permitidos no Turnstile e seu certificado ao usar os modelos de deploy.
 
 ### Código público e hub privado
 

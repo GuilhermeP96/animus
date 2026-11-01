@@ -349,7 +349,7 @@ async function downloadInstallerZip() {
             <span class="kv-val">200 memories</span>
 
             <span class="kv-key">Endpoint</span>
-            <span class="kv-val" style="font-family: monospace; font-size: 12px;">wss://animus.datano.com.br/ws/sync</span>
+            <span class="kv-val" style="font-family: monospace; font-size: 12px;">{{ 'wss' if request.url.scheme == 'https' else 'ws' }}://{{ request.url.netloc }}/ws/sync</span>
         </div>
     </div>
 </div>

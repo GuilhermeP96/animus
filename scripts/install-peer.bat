@@ -39,9 +39,9 @@ echo  ===============================================================
 echo   Animus - Peer Installation Kit (Windows .bat wrapper)
 echo  ===============================================================
 echo.
-echo  Esta janela vai pedir o secret compartilhado do hub.
-echo  Cole o valor revelado em https://animus.datano.com.br/admin/peers
-echo  (botao "Recruit a New Assassin"  ^>  "Reveal" ).
+echo  Esta janela vai pedir a credencial HMAC do seu peer.
+echo  Obtenha a credencial com o administrador do seu proprio hub.
+echo  Nao compartilhe essa credencial em chats, logs ou commits.
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1_FILE%"

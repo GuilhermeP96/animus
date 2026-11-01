@@ -21,8 +21,7 @@ máquinas dele — ou seja, "Eagle Vision" sobre a memória dele.
 A partir de v0.5.1 o `animus collect` também indexa memórias do Google
 Antigravity / Antigravity IDE (`~/.gemini/antigravity/conversations/*.db`,
 `brain/`, `GEMINI.md`, `config/projects/*.json` e `.antigravity/mcp.json`
-nos workspaces). Assuma que o usuário quer isso ligado. Se não estiver,
-ofereça ligar.
+nos workspaces). Colete somente fontes autorizadas pelo usuário; não habilite fontes por suposição.
 
 A partir de v0.6.0 o `animus collect` também indexa sessões do **GitHub
 Copilot CLI** (`~/.copilot/session-store.db` — turns e checkpoints, tipo
@@ -61,7 +60,7 @@ serviço, e — desde v0.5.0 — **registro automático do MCP no
 ```bash
 curl -fsSL https://raw.githubusercontent.com/GuilhermeP96/animus/master/scripts/install-peer.sh \
   -o /tmp/install-peer.sh
-ANIMUS_HUB_URL=https://animus.datano.com.br \
+ANIMUS_HUB_URL=https://animus.example.com \
 ANIMUS_SERVER_SECRET=<configure-localmente> \
 ANIMUS_INSTALL_CLAUDE_MCP=yes \
 bash /tmp/install-peer.sh
@@ -71,7 +70,7 @@ bash /tmp/install-peer.sh
 
 ```powershell
 irm https://raw.githubusercontent.com/GuilhermeP96/animus/master/scripts/install-peer.ps1 -OutFile $env:TEMP\install-peer.ps1
-$env:ANIMUS_HUB_URL = 'https://animus.datano.com.br'
+$env:ANIMUS_HUB_URL = 'https://animus.example.com'
 $env:ANIMUS_SERVER_SECRET = '<configure-localmente>'
 $env:ANIMUS_INSTALL_CLAUDE_MCP = 'yes'
 & "$env:TEMP\install-peer.ps1"

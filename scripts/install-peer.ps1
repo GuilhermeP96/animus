@@ -13,7 +13,7 @@
 #   .\install-peer.ps1
 #
 # Variaveis (opcionais - pulam o prompt):
-#   $env:ANIMUS_HUB_URL          Default: https://animus.datano.com.br
+#   $env:ANIMUS_HUB_URL          Default: http://127.0.0.1:8314
 #   $env:ANIMUS_SERVER_SECRET    Secret compartilhado com o hub (sem default)
 #   $env:ANIMUS_NODE_NAME        Default: $env:COMPUTERNAME
 #   $env:ANIMUS_NODE_ID          Default: uuid4[:12]
@@ -31,7 +31,7 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$HubDefault            = 'https://animus.datano.com.br'
+$HubDefault            = 'http://127.0.0.1:8314'
 $RepoDefault           = 'https://github.com/GuilhermeP96/animus.git'
 
 function Write-Step ($m) { Write-Host ">> $m" -ForegroundColor Cyan }

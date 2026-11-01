@@ -14,7 +14,7 @@
 #   bash install-peer.sh
 #
 # Variáveis de ambiente (opcionais — pulam o prompt):
-#   ANIMUS_HUB_URL        Default: https://animus.datano.com.br
+#   ANIMUS_HUB_URL        Default: http://127.0.0.1:8314
 #   ANIMUS_SERVER_SECRET  Secret compartilhado com o hub (sem default)
 #   ANIMUS_NODE_NAME      Nome humano do nó (default: hostname)
 #   ANIMUS_NODE_ID        ID estável (default: uuid4[:12])
@@ -32,7 +32,7 @@ set -euo pipefail
 # Newly generated native config/state is owner-private; do not chmod recursively.
 umask 077
 
-readonly ANIMUS_HUB_URL_DEFAULT="https://animus.datano.com.br"
+readonly ANIMUS_HUB_URL_DEFAULT="http://127.0.0.1:8314"
 readonly REPO_URL_DEFAULT="https://github.com/GuilhermeP96/animus.git"
 
 # ── Helpers ─────────────────────────────────────────────────────────────

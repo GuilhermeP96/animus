@@ -224,7 +224,7 @@ Restart VS Code; the eleven tools (`animus_search`, `animus_recall`,
 | `animus: command not found`                | Activate the venv or use the absolute path to `.venv/bin/animus`. |
 | `sync` → HTTP 401                          | Wrong secret; regenerate the kit from the hub.               |
 | `sync` → SSL error                         | Old CA bundle. Update certs (`pip install --upgrade certifi`). |
-| `sync` → `Temporary failure in name resolution` / connection refused | `hub_url` points at an internal Docker IP (`172.x`, `10.x`) that isn't routable from this host. Use the **public HTTPS URL** (e.g. `https://animus.datano.com.br`) — `peer.env` is generated with the right value; only an edited config drifts. |
+| `sync` → `Temporary failure in name resolution` / connection refused | `hub_url` points at an internal Docker IP (`172.x`, `10.x`) that isn't routable from this host. Use the **public HTTPS URL** (e.g. `https://animus.example.com`) — `peer.env` is generated with the right value; only an edited config drifts. |
 | `collect` returns 0 memories               | VS Code data dir not readable. Run as the same user that uses VS Code. |
 | Hub doesn't see this peer in `/admin/peers`| Daemon not running, or `node_id` collides with another peer. |
 
