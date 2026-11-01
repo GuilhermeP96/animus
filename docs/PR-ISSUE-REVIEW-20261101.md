@@ -7,7 +7,7 @@ automático, instalação ou nova release.
 | Referência | Evidência | Resultado |
 | --- | --- | --- |
 | [PR #9](https://github.com/GuilhermeP96/animus/pull/9) | A master não apresentava os campos seguros de motivo/backoff já oferecidos pelo engine | Integrado o patch original de 15 linhas, sua documentação e regressões. Somente códigos allowlisted e inteiro não negativo; SQL, caminhos e exceções não atravessam o MCP |
-| [#8](https://github.com/GuilhermeP96/animus/issues/8) | Comentários registram wheel antigo/RECORD e correspondência parcial com a fonte, mas stats ficaram indisponíveis em consulta real | Manter aberta. O diagnóstico não resolve o timeout; próxima versão imutável, qualificação do consumidor e disponibilidade continuam pendentes |
+| [#8](https://github.com/GuilhermeP96/animus/issues/8) | Release 0.8.15 publicada e instalada nos dois peers ativos; RECORD, fonte, preservação e MCP configurado comprovados | Critério de fechamento atendido: 16 ferramentas e stats frescas em Windows/VPS; [aceite e limitações](ROLLOUT_0.8.15_20261101.md). O diagnóstico não promete eliminar todo timeout futuro |
 | [#10](https://github.com/GuilhermeP96/animus/issues/10) | Loader e Siteverify integram a fonte e há evidência de renderização do SDK | Aceite humano com token real e replay continua pendente; não substituído por mocks ou health |
 | [#2](https://github.com/GuilhermeP96/animus/issues/2) | Gate local e remoção de Dependabot estão presentes, mas as evidências de dependências e automações têm datas/escopos diferentes | Manter aberta para reconciliação do artefato e cobertura de validação operacional |
 
@@ -27,4 +27,6 @@ Após autorização explícita do proprietário para encerrar pendências
 comprovadas, a PR #9 foi encerrada quanto à integração de fonte, com essa
 distinção registrada na descrição. Não houve merge adicional na base antiga.
 O encerramento não equivale a distribuição ou qualificação do wheel produtivo;
-a issue #8 permanece aberta para essa próxima etapa.
+a issue #8 permaneceu aberta para essa próxima etapa, concluída depois na
+[release 0.8.15](ROLLOUT_0.8.15_20261101.md). Os parágrafos anteriores descrevem
+a integração de fonte anterior à distribuição.

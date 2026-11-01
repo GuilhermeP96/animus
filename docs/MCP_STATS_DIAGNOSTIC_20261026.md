@@ -1,5 +1,9 @@
 # MCP statistics diagnostic — review candidate, 2026-10-26
 
+Delivery update, 2026-11-01: this historical source-only status is superseded
+by [the 0.8.15 rollout and native MCP acceptance](ROLLOUT_0.8.15_20261101.md).
+The original 0.8.14 artifact was preserved; it was not overwritten.
+
 Tracking: [issue #8](https://github.com/GuilhermeP96/animus/issues/8).
 The installed 0.8.14 MCP returns `Statistics: unavailable` without the engine's
 safe reason or retry interval. A single bounded native read using the configured

@@ -1,0 +1,82 @@
+{
+  "product": "Animus",
+  "version": "0.8.15",
+  "release": "https://github.com/GuilhermeP96/animus/releases/tag/v0.8.15",
+  "source_commit": "c1dc56f77a2ad3cbf53fcfebd9a28399cde95967",
+  "wheel_sha256": "eae88d7cb1dd12c16a7b2f5bc61dd57b1b7c75bfd80c187cf8160c5290e6f78a",
+  "wheel_size": 209316,
+  "image": "sha256:35b8c693997615159d695f122bdaaeca880c4973fbe7535f3f47489d0eb7d9a0",
+  "publication": {"stable": true, "draft": false, "asset_readback_matches": true},
+  "source_validation": {"passed": 445, "skipped_platform_specific": 5, "subtests_passed": 15},
+  "independent_qa": {
+    "environment": "existing Linux host; isolated fixture state",
+    "installation": "passed",
+    "upgrade_0_8_14": "passed; fixture config and SQLite hashes unchanged",
+    "reinstall": "passed; idempotent",
+    "real_sqlite_interruption": "unavailable; Reason query_timeout; Retry after seconds 30",
+    "unknown_reason_sanitized": true,
+    "wheel_record_entries_verified": 65,
+    "python_files_match_source": 37,
+    "licenses_verified": true
+  },
+  "native_peers": [
+    {
+      "host": "Windows",
+      "version": "0.8.15",
+      "installed_record_entries_verified": 69,
+      "package_files_match_wheel": 57,
+      "pip_check": "passed",
+      "durable_updater_receipt": "completed; installed and native restart verified",
+      "hub_reports_online_version": "0.8.15",
+      "authenticated_hub_http": 200,
+      "config_bytes_unchanged": true,
+      "baseline_memories": 1717,
+      "observed_memories": 1718,
+      "missing_memories": 0,
+      "changed_content_or_identity": 0,
+      "sync_refreshed_timestamp_or_tag_order": 21,
+      "tag_membership_preserved": true,
+      "configured_stdio_mcp": {"tools": 16, "stats": "fresh", "stats_age_seconds": 0.007, "probe_duration_ms": 729}
+    },
+    {
+      "host": "VPS Linux",
+      "version": "0.8.15",
+      "installed_record_entries_verified": 69,
+      "package_files_match_wheel": 57,
+      "pip_check": "passed",
+      "native_service": "active; new startup and installed version verified",
+      "hub_reports_online_version": "0.8.15",
+      "authenticated_hub_http": 200,
+      "config_bytes_unchanged": true,
+      "baseline_memories": 229754,
+      "observed_memories": 229755,
+      "missing_memories": 0,
+      "changed_content_or_identity": 0,
+      "sync_refreshed_timestamp_or_tag_order": 21,
+      "tag_membership_preserved": true,
+      "configured_stdio_mcp": {"tools": 16, "stats": "fresh", "stats_age_seconds": 0.618, "probe_duration_ms": 851}
+    }
+  ],
+  "hub": {
+    "healthy": true,
+    "advertised_version": "0.8.15",
+    "config_bytes_unchanged": true,
+    "peer_key_registry_unchanged": true,
+    "mounts_preserved": true,
+    "baseline_memories": 267037,
+    "observed_memories": 267038,
+    "missing_memories": 0,
+    "changed_content_or_identity": 0
+  },
+  "unrelated_services": {"datano": "same container and image; healthy", "academy": "same container and image; healthy", "fiscal": "same container and image; healthy", "datano_public_root_http": 200, "datano_animus_page_http": 200},
+  "rollback": "Previous image, immutable 0.8.14 wheel, native task/config checkpoints, per-peer registry and consistent SQLite backups retained privately on their owning hosts.",
+  "limitations": [
+    "Only the two observed active native peers are qualified; a provisioned identity without an observed connection is not claimed upgraded.",
+    "New stdio connections use the configured runtime; pre-existing open chat MCP processes were not terminated or claimed reloaded.",
+    "Legacy initialize.serverInfo.version remains 0.1.0; installed version is independently verified via package metadata and files.",
+    "No clean-machine, real reboot, other transport or sustained-availability qualification.",
+    "The historical timeout did not recur in the bounded production probes; this does not claim all future timeouts are eliminated.",
+    "HTTPS/HMAC plus SHA-256 integrity are verified; no detached artifact signature is claimed.",
+    "GitHub Actions are disabled; update-pip-graph success is dependency metadata, not hosted test approval."
+  ]
+}
