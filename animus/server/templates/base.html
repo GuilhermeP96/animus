@@ -700,6 +700,12 @@
 
     <!-- Main -->
     <main class="animus-main fade-in">
+        {% if stats and stats.stats_degraded %}
+        <div role="status" style="padding: 12px; color: var(--animus-gold);">
+            {% if stats.stats_status == 'unavailable' %}Statistics temporarily unavailable; retry in {{ stats.stats_retry_after_seconds }}s.
+            {% else %}Statistics are from a previous snapshot ({{ stats.stats_age_seconds }}s old); refresh is pending.{% endif %}
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
     {% endblock %}

@@ -45,7 +45,7 @@ class ActiveContextInjector:
         providing relevant memories from past sessions.
         """
         workspace_name = workspace_root.name
-        stats = self.engine.get_stats()
+        stats = self.engine.stats_view()
 
         # Get recent memories for this workspace
         recent = self._get_workspace_memories(workspace_name, limit=15)
@@ -61,6 +61,7 @@ class ActiveContextInjector:
             f"Node: {self.config.node_id} ({self.config.node_name})",
             f"Workspace: {workspace_name}",
             f"Total memories: {stats['total_memories']}",
+            f"Statistics: {stats['stats_status']} (age seconds: {stats['stats_age_seconds']})",
             f"Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
             "",
         ]
@@ -113,7 +114,7 @@ class ActiveContextInjector:
         This gives Copilot awareness of what Animus knows about the project.
         """
         workspace_name = workspace_root.name
-        stats = self.engine.get_stats()
+        stats = self.engine.stats_view()
 
         lines = [
             "",
@@ -131,6 +132,7 @@ class ActiveContextInjector:
             "- `animus_neural_map` — See workspace × session graph with tag-bridged edges",
             "",
             f"Memories available: {stats['total_memories']} across {stats['unique_nodes']} machines.",
+            f"Statistics: {stats['stats_status']} (age seconds: {stats['stats_age_seconds']})",
             "",
             "When working on complex tasks, ALWAYS use `animus_recall` first to check if ",
             "similar problems have been solved before. When making important decisions, ",

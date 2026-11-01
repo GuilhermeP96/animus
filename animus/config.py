@@ -7,6 +7,7 @@ import logging
 import os
 import platform
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -162,11 +163,32 @@ class AnimusConfig(BaseSettings):
     # ── Hub Connection ──
     hub_url: str = Field(default="", description="Hub server URL (wss://...)")
     hub_token: str = Field(default="", description="Auth token for hub")
+    cf_access_client_id: str = Field(default="", description="Cloudflare Access service token ID")
+    cf_access_client_secret: str = Field(default="", repr=False,
+                                         description="Cloudflare Access service token secret")
+
+    def cloudflare_access_headers(self) -> dict[str, str]:
+        """Add the optional edge identity without replacing peer HMAC auth."""
+        if not self.cf_access_client_id and not self.cf_access_client_secret:
+            return {}
+        if not self.cf_access_client_id or not self.cf_access_client_secret:
+            raise ValueError("Cloudflare Access requires both client ID and client secret")
+        if not self.hub_url.lower().startswith(("https://", "wss://")):
+            raise ValueError("Cloudflare Access credentials require an HTTPS or WSS hub URL")
+        return {"CF-Access-Client-Id": self.cf_access_client_id,
+                "CF-Access-Client-Secret": self.cf_access_client_secret}
 
     # ── Server (when running as hub) ──
     server_host: str = "0.0.0.0"
     server_port: int = 8314
-    server_secret: str = Field(default="", description="Shared secret for peer auth")
+    server_secret: str = Field(default="", repr=False, description="Shared secret for peer auth")
+    server_peer_keys_file: Optional[Path] = Field(default=None, description="Private root-provisioned per-node credential registry")
+    allow_insecure_dev_auth: bool = Field(default=False, description="Explicit loopback-only test auth bypass")
+
+    @field_validator('server_peer_keys_file', mode='before')
+    @classmethod
+    def empty_registry_is_unconfigured(cls, value):
+        return None if value == '' else value
 
     # ── Tunnel ──
     tunnel_mode: str = Field(
@@ -188,12 +210,16 @@ class AnimusConfig(BaseSettings):
     collect_claude_chat: bool = True       # Claude Code session transcripts
     collect_claude_memory: bool = True     # Claude Code auto-memory .md files
     collect_copilot_cli_chat: bool = True  # GitHub Copilot CLI session turns/checkpoints
+    collect_codex_chat: bool = False  # Explicit opt-in: local conversations can be sensitive.
+    codex_data_dir: Path = Field(default_factory=lambda: Path.home() / '.codex')
+    codex_allowed_workspaces: list[Path] = Field(default_factory=list)
     collect_antigravity_chat: bool = True      # Antigravity CLI/IDE conversation turns
     collect_antigravity_memory: bool = True    # Antigravity brain / GEMINI.md memory files
     collect_antigravity_knowledge: bool = True # Antigravity .antigravity project context
     # Obsidian is intentionally opt-in: vault content may be private and is
     # eligible for peer sync after it enters the Animus index.
     collect_obsidian: bool = False
+    obsidian_auto_export_candidates: bool = False  # Separate opt-in; no automatic verification.
     obsidian_vaults: list[ObsidianVaultConfig] = Field(default_factory=list)
     obsidian_exclude_patterns: list[str] = Field(default_factory=lambda: [
         ".obsidian/**", ".git/**", "node_modules/**", "attachments/**", ".animus/**",
@@ -214,6 +240,7 @@ class AnimusConfig(BaseSettings):
     # ── Indexer ──
     fts_enabled: bool = True
     vector_enabled: bool = False
+    rag_hub_enabled: bool = False  # Explicit opt-in to authenticated query-time hub retrieval.
 
     # ── Self-update ──
     auto_update_enabled: bool = True
@@ -235,7 +262,14 @@ class AnimusConfig(BaseSettings):
         return self.data_dir / "config.json"
 
     def ensure_dirs(self) -> None:
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt" and self.data_dir.is_symlink():
+            raise ValueError("Animus data directory cannot be a symlink")
+        self.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name != "nt":
+            if self.data_dir.stat().st_uid != os.geteuid():
+                raise PermissionError("Animus data directory must belong to the native service account")
+            # Harden this directory only; never recurse into memory/provider data.
+            self.data_dir.chmod(0o700)
         self.index_path.mkdir(parents=True, exist_ok=True)
 
     def save(self) -> None:
@@ -245,7 +279,29 @@ class AnimusConfig(BaseSettings):
         for k, v in data.items():
             if isinstance(v, Path):
                 data[k] = str(v)
-        self.config_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+        encoded = json.dumps(data, indent=2, default=str)
+        if os.name == "nt":
+            # Windows private ACL qualification belongs to native recovery launcher.
+            self.config_path.write_text(encoded, encoding="utf-8")
+            return
+        if self.config_path.is_symlink():
+            raise ValueError("Animus config cannot be a symlink")
+        descriptor, temporary = tempfile.mkstemp(prefix=".config-", suffix=".tmp", dir=self.data_dir)
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.config_path)
+            directory_fd = os.open(self.data_dir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if Path(temporary).exists():
+                Path(temporary).unlink()
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "AnimusConfig":

@@ -110,7 +110,8 @@ def config_set(key: str, value: str):
     else:
         setattr(cfg, key, value)
     cfg.save()
-    console.print(f"[green]✓[/] {key} = {value}")
+    display = "***" if any(part in key.lower() for part in ("secret", "token", "key")) else value
+    console.print(f"[green]✓[/] {key} = {display}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -429,6 +430,8 @@ def collect(verbose: bool = False):
     memories.extend(antigravity_collector.collect_all())
     memories.extend(copilot_cli_collector.collect_all())
     memories.extend(obsidian_collector.collect_all())
+    from .collector.codex import CodexCollector
+    memories.extend(CodexCollector(config).collect_all())
     new_count = engine.index_batch(memories)
     missing_count = sum(
         engine.mark_obsidian_missing(vault, config.node_id, active_ids)
@@ -442,7 +445,8 @@ def collect(verbose: bool = False):
     if obsidian_collector.diagnostics:
         console.print(f"  Vault warnings:  [yellow]{len(obsidian_collector.diagnostics)}[/]")
 
-    stats = engine.get_stats()
+    stats = engine.stats_view()
+    console.print(f"  Statistics: {stats['stats_status']} (age seconds: {stats['stats_age_seconds']})")
     console.print(f"  Total in index:  [bold]{stats['total_memories']}[/]")
 
     if stats["by_type"]:
@@ -547,7 +551,8 @@ def stats():
     from .indexer.engine import IndexEngine
 
     engine = IndexEngine(config.db_path)
-    s = engine.get_stats()
+    s = engine.stats_view()
+    console.print(f"  Statistics: {s['stats_status']} (age seconds: {s['stats_age_seconds']})")
 
     console.print("\n[bold]⟁ Animus Memory Bank[/]\n")
     console.print(f"  Total memories:    [bold cyan]{s['total_memories']}[/]")

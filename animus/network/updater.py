@@ -21,12 +21,14 @@ The flow is intentionally tiny:
        pip install --upgrade --quiet <install_url>@<git_ref>
 
    for the same interpreter. On POSIX, ``pip`` runs synchronously. On Windows,
-   a detached helper waits for the daemon to exit, closes legacy Animus console
-   launchers that still hold the venv, and only then invokes pip.
+   an independently registered current-user task waits for its bound daemon
+   process to exit and installs only the verified local wheel. It never kills
+   other applications or depends on detached-process JobObject behavior.
 
 3. On POSIX success, the peer re-execs itself with ``os.execv``. A Windows
-   peer exits with code 75 so the helper can replace locked files; its Scheduled
-   Task restarts the daemon with the new package.
+   peer exits with code75 only after its independent update task registration
+   is verified. That job records actual package version and native process
+   PID/creationTime before claiming completion; scheduler start is not proof.
 
 The module is conservative on purpose:
 
@@ -85,7 +87,7 @@ class VersionInfo:
     min_compat: str = ""
     channel: str = "stable"
     install_url: str = DEFAULT_REPO
-    git_ref: str = "main"
+    git_ref: str = "licensing-managment"
     package_url: str = ""
     notes: str = ""
 
@@ -96,7 +98,7 @@ class VersionInfo:
             min_compat=str(data.get("min_compat") or "").strip(),
             channel=str(data.get("channel") or "stable").strip(),
             install_url=str(data.get("install_url") or DEFAULT_REPO).strip(),
-            git_ref=str(data.get("git_ref") or "main").strip(),
+            git_ref=str(data.get("git_ref") or "licensing-managment").strip(),
             package_url=str(data.get("package_url") or "").strip(),
             notes=str(data.get("notes") or "").strip(),
         )
@@ -116,8 +118,8 @@ def _parse(version: str) -> tuple[int, ...]:
     base = (version or "").split("-", 1)[0].split("+", 1)[0]
     out: list[int] = []
     for chunk in base.split("."):
-        digits = "".join(ch for ch in chunk if ch.isdigit())
-        out.append(int(digits) if digits else 0)
+        digits = re.match(r"\d+", chunk)
+        out.append(int(digits.group()) if digits else 0)
     # Pad to length 3 so 0.5 vs 0.5.0 compare equal.
     while len(out) < 3:
         out.append(0)
@@ -127,7 +129,11 @@ def _parse(version: str) -> tuple[int, ...]:
 def is_newer(remote: str, local: str) -> bool:
     if not remote:
         return False
-    return _parse(remote) > _parse(local)
+    remote_base, local_base = _parse(remote), _parse(local)
+    if remote_base != local_base:
+        return remote_base > local_base
+    preview = r"^\d+(?:\.\d+){1,2}(?:a|b|rc|-)"
+    return bool(re.match(preview, local)) and not bool(re.match(preview, remote))
 
 
 # ── hub query ───────────────────────────────────────────────────────────
@@ -141,7 +147,7 @@ def fetch_latest(config: AnimusConfig, timeout: float = 10.0) -> Optional[Versio
     url = base.rstrip("/") + "/api/version"
     try:
         with httpx.Client(timeout=timeout) as client:
-            resp = client.get(url)
+            resp = client.get(url, headers=config.cloudflare_access_headers())
             if resp.status_code != 200:
                 logger.warning("Version probe failed: HTTP %d", resp.status_code)
                 return None
@@ -200,7 +206,8 @@ def download_hub_package(config: AnimusConfig, info: VersionInfo) -> Path | None
         return None
     headers = create_auth_header(config.server_secret, config.node_id, body=None)
     try:
-        with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+        headers.update(config.cloudflare_access_headers())
+        with httpx.Client(timeout=120.0, follow_redirects=False) as client:
             response = client.get(url, headers=headers)
         if response.status_code != 200:
             logger.error("Hub package download failed: HTTP %d", response.status_code)
@@ -229,7 +236,7 @@ def download_hub_package(config: AnimusConfig, info: VersionInfo) -> Path | None
     temporary = update_dir / f".{filename}.tmp"
     temporary.write_bytes(response.content)
     temporary.replace(destination)
-    logger.info("Downloaded signed Hub package: %s", destination)
+    logger.info("Downloaded hash-verified Hub package: %s", destination)
     return destination
 
 
@@ -242,54 +249,23 @@ def _ps_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def _defer_windows_update(cmd: list[str], latest: str) -> bool:
-    """Launch an updater that waits for this process and releases EXE locks."""
+def _defer_windows_update(cmd: list[str], latest: str, config: AnimusConfig | None = None) -> bool:
+    """Stage a separately registered current-user task, never a detached child job."""
     global _deferred_update_pending
-
-    # Keep these as strings: pathlib chooses WindowsPath from os.name at call
-    # time, which also makes cross-platform validation of this branch fail.
-    scripts_dir = os.path.dirname(sys.executable)
-    log_path = os.path.join(tempfile.gettempdir(), "animus-self-update.log")
-    command = " ".join(_ps_quote(part) for part in cmd)
-    script = f"""
-$ErrorActionPreference = 'Continue'
-$sourcePid = {os.getpid()}
-while (Get-Process -Id $sourcePid -ErrorAction SilentlyContinue) {{
-    Start-Sleep -Milliseconds 200
-}}
-Start-Sleep -Milliseconds 500
-$scriptsDir = {_ps_quote(scripts_dir)}
-Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object {{
-        $_.ExecutablePath -and
-        $_.ExecutablePath.StartsWith($scriptsDir, [StringComparison]::OrdinalIgnoreCase) -and
-        $_.Name -like 'animus*.exe'
-    }} | ForEach-Object {{
-        & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null
-    }}
-& {command} *>> {_ps_quote(log_path)}
-$rc = $LASTEXITCODE
-Add-Content -LiteralPath {_ps_quote(log_path)} -Value ({_ps_quote(f'update v{latest} exit=')} + $rc)
-exit $rc
-"""
-    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
-        subprocess, "DETACHED_PROCESS", 0
-    )
+    if config is None or not cmd or not str(cmd[-1]).endswith('.whl'):
+        logger.error("Windows native update requires an authenticated local wheel and exact task/config binding")
+        return False
     try:
-        subprocess.Popen(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=flags,
-            close_fds=True,
-        )
-    except OSError as exc:
-        logger.error("Could not launch deferred Windows updater: %s", exc)
+        from .windows_update import stage
+        staged = stage(Path(cmd[-1]), latest, config)
+    except Exception:
+        logger.error("Windows native update job refused; native daemon remains running")
+        return False
+    if not staged:
+        logger.error("Windows native update task registration was not verified")
         return False
     _deferred_update_pending = True
-    logger.info("Windows self-update staged; helper log: %s", log_path)
+    logger.info("Windows native update job registered; package/restart completion remains pending")
     return True
 
 
@@ -331,7 +307,7 @@ def apply_update(
         cmd.insert(-1, "--pre")
     logger.info("Self-update → %s", target)
     if os.name == "nt":
-        return _defer_windows_update(cmd, info.latest)
+        return _defer_windows_update(cmd, info.latest, config)
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=600, check=False,
@@ -362,7 +338,11 @@ def restart_in_place() -> None:
         logger.info("Exiting with %d so the Windows update helper can run", RESTART_EXIT_CODE)
         sys.exit(RESTART_EXIT_CODE)
     try:
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        # Preserve `python -m animus.cli`: sys.argv[0] is cli.py, which cannot
+        # be executed as a bare script because it uses package-relative imports.
+        original = getattr(sys, 'orig_argv', None)
+        arguments = original[1:] if original else ['-m', 'animus.cli', *sys.argv[1:]]
+        os.execv(sys.executable, [sys.executable, *arguments])
     except OSError as exc:
         logger.warning("os.execv failed (%s) — exiting with %d for supervisor restart",
                        exc, RESTART_EXIT_CODE)

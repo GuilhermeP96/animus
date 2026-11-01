@@ -1,0 +1,50 @@
+{
+  "url": "https://github.com/GuilhermeP96/animus/pull/7",
+  "merged": true,
+  "base": "licensing-managment",
+  "head": "866291adbead048c6a727ff3bda2af8f17e91d02",
+  "merge_commit": "f1f00befde13a1862086c677d9cdd705d3294117",
+  "actions_enabled": false,
+  "date": "2026-10-20",
+  "hp": {
+    "native_version": "0.8.14",
+    "source_runtime_files_compared": 38,
+    "source_runtime_mismatches": [],
+    "authenticated_pull_status": 200,
+    "hub_latest": "0.8.14",
+    "skill_hash": "9426a02eb7854a64aab4cbef63a397f569175a863f5fbf6b3ad4a2da0b32e8af",
+    "mcp": {
+      "animus": {
+        "configured_stdio_passed": true,
+        "tools": 16
+      },
+      "datano-agents": {
+        "configured_stdio_passed": true,
+        "tools": 9
+      }
+    },
+    "original_untracked_sha256": "badc77a26e911365bc47702823253da41d6176e2eca7ca7ee33b8d6eed62d222"
+  },
+  "vps": {
+    "native_version": "0.8.14",
+    "source_runtime_files_compared": 38,
+    "source_runtime_mismatches": [],
+    "skill_hash": "5a797f6d85bcff3f2ed88cfa0710d9c5958e5bc12e699fd49151bc6f3d690815",
+    "daemon": "MainPID=2226010\nActiveEnterTimestamp=Tue 2026-10-20 15:29:06 UTC",
+    "hub": "2026-10-20T15:31:32.898588812Z sha256:49f731acfe1d7c2d4ff1ea8c2954e215d00b5d5ee6e5a551124d1963c95d1cee healthy"
+  },
+  "source_sync": {
+    "hp_branch": "licensing-managment",
+    "vps_canonical_branch": "licensing-managment",
+    "vps_recovery_checkout": "detached canonical revision",
+    "transport": "Git bundle over existing strict SSH"
+  },
+  "runtime_reinstalled": false,
+  "services_restarted": false,
+  "sessions_preserved": true,
+  "hosted_ci": "disabled; not approved",
+  "previous_tests": {
+    "debian_passed": 437,
+    "rerun_this_merge": false
+  }
+}

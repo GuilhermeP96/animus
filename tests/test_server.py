@@ -16,7 +16,9 @@ def hub_app(hub_config):
     """Set up the FastAPI app with test config/engine."""
     # Set module-level globals directly
     server_module._config = hub_config
-    hub_config.server_secret = ""  # Dev mode — no auth
+    hub_config.server_secret = ""  # Explicit loopback-only fixture bypass.
+    hub_config.allow_insecure_dev_auth = True
+    hub_config.server_host = "127.0.0.1"
     engine = IndexEngine(hub_config.db_path)
     _ = engine.conn
     server_module._engine = engine
@@ -41,6 +43,14 @@ def auth_headers():
 
 
 class TestRootAndHealth:
+    def test_liveness_does_not_scan_memory_index(self, client, monkeypatch):
+        def expensive_stats():
+            raise AssertionError("liveness must not scan the index")
+        monkeypatch.setattr(server_module._engine, "get_stats", expensive_stats)
+        resp = client.get("/health/live")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "alive"}
+
     def test_root(self, client):
         resp = client.get("/")
         assert resp.status_code == 200
@@ -377,3 +387,49 @@ class TestSecureAuth:
             headers={**headers, "Content-Type": "application/json"},
         )
         assert resp.status_code == 401
+
+    def test_authenticated_node_must_match_body(self, secured_client):
+        from animus.network.crypto import create_auth_header
+        body = b'{"node_id":"n2","limit":5}'
+        headers = create_auth_header("test-shared-secret", "n1", body=body, secure=True)
+        resp = secured_client.post(
+            "/api/sync/pull",
+            content=body,
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 403
+
+
+class TestRemediationReadiness:
+    def test_public_no_secret_is_fail_closed(self, client, hub_config):
+        hub_config.allow_insecure_dev_auth = False
+        hub_config.server_host = '0.0.0.0'
+        assert client.get('/api/stats', headers={'X-Animus-Node': 'fixture-node'}).status_code == 401
+
+    def test_health_ignores_writer_count_lock_and_detects_corruption(self, client, tmp_path):
+        engine = server_module._engine
+        with engine._lock:
+            assert client.get('/health').status_code == 200
+        corrupt = tmp_path / 'corrupt.sqlite3'
+        corrupt.write_bytes(b'corrupt-fixture-database' * 512)
+        engine.db_path = corrupt
+        response = client.get('/health')
+        assert response.status_code == 503
+        assert response.json() == {'status': 'unhealthy', 'database': 'unavailable'}
+
+    def test_per_node_credentials_do_not_fall_back(self, client, hub_config, tmp_path):
+        import json
+        import secrets
+        from animus.network.crypto import create_auth_header, _replay_cache_clear
+        _replay_cache_clear()
+        key = secrets.token_urlsafe(48)
+        other = secrets.token_urlsafe(48)
+        registry = tmp_path / 'peer-keys.json'
+        registry.write_text(json.dumps({'version': 1, 'peers': {
+            'node-one': {'enabled': True, 'secret': key},
+            'node-two': {'enabled': True, 'secret': other}}}))
+        registry.chmod(0o600)
+        hub_config.server_peer_keys_file = registry
+        assert client.get('/api/stats', headers=create_auth_header(key, 'node-one')).status_code == 200
+        assert client.get('/api/stats', headers=create_auth_header(key, 'node-two')).status_code == 401
+        assert client.get('/api/stats', headers=create_auth_header(hub_config.server_secret or key, 'unknown')).status_code == 401

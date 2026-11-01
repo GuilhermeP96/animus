@@ -24,6 +24,11 @@ from animus.network.updater import (
 
 
 class TestIsNewer:
+    def test_pep440_preview_number_is_not_a_patch_digit(self):
+        assert not is_newer('0.8.12a1', '0.8.12')
+        assert is_newer('0.8.12', '0.8.12a1')
+        assert is_newer('0.8.13', '0.8.12a1')
+
     @pytest.mark.parametrize("remote, local, expected", [
         ("0.5.1", "0.5.0", True),
         ("0.5.0", "0.5.0", False),
@@ -42,7 +47,7 @@ class TestVersionInfo:
         v = VersionInfo.from_dict({"latest": "0.6.0"})
         assert v.latest == "0.6.0"
         assert v.install_url == DEFAULT_REPO
-        assert v.git_ref == "main"
+        assert v.git_ref == "licensing-managment"
         assert v.channel == "stable"
 
     def test_overrides(self):
@@ -223,10 +228,8 @@ class TestApplyUpdateGuards:
             with patch.object(updater.os, "name", "posix"):
                 assert updater.apply_update(info) is True
 
-    def test_windows_update_is_deferred_until_process_exits(self, tmp_path):
-        import base64
+    def test_windows_legacy_git_target_does_not_exit_or_launch_helper(self, tmp_path):
         from animus.network import updater
-
         info = VersionInfo(latest="99.0.0")
         fake_pip = tmp_path / "pip.exe"
         fake_pip.write_text("")
@@ -234,17 +237,10 @@ class TestApplyUpdateGuards:
         with patch.object(updater, "_is_writable_install", return_value=True), \
              patch.object(updater, "_pip_exe", return_value=fake_pip), \
              patch.object(updater.os, "name", "nt"), \
-             patch.object(updater.subprocess, "Popen") as popen:
-            assert updater.apply_update(info) is True
-
-        args = popen.call_args.args[0]
-        script = base64.b64decode(args[-1]).decode("utf-16le")
-        assert args[:3] == ["powershell.exe", "-NoProfile", "-NonInteractive"]
-        assert "Get-Process -Id" in script
-        assert "animus*.exe" in script
-        assert "-m' 'pip' 'install" in script
-        assert updater.update_is_deferred() is True
-        updater._deferred_update_pending = False
+             patch.object(updater.subprocess, "Popen") as detached:
+            assert updater.apply_update(info) is False
+        detached.assert_not_called()
+        assert updater.update_is_deferred() is False
 
 
 class TestRestartInPlace:
@@ -296,7 +292,7 @@ class TestVersionEndpoint:
         assert data["latest"] == __version__
         assert data["channel"] == "stable"
         assert data["install_url"].startswith("git+")
-        assert data["git_ref"] in {"main", "master"}
+        assert data["git_ref"] == "licensing-managment"
         assert data["package_url"] == "/api/peers/package.whl"
 
     def test_env_overrides(self, version_client, monkeypatch):

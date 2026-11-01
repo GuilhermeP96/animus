@@ -29,6 +29,8 @@
 # =============================================================================
 
 set -euo pipefail
+# Newly generated native config/state is owner-private; do not chmod recursively.
+umask 077
 
 readonly ANIMUS_HUB_URL_DEFAULT="https://animus.datano.com.br"
 readonly REPO_URL_DEFAULT="https://github.com/GuilhermeP96/animus.git"
@@ -133,10 +135,20 @@ configure_peer() {
     source "$install_dir/.venv/bin/activate"
 
     log "Inicializando configuração local..."
+    # Source Config.ensure_dirs hardens only selected ANIMUS_DATA_DIR to0700;
+    # Config.save creates/replaces only config.json as0600. Never recurse.
+    python - <<'PRIVATE_DIR'
+from animus.config import AnimusConfig
+AnimusConfig().ensure_dirs()
+PRIVATE_DIR
     ANIMUS_NODE_ID="$node_id" ANIMUS_NODE_NAME="$node_name" animus init >/dev/null
 
     animus config-set hub_url       "$hub_url"  >/dev/null
     animus config-set server_secret "$secret"   >/dev/null
+    if [[ -n "${ANIMUS_CF_ACCESS_CLIENT_ID:-}" && -n "${ANIMUS_CF_ACCESS_CLIENT_SECRET:-}" ]]; then
+        animus config-set cf_access_client_id "$ANIMUS_CF_ACCESS_CLIENT_ID" >/dev/null
+        animus config-set cf_access_client_secret "$ANIMUS_CF_ACCESS_CLIENT_SECRET" >/dev/null
+    fi
     animus config-set node_id       "$node_id"  >/dev/null
     animus config-set node_name     "$node_name" >/dev/null
 

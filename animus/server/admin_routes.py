@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from starlette.concurrency import run_in_threadpool
+from .peer_keys import peer_secret
+from ..indexer.engine import StatsUnavailable
+
 import io
 import json
 import logging
@@ -13,9 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+
+from .turnstile import TurnstileError, public_config, verify_turnstile
 
 from .admin_auth import (
     AdminSession,
@@ -53,27 +59,36 @@ async def login_page(request: Request):
     session = get_current_admin(request)
     if session:
         return RedirectResponse(url="/admin", status_code=302)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None, "turnstile":public_config()})
 
 
-@router.post("/login", response_class=HTMLResponse)
+@router.get('/login-security.js', include_in_schema=False)
+async def login_security_script():
+    return Response(content=(_template_dir.parent/'static/login-security.js').read_text(),
+                    media_type='application/javascript', headers={'Cache-Control':'no-store'})
+
+@router.post('/login', response_class=HTMLResponse)
 async def login_submit(request: Request):
-    form = await request.form()
-    username = form.get("username", "")
-    password = form.get("password", "")
-
-    if not validate_credentials(str(username), str(password)):
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"error": "Accesso negado — credenciais inválidas"},
-            status_code=401,
-        )
-
-    token = create_session_token(str(username))
-    response = RedirectResponse(url="/admin", status_code=302)
-    set_session_cookie(response, token)
-    return response
+    size=request.headers.get('content-length', '0')
+    if not size.isdecimal() or int(size) > 16384:
+        raise HTTPException(status_code=413, detail='Formulário muito grande.')
+    form = await request.form(max_files=0, max_fields=8)
+    username, password = form.get('username', ''), form.get('password', '')
+    status, error = 401, 'Acesso negado — credenciais inválidas'
+    try:
+        await verify_turnstile(form.get('cf-turnstile-response'))
+        if not isinstance(username,str) or not isinstance(password,str) or len(username)>128 or len(password)>1024:
+            raise TurnstileError()
+        if validate_credentials(username, password):
+            token = create_session_token(username)
+            response = JSONResponse({'redirect':'/admin'}) if 'application/json' in request.headers.get('accept','') else RedirectResponse(url='/admin', status_code=302)
+            set_session_cookie(response, token)
+            return response
+    except TurnstileError as denied:
+        status, error = denied.status, str(denied)
+    if 'application/json' in request.headers.get('accept',''):
+        return JSONResponse({'error':error}, status_code=status)
+    return templates.TemplateResponse(request,'login.html',{'error':error,'turnstile':public_config()},status_code=status)
 
 
 @router.get("/logout")
@@ -88,7 +103,7 @@ async def logout(request: Request):
 @router.get("/admin", response_class=HTMLResponse, name="admin_dashboard")
 async def dashboard(request: Request, session: AdminSession = Depends(require_admin)):
     engine = get_engine()
-    stats = engine.get_stats()
+    stats = await run_in_threadpool(engine.stats_view)
     config = get_config()
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -236,7 +251,7 @@ async def obsidian_page(
     offset = (page - 1) * per_page
     return templates.TemplateResponse(request, "obsidian.html", {
         "session": session,
-        "stats": get_engine().get_stats(),
+        "stats": await run_in_threadpool(get_engine().stats_view),
         "obsidian_stats": _obsidian_stats(catalog),
         "notes": notes[offset:offset + per_page],
         "total": len(notes),
@@ -312,7 +327,7 @@ async def memories_page(
     types_rows = engine.conn.execute("SELECT DISTINCT type FROM memories ORDER BY type").fetchall()
     ws_rows = engine.conn.execute("SELECT DISTINCT workspace FROM memories WHERE workspace != '' ORDER BY workspace").fetchall()
 
-    stats = engine.get_stats()
+    stats = await run_in_threadpool(engine.stats_view)
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     return templates.TemplateResponse(request, "memories.html", {
@@ -793,8 +808,7 @@ async def delete_memory(
     session: AdminSession = Depends(require_admin),
 ):
     engine = get_engine()
-    engine.conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-    engine.conn.commit()
+    await run_in_threadpool(engine.delete_memory, memory_id)
     return {"status": "deleted", "id": memory_id}
 
 
@@ -861,7 +875,10 @@ async def reveal_secret(session: AdminSession = Depends(require_admin)):
     """Return the shared HMAC secret. Admin-only; intended to be shown
     once in the UI after an explicit click."""
     config = get_config()
-    return {"secret": config.server_secret or ""}
+    if config.server_peer_keys_file is not None:
+        raise HTTPException(status_code=409, detail='Credentials are provisioned separately per node')
+    secret = peer_secret(config, 'admin-provisioning')
+    return {"secret": secret}
 
 
 # ── Peer installer kit (self-contained ZIP) ──
@@ -891,11 +908,14 @@ def _installer_response(
 ) -> StreamingResponse:
     """Render the idempotent install/update kit for one resolved peer."""
     config = get_config()
-    secret = config.server_secret or ""
+    try:
+        secret = peer_secret(config, node_id)
+    except (OSError, ValueError, TypeError):
+        raise HTTPException(status_code=503, detail='Peer credential registry unavailable') from None
     if not secret:
         raise HTTPException(
             status_code=409,
-            detail="Hub has no ANIMUS_SERVER_SECRET configured — set it in .env first.",
+            detail="Peer has no operator-provisioned credential.",
         )
     if not _INSTALLER_KIT_DIR.is_dir():
         raise HTTPException(status_code=500, detail="installer_kit templates missing")
@@ -905,11 +925,13 @@ def _installer_response(
     substitutions = {
         "{{HUB_URL}}": hub_url,
         "{{SECRET}}": secret,
+        "{{CF_ACCESS_CLIENT_ID}}": config.cf_access_client_id,
+        "{{CF_ACCESS_CLIENT_SECRET}}": config.cf_access_client_secret,
         "{{NODE_ID}}": node_id,
         "{{NODE_NAME}}": node_name,
         "{{OS_NAME}}": _safe_peer_value(os_name, "unknown"),
         "{{REPO_URL}}": "https://github.com/GuilhermeP96/animus.git",
-        "{{BRANCH}}": "master",
+        "{{BRANCH}}": "licensing-managment",
         "{{GENERATED_AT}}": generated_at,
     }
 
@@ -1025,7 +1047,10 @@ async def admin_obsidian_notes(
 @router.get("/admin/api/stats")
 async def admin_stats(session: AdminSession = Depends(require_admin)):
     engine = get_engine()
-    stats = engine.get_stats()
+    try:
+        stats = await run_in_threadpool(engine.get_stats)
+    except StatsUnavailable as exc:
+        return JSONResponse(status_code=503, content=exc.payload(), headers={"Retry-After": "30"})
     stats["peers_online"] = sum(1 for p in _connected_peers.values() if _peer_is_online(p))
     return stats
 

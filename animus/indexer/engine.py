@@ -6,6 +6,9 @@ import json
 import logging
 import sqlite3
 import threading
+import time
+import copy
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -19,6 +22,24 @@ logger = logging.getLogger("animus.indexer")
 _FTS_QUERY_TIMEOUT_SECONDS = 5
 # Progress handler callback interval (SQLite VM instructions between checks).
 _PROGRESS_HANDLER_INTERVAL = 10_000
+_STATS_TTL_SECONDS = 30.0
+_STATS_QUERY_TIMEOUT_SECONDS = 2.0
+_STATS_BUSY_TIMEOUT_SECONDS = 0.25
+
+
+class StatsUnavailable(RuntimeError):
+    """Safe bounded statistics failure; never include SQLite data or SQL."""
+
+    def __init__(self, reason: str):
+        super().__init__("Index statistics temporarily unavailable")
+        self.reason = reason
+
+    def payload(self) -> dict:
+        return {"stats_status": "unavailable", "stats_degraded": True,
+                "stats_reason": self.reason, "stats_age_seconds": None,
+                "stats_collected_at": None, "stats_retry_after_seconds": 30,
+                "total_memories": None, "unique_nodes": None,
+                "unique_workspaces": None, "unsynced": None, "by_type": {}}
 
 
 class IndexEngine:
@@ -28,6 +49,27 @@ class IndexEngine:
         self.db_path = db_path
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
+        self._stats_cache: dict | None = None
+        self._stats_empty_cached_at = 0.0
+        self._stats_lock = threading.Lock()
+        self._stats_generation = 0
+        self._stats_last_error: str | None = None
+        self._stats_retry_at = 0.0
+
+    @property
+    def _stats_cached_at(self) -> float:
+        snapshot = self._stats_cache
+        return snapshot['_cached_monotonic'] if snapshot else self._stats_empty_cached_at
+
+    @_stats_cached_at.setter
+    def _stats_cached_at(self, value: float) -> None:
+        # Compatibility for fixture-clock controls. Production publishes the
+        # timestamp, generation and counts in one atomic snapshot assignment.
+        snapshot = self._stats_cache
+        if snapshot is not None:
+            self._stats_cache = {**snapshot, '_cached_monotonic': value}
+        else:
+            self._stats_empty_cached_at = value
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -161,6 +203,8 @@ class IndexEngine:
                         ),
                     )
                 self.conn.commit()
+                if cursor.rowcount > 0:
+                    self._stats_generation += 1
                 return cursor.rowcount > 0
             except sqlite3.IntegrityError:
                 return False
@@ -378,6 +422,8 @@ class IndexEngine:
                 )
                 changed += 1
             self.conn.commit()
+            if changed:
+                self._stats_generation += 1
             return changed
 
     def mark_synced(self, memory_ids: list[str]) -> None:
@@ -389,28 +435,132 @@ class IndexEngine:
                 memory_ids,
             )
             self.conn.commit()
+            self._stats_generation += 1
+
+    def delete_memory(self, memory_id: str) -> None:
+        with self._lock:
+            self.conn.execute('DELETE FROM memories WHERE id = ?', (memory_id,))
+            self.conn.commit()
+            self._stats_generation += 1
+
+    def check_health(self) -> None:
+        """Read the real DB without waiting for the index writer/count lock."""
+        uri = self.db_path.resolve().as_uri() + '?mode=ro'
+        with closing(sqlite3.connect(uri, uri=True, timeout=0.25)) as connection:
+            # Connectivity alone can report an empty/wrong database as ready.
+            # Preparing this bounded query also proves the required table exists.
+            connection.execute('SELECT 1 FROM memories LIMIT 1').fetchone()
+
+    def cached_stats(self) -> dict | None:
+        """Last known snapshot, with truthful age/status; never run a query."""
+        cached = self._stats_cache
+        if cached is None:
+            return None
+        age = max(0.0, time.monotonic() - cached['_cached_monotonic'])
+        changed = cached['_index_generation'] != self._stats_generation
+        stale = age >= _STATS_TTL_SECONDS or changed or bool(self._stats_last_error)
+        result = copy.deepcopy(cached)
+        result.pop('_cached_monotonic')
+        result.pop('_index_generation')
+        result.update(stats_age_seconds=round(age, 3),
+                      stats_status='stale' if stale else 'fresh',
+                      stats_degraded=stale,
+                      stats_reason=self._stats_last_error or ('index_changed' if changed else ('ttl_expired' if stale else None)),
+                      stats_retry_after_seconds=max(0, int(self._stats_retry_at - time.monotonic() + 0.999)))
+        return result
+
+    def stats_view(self) -> dict:
+        """Noncritical UI/CLI/MCP counts may be unavailable, never fake zero."""
+        try:
+            return self.get_stats()
+        except StatsUnavailable as exc:
+            return exc.payload()
+
+    def _stats_failure(self, reason: str) -> dict:
+        self._stats_last_error = reason
+        self._stats_retry_at = time.monotonic() + _STATS_TTL_SECONDS
+        cached = self.cached_stats()
+        if cached is not None:
+            return cached
+        raise StatsUnavailable(reason) from None
 
     def get_stats(self) -> dict:
-        """Get index statistics."""
-        with self._lock:
-            row = self.conn.execute(
-                """SELECT
-                    COUNT(*) as total,
-                    COUNT(DISTINCT source_node) as nodes,
-                    COUNT(DISTINCT workspace) as workspaces,
-                    SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) as unsynced
-                   FROM memories"""
-            ).fetchone()
-            type_counts = self.conn.execute(
-                "SELECT type, COUNT(*) as cnt FROM memories GROUP BY type"
-            ).fetchall()
-            return {
-                "total_memories": row["total"],
-                "unique_nodes": row["nodes"],
-                "unique_workspaces": row["workspaces"],
-                "unsynced": row["unsynced"],
-                "by_type": {r["type"]: r["cnt"] for r in type_counts},
+        """Readonly covering-index snapshot, bounded budget and single-flight TTL.
+
+        Keep last known counts after writes/failures. Reads never use the writer
+        connection or install a progress handler on another thread's SQLite.
+        A failed refresh backs off for 30s rather than repeating expensive scans.
+        """
+        now = time.monotonic()
+        cached = self.cached_stats()
+        if now < self._stats_retry_at:
+            if cached is not None:
+                return cached
+            raise StatsUnavailable(self._stats_last_error or 'refresh_busy')
+        # Writes flag the snapshot stale but do not cause a scan per ingestion.
+        if cached is not None and now - self._stats_cached_at < _STATS_TTL_SECONDS:
+            return cached
+        if not self._stats_lock.acquire(blocking=False):
+            if cached is not None:
+                cached.update(stats_status='stale', stats_degraded=True, stats_reason='refresh_busy')
+                return cached
+            raise StatsUnavailable('refresh_busy')
+        try:
+            cached = self.cached_stats()
+            if cached is not None and time.monotonic() - self._stats_cached_at < _STATS_TTL_SECONDS:
+                return cached
+            # Preserve lazy empty-local-index behavior. Existing databases are
+            # never opened writable, migrated or created by the statistics read.
+            if not self.db_path.exists():
+                if not self._lock.acquire(timeout=_STATS_BUSY_TIMEOUT_SECONDS):
+                    return self._stats_failure('database_busy')
+                try:
+                    try:
+                        _ = self.conn
+                    except (sqlite3.Error, OSError):
+                        return self._stats_failure('database_unavailable')
+                finally:
+                    self._lock.release()
+            generation = self._stats_generation
+            collected_at = datetime.now(timezone.utc).isoformat()
+            collected_monotonic = time.monotonic()
+            deadline = collected_monotonic + _STATS_QUERY_TIMEOUT_SECONDS
+            try:
+                uri = self.db_path.resolve().as_uri() + '?mode=ro'
+                # The transaction pins a consistent snapshot across all counts.
+                # Explicit covering indexes do not load large memory content.
+                with closing(sqlite3.connect(uri, uri=True, timeout=_STATS_BUSY_TIMEOUT_SECONDS)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute('PRAGMA query_only=ON')
+                    connection.execute('PRAGMA cache_size=-512')
+                    connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), _PROGRESS_HANDLER_INTERVAL)
+                    try:
+                        connection.execute('BEGIN')
+                        total = connection.execute('SELECT COUNT(*) FROM memories INDEXED BY idx_memories_synced').fetchone()[0]
+                        nodes = connection.execute('SELECT COUNT(DISTINCT source_node) FROM memories INDEXED BY idx_memories_node').fetchone()[0]
+                        spaces = connection.execute('SELECT COUNT(DISTINCT workspace) FROM memories INDEXED BY idx_memories_workspace').fetchone()[0]
+                        unsynced = connection.execute('SELECT COUNT(*) FROM memories INDEXED BY idx_memories_synced WHERE synced = 0').fetchone()[0]
+                        types = connection.execute('SELECT type, COUNT(*) AS cnt FROM memories INDEXED BY idx_memories_type GROUP BY type').fetchall()
+                        connection.rollback()
+                    finally:
+                        connection.set_progress_handler(None, 0)
+            except (sqlite3.Error, OSError) as exc:
+                code = getattr(exc, 'sqlite_errorcode', None)
+                reason = ('query_timeout' if code == sqlite3.SQLITE_INTERRUPT else
+                          'database_busy' if code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) else
+                          'database_unavailable')
+                return self._stats_failure(reason)
+            self._stats_cache = {
+                'total_memories': total, 'unique_nodes': nodes, 'unique_workspaces': spaces,
+                'unsynced': unsynced, 'by_type': {r['type']: r['cnt'] for r in types},
+                'stats_collected_at': collected_at,
+                '_cached_monotonic': collected_monotonic, '_index_generation': generation,
             }
+            self._stats_last_error = None
+            self._stats_retry_at = 0.0
+            return self.cached_stats()
+        finally:
+            self._stats_lock.release()
 
     def get_recent(self, limit: int = 20) -> list[dict]:
         """Get most recent memories."""
@@ -424,3 +574,5 @@ class IndexEngine:
         if self._conn:
             self._conn.close()
             self._conn = None
+            self._stats_cache = None
+            self._stats_generation += 1

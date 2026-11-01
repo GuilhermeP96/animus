@@ -19,6 +19,7 @@ from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
 from ..collector.copilot_cli import CopilotCliCollector
 from ..collector.obsidian import ObsidianCollector
+from ..collector.codex import CodexCollector
 from ..collector.models import MemoryBatch
 from . import updater
 from ..config import AnimusConfig
@@ -52,6 +53,7 @@ class AnimusPeer:
         self.antigravity_collector = AntigravityCollector(config)
         self.copilot_cli_collector = CopilotCliCollector(config)
         self.obsidian_collector = ObsidianCollector(config)
+        self.codex_collector = CodexCollector(config)
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
         # Self-update bookkeeping: the daemon checks at most once per
@@ -68,7 +70,12 @@ class AnimusPeer:
         memories.extend(self.antigravity_collector.collect_all())
         memories.extend(self.copilot_cli_collector.collect_all())
         memories.extend(self.obsidian_collector.collect_all())
+        memories.extend(self.codex_collector.collect_all())
         new_count = self.engine.index_batch(memories)
+        from ..knowledge_feedback import export_new_candidates
+        exported = export_new_candidates(self.config, self.engine, memories)
+        if exported:
+            logger.info("Exported %d candidate notes; no automatic verification", exported)
         for vault, active_ids in self.obsidian_collector.seen_by_vault.items():
             self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
         logger.info("Collected %d memories, %d new", len(memories), new_count)
@@ -116,7 +123,7 @@ class AnimusPeer:
             body_str = SyncProtocol.push(batch)
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, headers=self.config.cloudflare_access_headers()) as client:
                 # Use HTTP POST for batch sync (simpler than WS for one-shots)
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/sync/push",
@@ -153,7 +160,7 @@ class AnimusPeer:
             })
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, headers=self.config.cloudflare_access_headers()) as client:
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/sync/pull",
                     content=body_str,
@@ -169,16 +176,18 @@ class AnimusPeer:
             logger.error("Hub pull error: %s", e)
         return 0
 
-    async def remote_search(self, query: str) -> list[dict]:
+    async def remote_search(self, query: str, *, workspace: str = '', mem_type: str = '', limit: int = 20, strict: bool = False) -> list[dict]:
         """Search memories via the hub (across all peers)."""
         if not self.config.hub_url:
             return []
 
         try:
-            body_str = json.dumps({"query": query, "node_id": self.config.node_id})
+            body_str = json.dumps({"query": query, "node_id": self.config.node_id,
+                                   "workspace": workspace or None, "mem_type": mem_type or None,
+                                   "limit": max(1, min(int(limit), 20))})
             secret = self.config.server_secret or self.config.hub_token
             headers = create_auth_header(secret, self.config.node_id, body=body_str)
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, headers=self.config.cloudflare_access_headers()) as client:
                 resp = await client.post(
                     f"{self.config.hub_url.replace('wss://', 'https://').replace('ws://', 'http://')}/api/search",
                     content=body_str,
@@ -186,7 +195,11 @@ class AnimusPeer:
                 )
                 if resp.status_code == 200:
                     return resp.json().get("results", [])
+                if strict:
+                    raise RuntimeError('Authenticated hub search unavailable')
         except Exception as e:
+            if strict:
+                raise RuntimeError('Authenticated hub search unavailable') from None
             logger.error("Remote search error: %s", e)
         return []
 
@@ -223,8 +236,8 @@ class AnimusPeer:
             )
         if restart_required and info is not None:
             logger.info(
-                "Self-update installed v%s (was %s) — re-execing now",
-                info.latest, __version__,
+                "Self-update %s v%s (was %s) — initiating qualified restart",
+                "staged" if updater.update_is_deferred() else "installed", info.latest, __version__,
             )
             # ``restart_in_place`` does not return on success.
             updater.restart_in_place()
