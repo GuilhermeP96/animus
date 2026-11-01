@@ -1,7 +1,8 @@
 # Revisão de preparação open source — 2026-11-01
 
-Estado: **bloqueado para mudança de visibilidade**. Preparação do código e da
-documentação não confirma segurança do ambiente nem publicação pública.
+Estado: **histórico saneado e credencial antiga rejeitada no ambiente real**.
+A validação final e a confirmação de acesso público são registradas ao final.
+As seções anteriores descrevem os achados e bloqueios antes da autorização.
 
 ## Escopo e evidências
 
@@ -103,7 +104,7 @@ sem usar o segredo revogado. Nenhuma nova chave ou dado de usuário foi alterado
 
 A fonte endurecida que já estava em produção foi integrada à master pública,
 preservando a AGPL e os avisos de autoria. A atualização de fontes não instala
- automaticamente outra versão nos runtimes existentes. Referências históricas
+automaticamente outra versão nos runtimes existentes. Referências históricas
 a SHAs anteriores podem exigir o mapa privado para reconciliação. Caches e
 refs internas do provedor não são controlados por um force-push: saneamento
 de refs publicadas e revogação não são promessa de eliminação de toda cópia.

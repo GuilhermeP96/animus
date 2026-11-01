@@ -480,14 +480,14 @@ distribuídas sob MIT mantêm suas permissões: veja o
 suas respectivas licenças e atribuições.
 
 ### Código público e hub privado
-+
-+O código do Animus está disponível para uso e contribuição sob AGPLv3.
-+A publicação não concede acesso ao hub privado da Datano nem às memórias
-+dos usuários. Configure seu próprio hub e suas próprias credenciais.
-+Consulte [SECURITY.md](SECURITY.md) antes de coletar ou sincronizar dados.
-+O [relatório de revisão](docs/OPEN-SOURCE-READINESS.md) registra a revisão,
-+o saneamento do histórico e as verificações de autenticação.
-+
+
+O código do Animus está disponível para uso e contribuição sob AGPLv3.
+A publicação não concede acesso ao hub privado da Datano nem às memórias
+dos usuários. Configure seu próprio hub e suas próprias credenciais.
+Consulte [SECURITY.md](SECURITY.md) antes de coletar ou sincronizar dados.
+O [relatório de revisão](docs/OPEN-SOURCE-READINESS.md) registra a revisão,
+o saneamento do histórico e as verificações de autenticação.
+
 ## 📝 Aviso (marcas e afiliação)
 
 "Animus" e a estética visual do projeto (terminologia como *Eagle Vision*,
