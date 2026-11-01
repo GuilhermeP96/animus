@@ -22,7 +22,9 @@ runtime instalado permanece distinto do código integrado. Distribuir a mudança
 exige próxima versão imutável e teste do consumidor pelo fluxo existente.
 
 A integração original da PR é ancestral da master. O retarget da PR para
-master foi recusado pelo GitHub por não haver commits novos entre as linhas;
-a PR histórica continua aberta na base anterior. Isso é uma pendência de
-metadados de revisão, não uma ausência do patch na master. Seu encerramento
-não foi confundido com distribuição ou qualificação do wheel produtivo.
+master foi recusado pelo GitHub por não haver commits novos entre as linhas.
+Após autorização explícita do proprietário para encerrar pendências
+comprovadas, a PR #9 foi encerrada quanto à integração de fonte, com essa
+distinção registrada na descrição. Não houve merge adicional na base antiga.
+O encerramento não equivale a distribuição ou qualificação do wheel produtivo;
+a issue #8 permanece aberta para essa próxima etapa.
