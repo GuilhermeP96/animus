@@ -108,3 +108,35 @@ automaticamente outra versão nos runtimes existentes. Referências históricas
 a SHAs anteriores podem exigir o mapa privado para reconciliação. Caches e
 refs internas do provedor não são controlados por um force-push: saneamento
 de refs publicadas e revogação não são promessa de eliminação de toda cópia.
+
+## Fechamento confirmado
+
+Repositório público confirmado pela API e leitura de LICENSE e diagnóstico
+via HTTPS sem autenticação. Relato privado de vulnerabilidades habilitado.
+Issue #5 encerrada com a evidência delimitada de revogação e saneamento.
+
+Suíte integrada em Linux: 437 testes passaram, cinco diagnósticos nativos
+ignorados intencionalmente, 15 subtestes passaram. No Windows, 35 testes
+focados passaram. Após ajustar os exemplos públicos para hubs próprios,
+78 testes afetados passaram na VPS e o instalador Bash passou na análise
+de sintaxe; o instalador PowerShell passou no parser sem execução.
+O wheel 0.8.14 foi gerado e seus metadados AGPL, autoria e NOTICE conferidos;
+é um artefato de validação, sem release ou instalação automática nos peers.
+Ações hospedadas não são apresentadas como CI aprovado: as últimas consultas
+para os SHAs finais não mostraram execução. A evidência aprovada é a bateria
+real executada na VPS e as verificações Windows delimitadas acima.
+
+Página publicada: https://datano.com.br/animus e
+https://datano.com.br/en/animus. Imagem da Datano
+`sha256:51efc93f02da972244b227f67c090797c15828b6817b4eb00345b610c7591568`,
+fonte `2dbfec678039461f95463fbd6a2691c1201aa4e7`. As duas páginas, sitemap e
+referências de entrada passaram em verificações públicas e na origem.
+O serviço ficou saudável, ambiente/volumes preservados e outros 40 serviços
+mantidos. A composição e a troca de idioma foram conferidas no navegador.
+
+Checkout canônico Animus: `C:/repo/animus`, `master`, upstream `origin/master`.
+O helper local não versionado continua preservado e não foi publicado.
+O checkout de fonte da VPS foi reconciliado com o histórico novo sem trocar
+a branch `feat/turnstile-20261026`, preservando runtimes em execução.
+Checkouts de outras estações devem reconciliar-se pelo mapa privado antes
+de voltar a enviar história antiga; não mesclar a história anterior à limpa.
