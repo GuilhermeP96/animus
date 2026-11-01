@@ -134,6 +134,61 @@ class TestMCPToolStats:
         resp = mcp_server.handle_message(msg)
         text = resp["result"]["content"][0]["text"]
         assert "memor" in text.lower()  # "memories" or "memory"
+        assert "Reason:" not in text
+        assert "Retry after seconds:" not in text
+
+    def test_stats_sql_timeout_preserves_reason_and_backoff(self, mcp_server, monkeypatch):
+        import animus.indexer.engine as indexer
+
+        # Exercise the real SQLite progress handler on the isolated fixture.
+        monkeypatch.setattr(indexer, "_STATS_QUERY_TIMEOUT_SECONDS", 0)
+        monkeypatch.setattr(indexer, "_PROGRESS_HANDLER_INTERVAL", 1)
+        response = mcp_server.handle_message({
+            "jsonrpc": "2.0", "id": 31, "method": "tools/call",
+            "params": {"name": "animus_stats", "arguments": {}},
+        })
+        text = response["result"]["content"][0]["text"]
+        assert not response["result"].get("isError")
+        assert "Statistics: unavailable" in text
+        assert "Reason: query_timeout" in text
+        assert "Retry after seconds: 30" in text
+        assert "Total memories:  None" in text
+        assert "does not establish daemon health" in text
+
+    def test_stats_stale_counts_keep_timeout_diagnostic(self, mcp_server, monkeypatch):
+        import animus.indexer.engine as indexer
+
+        original = mcp_server.engine.get_stats()
+        mcp_server.engine._stats_cached_at -= 31
+        monkeypatch.setattr(indexer, "_STATS_QUERY_TIMEOUT_SECONDS", 0)
+        monkeypatch.setattr(indexer, "_PROGRESS_HANDLER_INTERVAL", 1)
+        text = mcp_server._tool_stats({})
+        assert "Statistics: stale" in text
+        assert "Reason: query_timeout" in text
+        assert "Retry after seconds: 30" in text
+        assert f"Total memories:  {original['total_memories']}" in text
+
+    @pytest.mark.parametrize("reason", [
+        "database_busy", "database_unavailable", "refresh_busy",
+        "index_changed", "ttl_expired",
+    ])
+    def test_stats_known_reason_codes(self, mcp_server, monkeypatch, reason):
+        from animus.indexer.engine import StatsUnavailable
+
+        monkeypatch.setattr(mcp_server.engine, "stats_view", lambda: StatsUnavailable(reason).payload())
+        assert f"Reason: {reason}" in mcp_server._tool_stats({})
+
+    def test_stats_unknown_diagnostic_does_not_leak_details(self, mcp_server, monkeypatch):
+        from animus.indexer.engine import StatsUnavailable
+
+        private_detail = "sqlite error /private/example.db token=fixture-secret"
+        payload = StatsUnavailable(private_detail).payload()
+        payload["stats_retry_after_seconds"] = private_detail
+        monkeypatch.setattr(mcp_server.engine, "stats_view", lambda: payload)
+        text = mcp_server._tool_stats({})
+        assert "Reason: unknown" in text
+        assert "Retry after seconds: unknown" in text
+        assert private_detail not in text
 
 
 class TestMCPToolCollect:
