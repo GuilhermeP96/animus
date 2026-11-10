@@ -14,8 +14,7 @@ ARG BASE_CODENAME=trixie
 RUN case "$BASE_CODENAME" in bookworm|trixie) ;; *) exit 1 ;; esac && \
     test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = "$BASE_CODENAME"
 # System deps
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    curl \
+RUN apt-get update && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Compatible patched build/installer tools; exact official wheel hashes.
@@ -45,6 +44,6 @@ ENV ANIMUS_DATA_DIR=/data/animus \
 EXPOSE 8314
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD curl -fsS --max-time 3 http://localhost:8314/health/live || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8314/health/live', timeout=3).close()"
 
 CMD ["uvicorn", "animus.server.app:app", "--host", "0.0.0.0", "--port", "8314"]

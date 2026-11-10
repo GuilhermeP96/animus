@@ -12,6 +12,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Turnstile and pinned dashboard script providers, preserving the login flow.
 - Patched setuptools and a shared dependency security baseline for maintained
   runtimes; the offline CI validator isolates user state and runs the full suite.
+- The container health probe uses Python's standard library, removing the
+  unnecessary curl/libcurl dependency from the runtime image.
 - The existing VPS CI registry now includes Animus; deployment remains manual.
 
 ## [0.9.1] — 2026-11-10 — High-definition Windows icons
