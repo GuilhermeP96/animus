@@ -26,7 +26,7 @@ $config=Join-Path $data 'config.json';$configHash=(Get-FileHash -LiteralPath $co
 $checkpoints=Join-Path $data ('desktop\checkpoints\'+[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')+'-'+[Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($checkpoints) | Out-Null
 [IO.File]::WriteAllText((Join-Path $checkpoints 'daemon-task.xml'),(Export-ScheduledTask -TaskName AnimusPeerDaemon),[Text.Encoding]::Unicode)
-$desktop=Join-Path $data 'desktop\0.9.2'
+$desktop=Join-Path $data 'desktop\0.9.3'
 [IO.Directory]::CreateDirectory($desktop) | Out-Null
 if((Get-Item -LiteralPath $desktop).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Desktop reparse refused'}
 $acl=Get-Acl -LiteralPath $desktop
@@ -67,4 +67,4 @@ foreach($base in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFol
 }
 Start-ScheduledTask -TaskName AnimusPeerTray
 if((Get-FileHash -LiteralPath $config).Hash -ne $configHash){throw 'Configuration changed during install'}
-[pscustomobject]@{version='0.9.2';config_preserved=$true;desktop_only=[bool]$DesktopOnly;daemon_interpreter=[IO.Path]::GetFileName((Get-ScheduledTask -TaskName AnimusPeerDaemon).Actions[0].Execute);tray_task='AnimusPeerTray';exe_sha256=(Get-FileHash -LiteralPath $exe).Hash} | ConvertTo-Json -Compress
+[pscustomobject]@{version='0.9.3';config_preserved=$true;desktop_only=[bool]$DesktopOnly;daemon_interpreter=[IO.Path]::GetFileName((Get-ScheduledTask -TaskName AnimusPeerDaemon).Actions[0].Execute);tray_task='AnimusPeerTray';exe_sha256=(Get-FileHash -LiteralPath $exe).Hash} | ConvertTo-Json -Compress

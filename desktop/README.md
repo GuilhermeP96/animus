@@ -1,4 +1,4 @@
-# Animus Desktop 0.9.2
+# Animus Desktop 0.9.3
 
 Os créditos incluem a marca vetorial oficial da Datano, incorporada ao app,
 com links diretos para a página do Animus e seu repositório GitHub. Não há

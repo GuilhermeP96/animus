@@ -4,6 +4,13 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-11-10
+
+- Verify existing Windows ownership and update only the recovery DACL.
+- Launch Windows PowerShell with its own module search path.
+- Preserve committed recovery kit bytes across LF/CRLF checkouts.
+- Qualify the complete Windows suite with native recovery tests.
+
 ## [0.9.2] — 2026-11-10 — Credits and security qualification
 
 - Accessible desktop credit cards link to the Animus page at Datano and its
