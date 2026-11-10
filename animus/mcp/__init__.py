@@ -618,15 +618,30 @@ class AnimusMCPServer:
         from ..network.sync import SyncProtocol
         peer = AnimusPeer(self.config)
         try:
-            rows = asyncio.run(peer.remote_search(query, workspace=args.get('workspace') or '',
-                    mem_type=args.get('type') or '', limit=20, strict=True))
+            workspace = args.get('workspace') or ''
+            search_args = {'workspace': workspace, 'mem_type': args.get('type') or '',
+                           'limit': 20, 'strict': True}
+            rows = asyncio.run(peer.remote_search(query, **search_args))
             memories, _ = SyncProtocol.memories_from_push({'memories': rows})
             # Query-time cache is not a complete hub replica. Do not re-upload
             # remote-owned results as fresh local collection.
             remote = [m for m in memories if m.source_node != self.config.node_id]
+            fallback = False
+            # A Codex session can legitimately start in a broad parent such as
+            # C:\repo while the task concerns a child repository. In that case
+            # collection records the parent workspace and an exact project
+            # filter returns no Hub rows. Retry once without the filter only
+            # after a scoped miss; local RAG still boosts exact-workspace hits.
+            if workspace and not remote:
+                search_args['workspace'] = ''
+                rows = asyncio.run(peer.remote_search(query, **search_args))
+                memories, _ = SyncProtocol.memories_from_push({'memories': rows})
+                remote = [m for m in memories if m.source_node != self.config.node_id]
+                fallback = True
             self.engine.index_batch(remote)
             self.engine.mark_synced([m.id for m in remote])
-            return f'queried ({len(remote)} relevant remote records)'
+            scope = '; scoped miss, global fallback' if fallback else ''
+            return f'queried ({len(remote)} relevant remote records{scope})'
         except (RuntimeError, OSError, ValueError):
             return 'unavailable; results below are local only'
         finally:

@@ -1,6 +1,6 @@
 ---
 name: animus
-description: Reconcile substantive work with verified Obsidian knowledge and durable Animus memories, preserve validated decisions, and safely manage Animus memory, vault, peer, or hub operations when requested. Use for project analysis, implementation, debugging, architecture, operations, documentation, memory curation, or Animus administration.
+description: Reconcile substantive work in an existing project with verified Obsidian knowledge and durable Animus memories, preserve validated decisions, and safely manage Animus memory, vault, peer, or hub operations when requested. Use before non-trivial analysis, implementation, debugging, architecture, operations, or documentation where prior decisions can change the result; skip trivial or self-contained work.
 ---
 
 # Animus
@@ -23,6 +23,8 @@ Do not infer permission for curation or administration merely because the tools 
 3. Discover configured vaults with `animus obsidian status` when the vault is not known. Start from `.animus/exported/00 - Início.md` and the matching map under `.animus/exported/Sistema/Projetos/`.
 4. Query `animus_obsidian_search` without candidates first. Cite the titles or IDs used. If no Gold result exists, say so.
 5. Query `animus_recall` for durable prior context. Refine with `animus_search` when provenance, date, exact text, or broader evidence is required.
+   - Use at most five results initially. If an exact workspace returns no useful Hub records, retry once without the workspace and include the project name, stable identifier, error, commit, or decision phrase in the query. Broad checkout roots such as `C:\repo` may have been collected as workspace `repo`.
+   - Do not treat a zero-result scoped search as proof that the decision does not exist. Do not repeat an unchanged query after the global fallback.
 6. Use `animus_context` for a specific file/workspace, `animus_timeline` for recent continuity, and `animus_session_list` plus `animus_session` to resume a known conversation. Use `animus_related` to inspect context around an individual memory.
 7. Reconcile knowledge and memory against current files, tests, configuration, and runtime state. Report contradictions, stale paths/versions, and uncertainty.
 
@@ -39,7 +41,7 @@ Newer material prevails only when it does not contradict an explicit human decis
 
 ## Preserve durable memory
 
-After validation, use `animus_remember` only for information that will change future work: decisions, architecture, procedures, constraints, non-obvious fixes, verified commands, migration results, or explicit preferences.
+After validation, and when the current request or established project policy authorizes durable recording, use `animus_remember` only for information that will change future work: decisions, architecture, procedures, constraints, non-obvious fixes, verified commands, migration results, or explicit preferences.
 
 - Include repository/workspace, affected component, outcome, provenance, and validation performed.
 - Use focused tags such as `decision`, `architecture`, `fix`, `test`, `release`, or `operations`.

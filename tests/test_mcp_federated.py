@@ -30,6 +30,20 @@ def test_remote_search_caches_only_relevant_results_without_echo(server):
     assert call.call_args.kwargs=={'workspace':'animus','mem_type':'','limit':20,'strict':True}
 
 
+def test_scoped_hub_miss_retries_once_without_workspace(server):
+    memory=Memory(type=MemoryType.CODEX_CHAT,source_node='remote-peer',workspace='repo',
+                  title='Parent workspace decision',content='preserve the consolidated encoding decision')
+    with patch('animus.network.peer.AnimusPeer.remote_search',new_callable=AsyncMock,
+               side_effect=[[],[memory.model_dump(mode='json')]]) as call:
+        output=server._tool_recall({'context':'consolidated encoding decision',
+                                    'workspace':'datano-agents','remote':True})
+    assert 'Parent workspace decision' in output
+    assert 'scoped miss, global fallback' in output
+    assert call.call_count==2
+    assert call.call_args_list[0].kwargs['workspace']=='datano-agents'
+    assert call.call_args_list[1].kwargs['workspace']==''
+
+
 def test_hub_failure_is_explicit_not_a_false_no_history(server):
     with patch('animus.network.peer.AnimusPeer.remote_search',new_callable=AsyncMock,side_effect=RuntimeError('unavailable')):
         output=server._tool_recall({'context':'recovery','remote':True})
