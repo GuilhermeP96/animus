@@ -17,5 +17,6 @@ with tempfile.TemporaryDirectory(prefix='.animus-ci-', dir=root) as directory:
                        XDG_DATA_HOME=str(home / '.local/share'),
                        PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=str(root))
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider'],
-                            cwd=root, env=environment, timeout=150, check=False)
+                            cwd=root, env=environment, timeout=150, check=False,
+                            **({'umask': 0o022} if os.name == 'posix' else {}))
     raise SystemExit(result.returncode)
