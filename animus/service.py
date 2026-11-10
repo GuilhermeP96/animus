@@ -87,6 +87,7 @@ def _ps(script: str, *, capture: bool = True) -> subprocess.CompletedProcess:
         capture_output=capture,
         text=True,
         check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )
 
 
@@ -108,7 +109,9 @@ def _windows_install(animus_exe: Path, log_path: Path) -> ServiceInfo:
     # Run through Python, not the generated ``animus.exe`` launcher. Windows
     # locks a running executable, which can prevent pip from replacing that
     # console entry point during a self-update.
-    python_exe = animus_exe.parent / "python.exe"
+    python_exe = animus_exe.parent / "pythonw.exe"
+    if not python_exe.is_file():
+        return ServiceInfo("windows", False, False, "Native pythonw.exe required for console-free service")
     args = f'-m animus.cli daemon --log-file "{log_path}"'
     # ``RestartCount 999`` + ``IgnoreNew`` underwrites the self-update flow:
     # when the daemon detects a new version it exits with code 75; the

@@ -291,7 +291,7 @@ function Initial-Sync($dir) {
 # -- 6. Scheduled Task - `animus daemon` no logon -----------------------
 function Install-Task($dir, $enabled) {
     if ($enabled -ne 'yes') { return }
-    $python = Join-Path $dir '.venv\Scripts\python.exe'
+    $python = Join-Path $dir '.venv\Scripts\pythonw.exe'
     $name   = 'AnimusPeerDaemon'
 
     Write-Step "Registrando Scheduled Task '$name' no logon..."
@@ -301,7 +301,8 @@ function Install-Task($dir, $enabled) {
     # a nova versao entra no lugar - sem janela manual.
     # Do not execute animus.exe directly: Windows may lock that console
     # launcher while pip needs to replace it during an automatic update.
-    $action  = New-ScheduledTaskAction -Execute $python -Argument '-m animus.cli daemon'
+    $daemonLog = Join-Path $dir 'daemon.log'
+    $action  = New-ScheduledTaskAction -Execute $python -Argument ('-m animus.cli daemon --log-file "'+$daemonLog+'"') -WorkingDirectory $dir
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
                   -DontStopIfGoingOnBatteries `

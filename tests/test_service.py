@@ -180,6 +180,7 @@ def test_windows_install_invokes_powershell(monkeypatch, tmp_path):
     monkeypatch.setattr(svc, "_ps", fake_ps)
 
     log_path = tmp_path / "logs" / "daemon.log"
+    (tmp_path / "pythonw.exe").touch()
     info = svc.install(tmp_path / "animus.exe", log_path)
 
     # Log dir auto-created
@@ -187,7 +188,7 @@ def test_windows_install_invokes_powershell(monkeypatch, tmp_path):
     # Install script mentioned the daemon command + log file
     install_script = captured["scripts"][0]
     assert "Register-ScheduledTask" in install_script
-    assert "python.exe" in install_script
+    assert "pythonw.exe" in install_script
     assert "-m animus.cli daemon --log-file" in install_script
     assert "-Execute '" + str(tmp_path / "animus.exe") + "'" not in install_script
     assert info.installed is True

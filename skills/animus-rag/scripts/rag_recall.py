@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/animus-peer/bin/python3
+#!/usr/bin/env python3
 """
 Animus RAG Recall Script
 Retrieves contextual memories from Animus Peer memory bank using multi-query decomposition,
@@ -20,7 +20,7 @@ try:
     from animus.indexer.engine import IndexEngine
     from animus.mcp.rag import RAGEngine
 except ImportError:
-    sys.path.insert(0, "/home/repo/vps-hub/projects/animus")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
     from animus.mcp.rag import RAGEngine

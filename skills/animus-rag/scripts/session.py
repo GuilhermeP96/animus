@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/animus-peer/bin/python3
+#!/usr/bin/env python3
 """
 Animus Session Inspector Script
 Lists and reads full conversation sessions / transcripts from Copilot, Claude Code, and Antigravity.
@@ -17,7 +17,7 @@ try:
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
 except ImportError:
-    sys.path.insert(0, "/home/repo/vps-hub/projects/animus")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
 

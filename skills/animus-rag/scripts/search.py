@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/animus-peer/bin/python3
+#!/usr/bin/env python3
 """
 Animus Eagle Vision Search Script
 Fast full-text search (SQLite FTS5) across all interaction memories (Copilot, Claude Code, Antigravity).
@@ -17,7 +17,7 @@ try:
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
 except ImportError:
-    sys.path.insert(0, "/home/repo/vps-hub/projects/animus")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
 

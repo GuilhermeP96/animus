@@ -3,7 +3,7 @@ FROM ${PYTHON_BASE}
 
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
-    org.opencontainers.image.version="0.8.15" \
+    org.opencontainers.image.version="0.9.0" \
     maintainer="datano" \
     description="Animus Hub — AI Memory Synchronization Server"
 

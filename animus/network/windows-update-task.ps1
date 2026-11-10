@@ -265,7 +265,7 @@ try {
         # process. Private console files are diagnostic, never completion proof.
         $command="& '"+$runner.Replace("'","''")+"' -Mode Run -PlanPath '"+$PlanPath.Replace("'","''")+"' 1> '"+$consoleOut.Replace("'","''")+"' 2> '"+$consoleErr.Replace("'","''")+"'"
         $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-        $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand '+$encoded)
+        $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy RemoteSigned -EncodedCommand '+$encoded)
         $trigger=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddSeconds(10))
         $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable
         if ($task.Principal.LogonType -notin @('Interactive','S4U')) { throw 'Unsupported native task logon type; do not change credentials' }

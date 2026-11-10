@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/animus-peer/bin/python3
+#!/usr/bin/env python3
 """
 Animus Stats Script
 Displays current status, memory counts, nodes, and sync statistics of the Animus Peer.
@@ -16,7 +16,7 @@ try:
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
 except ImportError:
-    sys.path.insert(0, "/home/repo/vps-hub/projects/animus")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from animus.config import AnimusConfig
     from animus.indexer.engine import IndexEngine
 
@@ -26,16 +26,6 @@ from helper_config import load_config
 def main():
     config = load_config()
     db_path = config.data_dir / "animus.db"
-    if not db_path.exists():
-        alt_paths = [
-            Path("/root/.local/share/animus/animus.db"),
-            Path("/opt/animus-peer/data/animus.db"),
-        ]
-        for p in alt_paths:
-            if p.exists():
-                db_path = p
-                break
-
     engine = IndexEngine(db_path)
     stats = engine.get_stats()
 

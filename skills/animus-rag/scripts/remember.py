@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/animus-peer/bin/python3
+#!/usr/bin/env python3
 """
 Animus Remember Script
 Stores a new memory, decision, architecture note, or insight into the Animus memory network.
@@ -18,7 +18,7 @@ try:
     from animus.collector.models import Memory, MemoryType
     from animus.indexer.engine import IndexEngine
 except ImportError:
-    sys.path.insert(0, "/home/repo/vps-hub/projects/animus")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from animus.config import AnimusConfig
     from animus.collector.models import Memory, MemoryType
     from animus.indexer.engine import IndexEngine

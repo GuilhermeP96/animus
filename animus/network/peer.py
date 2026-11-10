@@ -26,6 +26,7 @@ from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
 from .crypto import create_auth_header
 from .sync import SyncProtocol
+from .status import PeerStatus, utc_now
 
 logger = logging.getLogger("animus.peer")
 
@@ -61,6 +62,7 @@ class AnimusPeer:
         # ``collect_interval_seconds`` is, so a 60-second collect loop
         # doesn't translate into 60-second pip storms.
         self._last_update_check_monotonic: float = 0.0
+        self.status = PeerStatus(config.data_dir, config.collect_interval_seconds)
 
     async def collect_and_index(self) -> int:
         """Run a collection cycle — gather and index new memories."""
@@ -132,14 +134,18 @@ class AnimusPeer:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
+                    self.status.event("push_ok")
+                    self.status.connection(True)
                     synced_ids = [m.id for m in memories]
                     self.engine.mark_synced(synced_ids)
                     logger.info("Synced %d memories to hub", len(synced_ids))
                     return len(synced_ids)
                 else:
+                    self.status.connection(False)
                     logger.error("Hub sync failed: HTTP %d — %s", resp.status_code, resp.text[:200])
                     return 0
         except Exception as e:
+            self.status.connection(False)
             logger.error("Hub sync error: %s", e)
             return 0
 
@@ -167,12 +173,16 @@ class AnimusPeer:
                     headers={**headers, "Content-Type": "application/json"},
                 )
                 if resp.status_code == 200:
+                    self.status.connection(True)
+                    self.status.event("pull_ok")
                     data = resp.json()
                     memories, _skipped = SyncProtocol.memories_from_push(data)
                     new_count = self.engine.index_batch(memories)
                     logger.info("Pulled %d memories, %d new", len(memories), new_count)
                     return new_count
+                self.status.connection(False)
         except Exception as e:
+            self.status.connection(False)
             logger.error("Hub pull error: %s", e)
         return 0
 
@@ -260,18 +270,37 @@ class AnimusPeer:
 
         # Check for updates immediately on startup — picks up releases that
         # happened while the host was off, before we even sync.
-        await self._maybe_self_update()
-
-        while self._running:
-            try:
-                await self.collect_and_index()
-                await self.sync_to_hub()
-                await self.pull_from_hub()
-                await self._maybe_self_update()
-            except Exception as e:
-                logger.error("Daemon cycle error: %s", e)
-
-            await asyncio.sleep(self.config.collect_interval_seconds)
+        self.status.start()
+        try:
+            await self._maybe_self_update()
+            while self._running:
+                try:
+                    self.status.update(phase="collecting")
+                    self.status.event("collect")
+                    await self.collect_and_index()
+                    self.status.update(phase="syncing")
+                    await self.sync_to_hub()
+                    await self.pull_from_hub()
+                    stats = self.engine.stats_view()
+                    self.status.update(phase="idle", last_cycle=utc_now(),
+                                       total_memories=stats.get("total_memories"),
+                                       unsynced=stats.get("unsynced"),
+                                       workspaces=stats.get("unique_workspaces"),
+                                       stats_status=stats.get("stats_status", "unavailable"))
+                    self.status.event("cycle_complete")
+                    await self._maybe_self_update()
+                except Exception as e:
+                    self.status.update(phase="idle", connected=False)
+                    self.status.event("cycle_error")
+                    logger.error("Daemon cycle error: %s", e)
+                # A local click can request the next normal cycle. No credentials,
+                # collection policy or remote endpoint are supplied by this IPC.
+                for _ in range(max(1, self.config.collect_interval_seconds)):
+                    if not self._running or self.status.sync_requested():
+                        break
+                    await asyncio.sleep(1)
+        finally:
+            self.status.stop()
 
     def stop(self) -> None:
         self._running = False

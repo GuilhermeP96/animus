@@ -69,7 +69,8 @@ def stage(package,latest,config):
     root=os.environ.get('SystemRoot','C:\\Windows')
     powershell=str(Path(root)/'System32/WindowsPowerShell/v1.0/powershell.exe')
     result=subprocess.run([powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',str(RUNNER),'-Mode','Register'],
-                          input=json.dumps(spec),capture_output=True,text=True,timeout=60)
+                          input=json.dumps(spec),capture_output=True,text=True,timeout=60,
+                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     if result.returncode: return False
     try:
         receipt=json.loads(result.stdout.strip())
