@@ -1,0 +1,20 @@
+services:
+  animus-hub:
+    build:
+      context: https://github.com/GuilhermeP96/animus.git#${ANIMUS_SOURCE_REF:-master}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ANIMUS_PORT:-8314}:8314"
+    volumes:
+      - animus-data:/data/animus
+    environment:
+      ANIMUS_SERVER_SECRET: ${ANIMUS_SERVER_SECRET:?Set a private peer secret}
+      ANIMUS_ADMIN_PASSWORD: ${ANIMUS_ADMIN_PASSWORD:?Set an admin password}
+      ANIMUS_ADMIN_SECRET: ${ANIMUS_ADMIN_SECRET:?Set a separate private session secret}
+      ANIMUS_ADMIN_USER: ${ANIMUS_ADMIN_USER:-admin}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-localhost,127.0.0.1}
+
+volumes:
+  animus-data:

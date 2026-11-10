@@ -45,8 +45,9 @@ class StatsUnavailable(RuntimeError):
 class IndexEngine:
     """SQLite FTS5-based memory index — Eagle Vision."""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, *, stats_query_timeout: float | None = None):
         self.db_path = db_path
+        self._stats_query_timeout = stats_query_timeout
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
         self._stats_cache: dict | None = None
@@ -524,7 +525,8 @@ class IndexEngine:
             generation = self._stats_generation
             collected_at = datetime.now(timezone.utc).isoformat()
             collected_monotonic = time.monotonic()
-            deadline = collected_monotonic + _STATS_QUERY_TIMEOUT_SECONDS
+            budget = self._stats_query_timeout
+            deadline = collected_monotonic + (_STATS_QUERY_TIMEOUT_SECONDS if budget is None else budget)
             try:
                 uri = self.db_path.resolve().as_uri() + '?mode=ro'
                 # The transaction pins a consistent snapshot across all counts.
@@ -537,10 +539,14 @@ class IndexEngine:
                     try:
                         connection.execute('BEGIN')
                         total = connection.execute('SELECT COUNT(*) FROM memories INDEXED BY idx_memories_synced').fetchone()[0]
-                        nodes = connection.execute('SELECT COUNT(DISTINCT source_node) FROM memories INDEXED BY idx_memories_node').fetchone()[0]
-                        spaces = connection.execute('SELECT COUNT(DISTINCT workspace) FROM memories INDEXED BY idx_memories_workspace').fetchone()[0]
+                        nodes = self._distinct_count(connection, 'source_node', 'idx_memories_node')
+                        spaces = self._distinct_count(connection, 'workspace', 'idx_memories_workspace')
                         unsynced = connection.execute('SELECT COUNT(*) FROM memories INDEXED BY idx_memories_synced WHERE synced = 0').fetchone()[0]
-                        types = connection.execute('SELECT type, COUNT(*) AS cnt FROM memories INDEXED BY idx_memories_type GROUP BY type').fetchall()
+                        types = connection.execute(self._distinct_keys_sql('type', 'idx_memories_type') + '''
+                            SELECT value AS type, (SELECT COUNT(*) FROM memories INDEXED BY idx_memories_type
+                                WHERE type = distinct_keys.value) AS cnt
+                            FROM distinct_keys WHERE value IS NOT NULL
+                        ''').fetchall()
                         connection.rollback()
                     finally:
                         connection.set_progress_handler(None, 0)
@@ -561,6 +567,25 @@ class IndexEngine:
             return self.cached_stats()
         finally:
             self._stats_lock.release()
+
+    @staticmethod
+    def _distinct_keys_sql(column: str, index: str) -> str:
+        # Callers supply fixed schema identifiers. Seek to the next value rather
+        # than walking one index entry per memory. MIN ignores NULL, as does
+        # COUNT(DISTINCT), and COUNT(value) excludes the terminating NULL row.
+        return f'''
+            WITH RECURSIVE distinct_keys(value) AS (
+                SELECT MIN({column}) FROM memories INDEXED BY {index}
+                UNION ALL
+                SELECT (SELECT MIN({column}) FROM memories INDEXED BY {index}
+                        WHERE {column} > distinct_keys.value)
+                FROM distinct_keys WHERE value IS NOT NULL
+            )
+        '''
+
+    def _distinct_count(self, connection: sqlite3.Connection, column: str, index: str) -> int:
+        return connection.execute(self._distinct_keys_sql(column, index)
+                                  + 'SELECT COUNT(value) FROM distinct_keys').fetchone()[0]
 
     def get_recent(self, limit: int = 20) -> list[dict]:
         """Get most recent memories."""

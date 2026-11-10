@@ -120,8 +120,8 @@ def test_missing_or_wrong_schema_never_becomes_zero(tmp_path):
 def test_covering_plans_never_scan_content(populated_engine):
     queries = [
         'SELECT COUNT(*) FROM memories INDEXED BY idx_memories_synced',
-        'SELECT COUNT(DISTINCT source_node) FROM memories INDEXED BY idx_memories_node',
-        'SELECT COUNT(DISTINCT workspace) FROM memories INDEXED BY idx_memories_workspace',
+        IndexEngine._distinct_keys_sql('source_node', 'idx_memories_node') + 'SELECT COUNT(value) FROM distinct_keys',
+        IndexEngine._distinct_keys_sql('workspace', 'idx_memories_workspace') + 'SELECT COUNT(value) FROM distinct_keys',
         'SELECT COUNT(*) FROM memories INDEXED BY idx_memories_synced WHERE synced=0',
         'SELECT type, COUNT(*) FROM memories INDEXED BY idx_memories_type GROUP BY type',
     ]
@@ -130,6 +130,29 @@ def test_covering_plans_never_scan_content(populated_engine):
             plan = ' '.join(row[3] for row in connection.execute('EXPLAIN QUERY PLAN ' + query))
             assert 'COVERING INDEX' in plan
             assert 'TEMP B-TREE' not in plan
+
+
+def test_stats_keep_null_workspace_and_unknown_type_semantics(populated_engine):
+    db = populated_engine.conn
+    db.execute("UPDATE memories SET workspace=NULL, type='legacy_unknown' WHERE rowid=1")
+    db.commit()
+    expected = db.execute('SELECT COUNT(DISTINCT workspace) FROM memories').fetchone()[0]
+    counts = dict(db.execute('SELECT type, COUNT(*) FROM memories GROUP BY type'))
+    result = populated_engine.get_stats()
+    assert result['unique_workspaces'] == expected
+    assert result['by_type'] == counts
+
+
+def test_hub_startup_skips_legacy_payload_repair_by_default(hub_config, monkeypatch):
+    repairs = []
+    monkeypatch.delenv('ANIMUS_REPAIR_LEGACY_TRANSCRIPTS', raising=False)
+    monkeypatch.setattr(server.AnimusConfig, 'load', lambda: hub_config)
+    monkeypatch.setattr(server, '_migrate_unwrap_transcript_envelopes', repairs.append)
+    monkeypatch.setattr(server, '_config', None)
+    monkeypatch.setattr(server, '_engine', None)
+    with TestClient(server.app) as client:
+        assert client.get('/health/live').status_code == 200
+        assert repairs == []
 
 
 def test_http_cold_failure_json_pages_and_health(hub_config, populated_engine, monkeypatch):
@@ -204,7 +227,7 @@ def test_all_counts_share_one_snapshot_during_commit(populated_engine, monkeypat
         connection = connect(*args, **kwargs)
         if kwargs.get('uri'):
             def trace(statement):
-                if 'COUNT(DISTINCT source_node)' in statement and not committed:
+                if 'WITH RECURSIVE distinct_keys' in statement and 'idx_memories_node' in statement and not committed:
                     writer.execute('UPDATE memories SET synced=1')
                     writer.commit()
                     committed.append(True)

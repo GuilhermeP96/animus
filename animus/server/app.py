@@ -227,7 +227,9 @@ async def lifespan(app: FastAPI):
     _config = AnimusConfig.load()
     _config.node_role = "hub"
     _config.ensure_dirs()
-    _engine = IndexEngine(_config.db_path)
+    # The hub aggregates the entire mesh, including cold index reads after a
+    # restart. Peers retain the smaller local budget.
+    _engine = IndexEngine(_config.db_path, stats_query_timeout=8.0)
     # Hub-side migration: any memory already in the DB is, by definition,
     # synced (the hub is the destination). Without this backfill the admin
     # UI shows every imported memory as "Pending" forever.
@@ -244,10 +246,10 @@ async def lifespan(app: FastAPI):
     # Hub-side migration: repair Copilot transcript memories that were
     # collected before v0.4.8, where the collector stored the raw JSONL
     # line (heavily escaped) instead of the actual message body.
-    try:
+    # This historical repair reads payloads and may rewrite them. Run it only
+    # during an explicitly scheduled maintenance startup for a legacy import.
+    if os.environ.get("ANIMUS_REPAIR_LEGACY_TRANSCRIPTS") == "1":
         _migrate_unwrap_transcript_envelopes(_engine)
-    except Exception as exc:  # pragma: no cover
-        logger.warning("Transcript-envelope unwrap migration failed: %s", exc)
     logger.info("Animus Hub started — node=%s", _config.node_id)
     yield
     if _engine:

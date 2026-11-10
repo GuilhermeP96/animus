@@ -527,3 +527,24 @@ ação formal: estamos abertos a remover/renomear o que for solicitado.
 ## Proteção do painel administrativo
 
 [Turnstile no login humano](docs/TURNSTILE.md). Esta configuração não altera autenticação dos peers nem do MCP.
+
+## Hostinger VPS
+
+[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fraw.githubusercontent.com%2FGuilhermeP96%2Fanimus%2Frefs%2Fheads%2Fmaster%2Fdocker-compose.hostinger.yml)
+
+Importe `docker-compose.hostinger.yml` no Docker Manager da Hostinger. O build
+busca o código no GitHub e aceita um commit ou tag em `ANIMUS_SOURCE_REF`.
+Configure `ANIMUS_SERVER_SECRET`, `ANIMUS_ADMIN_PASSWORD` e `ANIMUS_ADMIN_SECRET`
+no ambiente do projeto antes do deploy. Use segredos aleatórios independentes
+para autenticação dos peers e sessões do painel. O volume `animus-data` guarda
+as memórias e as configurações do hub.
+
+A porta 8314 fica no loopback da VPS. Configure um proxy reverso HTTPS antes
+de conectar peers remotos e use a URL HTTPS nas configurações dos peers.
+Na VPS, confira `http://127.0.0.1:8314/health/live`.
+
+O reparo de transcrições anteriores à versão 0.4.8 é opcional. Para um banco
+importado que precise desse reparo, faça backup e habilite
+`ANIMUS_REPAIR_LEGACY_TRANSCRIPTS=1` durante uma inicialização de manutenção.
+Remova a opção depois que o reparo terminar.
+
