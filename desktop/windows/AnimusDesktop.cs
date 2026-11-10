@@ -8,6 +8,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -68,12 +69,14 @@ namespace AnimusDesktop {
             if (state=="connected") return Color.FromArgb(0,235,151);
             if (state=="syncing") return Cyan;
             if (state=="idle") return Color.FromArgb(166,143,255);
+            if (state=="mcp") return Color.FromArgb(255,103,222);
             return Color.FromArgb(255,105,113);
         }
         public static string LabelFor(string state) {
             if (state=="connected") return "CONECTADO";
             if (state=="syncing") return "SINCRONIZANDO";
             if (state=="idle") return "OCIOSO";
+            if (state=="mcp") return "EM USO PELO MCP";
             return "DESCONECTADO";
         }
         public static void Triangle(Graphics g, RectangleF box, Color color, double phase, bool sync) {
@@ -96,11 +99,24 @@ namespace AnimusDesktop {
             using (Bitmap bitmap=new Bitmap(size,size)) {
                 using (Graphics g=Graphics.FromImage(bitmap)) {
                     g.Clear(Color.Transparent);
-                    Triangle(g,new RectangleF(1,1,size-2,size-2),ColorFor(state),frame,state=="syncing");
+                    Triangle(g,new RectangleF(1,1,size-2,size-2),ColorFor(state),frame,state=="syncing" || state=="mcp");
                 }
                 IntPtr handle=bitmap.GetHicon();
                 try {using (Icon borrowed=Icon.FromHandle(handle)) return (Icon)borrowed.Clone();}
                 finally {DestroyIcon(handle);}
+            }
+        }
+        public static Icon ActivityIcon(Snapshot s,int frame) {
+            using(Icon basic=IconFor(s.State,frame,32))
+            using(Bitmap bitmap=basic.ToBitmap()) {
+                using(Graphics g=Graphics.FromImage(bitmap)) {
+                    g.SmoothingMode=SmoothingMode.AntiAlias;
+                    if(s.State!="mcp" && s.ActiveCalls>0)using(SolidBrush dot=new SolidBrush(ColorFor("mcp")))g.FillEllipse(dot,24,1,7,7);
+                    if(s.State=="mcp" && s.PeerState=="syncing")using(Pen arc=new Pen(Cyan,2))g.DrawArc(arc,1,1,29,29,frame*12,70);
+                }
+                IntPtr handle=bitmap.GetHicon();
+                try{using(Icon borrowed=Icon.FromHandle(handle))return (Icon)borrowed.Clone();}
+                finally{DestroyIcon(handle);}
             }
         }
     }
@@ -108,6 +124,9 @@ namespace AnimusDesktop {
     class Snapshot {
         public Dictionary<string,object> Values=new Dictionary<string,object>();
         public string State="disconnected";
+        public string PeerState="disconnected";
+        public int ActiveCalls=0, ActiveClients=0;
+        public bool McpRecent=false;
         public string Get(string name,string fallback) {object v;return Values.TryGetValue(name,out v)&&v!=null?Convert.ToString(v,CultureInfo.InvariantCulture):fallback;}
         public string Number(string key) {long n;return Int64.TryParse(Get(key,""),out n)?n.ToString("N0",CultureInfo.GetCultureInfo("pt-BR")):"—";}
         public static DateTime? Time(string value) {DateTime v;return DateTime.TryParse(value,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out v)?(DateTime?)v.ToUniversalTime():null;}
@@ -124,6 +143,7 @@ namespace AnimusDesktop {
                 using (Process p=Process.GetProcessById(pid)) {if(p.HasExited)return s;}
                 string phase=s.Get("phase","");
                 if (phase=="stopped") return s;
+                if (s.Get("connection_status","")=="disconnected") return s;
                 if (phase=="collecting" || phase=="syncing") s.State="syncing";
                 else if (s.Get("connected","False")=="True") {
                     DateTime? success=Time(s.Get("last_success",""));
@@ -132,7 +152,33 @@ namespace AnimusDesktop {
                         s.State=(DateTime.UtcNow-success.Value).TotalSeconds<12?"connected":"idle";
                 }
             } catch (Exception) {s.State="disconnected";}
+            finally {
+                s.PeerState=s.State;
+                s.ReadMcp(data);
+                // A lost peer/hub confirmation remains the primary alert. MCP and
+                // synchronization are independent secondary activities in the panel.
+                if(s.State!="disconnected" && s.McpRecent)s.State="mcp";
+            }
             return s;
+        }
+        void ReadMcp(string data) {
+            try {
+                HashSet<int> clients=new HashSet<int>();
+                string folder=Path.Combine(data,"mcp-activity");
+                if(!Directory.Exists(folder) || (File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0)return;
+                foreach(string file in Directory.EnumerateFiles(folder,"*.json").Take(128)) {
+                    try {
+                        if(new FileInfo(file).Length>512 || (File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0)continue;
+                        Dictionary<string,object> row=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(File.ReadAllText(file,Encoding.UTF8));
+                        object rawBeat,rawPid,rawCalls;
+                        if(row==null || !row.TryGetValue("heartbeat",out rawBeat) || !row.TryGetValue("pid",out rawPid) || !row.TryGetValue("active_calls",out rawCalls))continue;
+                        DateTime? beat=Time(Convert.ToString(rawBeat));int pid,calls;
+                        if(!beat.HasValue || (DateTime.UtcNow-beat.Value).TotalSeconds>8 || (DateTime.UtcNow-beat.Value).TotalSeconds< -5 || !Int32.TryParse(Convert.ToString(rawPid),out pid) || !Int32.TryParse(Convert.ToString(rawCalls),out calls) || calls<0 || calls>128)continue;
+                        using(Process p=Process.GetProcessById(pid)){if(p.HasExited)continue;}
+                        McpRecent=true;ActiveCalls+=calls;if(calls>0)clients.Add(pid);ActiveClients=clients.Count;
+                    } catch(Exception){}
+                }
+            }catch(Exception){}
         }
     }
 
@@ -159,8 +205,8 @@ namespace AnimusDesktop {
             if(exit.WaitOne(0)){ExitThread();return;}
             if(show.WaitOne(0))Open();
             frame++;if(frame%2==0)Latest=Snapshot.Read(data);
-            timer.Interval=Latest.State=="syncing"?120:500;
-            Icon next=Brand.IconFor(Latest.State,frame,32);tray.Icon=next;
+            timer.Interval=(Latest.State=="syncing" || Latest.State=="mcp")?120:500;
+            Icon next=Brand.ActivityIcon(Latest,frame);tray.Icon=next;
             if(current!=null)current.Dispose();current=next;
             tray.Text="Animus · "+Brand.LabelFor(Latest.State);
             form.RefreshStatus(Latest,frame);
@@ -243,9 +289,12 @@ namespace AnimusDesktop {
         string LocalTime(string name) {DateTime? t=Snapshot.Time(snapshot.Get(name,""));return t.HasValue?t.Value.ToLocalTime().ToString("dd/MM HH:mm:ss"):"—";}
         public void RefreshStatus(Snapshot value,int tick) {
             snapshot=value;frame=tick;state.Text=Brand.LabelFor(value.State);state.ForeColor=Brand.ColorFor(value.State);
-            description.Text=value.State=="syncing"?(value.Get("phase","")=="collecting"?"Organizando as memórias deste dispositivo.":"Trocando memórias com o hub autenticado."):
+            description.Text=value.State=="mcp"?(value.ActiveCalls>0?value.ActiveCalls+" chamada(s) ativa(s) · "+value.ActiveClients+" processo(s) MCP":"Chamada concluída · retornando ao estado do peer."):
+                value.State=="syncing"?(value.Get("phase","")=="collecting"?"Organizando as memórias deste dispositivo.":"Trocando memórias com o hub autenticado."):
                 value.State=="idle"?"Tudo em seu ritmo. Aguardando o próximo ciclo.":value.State=="connected"?"Conexão autenticada confirmada pelo peer.":"Sem conexão confirmada. Suas memórias permanecem locais.";
-            connection.Text=value.State=="idle"?"● Conectado ao hub · em segundo plano":value.State=="disconnected"?"O peer tenta novamente no próximo ciclo.":"● Peer em execução · sincronização protegida";
+            connection.Text=value.State=="mcp"?(value.PeerState=="syncing"?"● Sincronização também em andamento":"● Hub conectado · acesso local pelo MCP"):
+                value.State=="disconnected"?(value.ActiveCalls>0?"● MCP local ativo: "+value.ActiveCalls+" chamada(s) · hub desconectado":"O peer tenta novamente no próximo ciclo."):
+                value.State=="idle"?"● Conectado ao hub · em segundo plano":"● Peer em execução · sincronização protegida";
             values[0].Text=value.Number("total_memories");values[1].Text=value.Number("unsynced");values[2].Text=value.Number("workspaces");
             lastSync.Text="Última conexão: "+LocalTime("last_success");lastCycle.Text="Último ciclo: "+LocalTime("last_cycle");
             version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.0";feedback.Text=app.Feedback;
@@ -283,7 +332,8 @@ namespace AnimusDesktop {
                 g.DrawRectangle(border,289,155,684,133);
             }
             using(Pen grid=new Pen(Color.FromArgb(18,Brand.Cyan)))for(int i=0;i<9;i++)g.DrawLine(grid,298+i*18,164,298+i*18,279);
-            Brand.Triangle(g,new RectangleF(316,165,116,116),Brand.ColorFor(snapshot.State),frame,snapshot.State=="syncing");
+            Brand.Triangle(g,new RectangleF(316,165,116,116),Brand.ColorFor(snapshot.State),frame,snapshot.State=="syncing" || snapshot.State=="mcp");
+            if(snapshot.State=="mcp" && snapshot.PeerState=="syncing")using(Pen ring=new Pen(Brand.Cyan,2))g.DrawArc(ring,308,162,132,122,frame*12,80);
         }
     }
 }

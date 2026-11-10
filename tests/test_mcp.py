@@ -5,6 +5,7 @@ import json
 import pytest
 
 from animus.mcp import AnimusMCPServer
+from animus.mcp.activity import MCPActivity
 
 
 @pytest.fixture
@@ -13,6 +14,7 @@ def mcp_server(config, populated_engine, monkeypatch):
     server = AnimusMCPServer.__new__(AnimusMCPServer)
     server.config = config
     server.engine = populated_engine
+    server.activity = MCPActivity(config.data_dir)
     from animus.collector.antigravity import AntigravityCollector
     from animus.collector.claude import ClaudeCollector
     from animus.collector.copilot import CopilotCollector
@@ -21,7 +23,8 @@ def mcp_server(config, populated_engine, monkeypatch):
     server.claude_collector = ClaudeCollector(config)
     server.antigravity_collector = AntigravityCollector(config)
     server.copilot_cli_collector = CopilotCliCollector(config)
-    return server
+    yield server
+    server.activity.close()
 
 
 class TestMCPProtocol:

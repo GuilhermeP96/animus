@@ -9,7 +9,17 @@ Sair da bandeja encerra somente a interface. O peer continua em segundo plano.
 | Verde | Conexão autenticada recente confirmada pelo daemon |
 | Ciano | Coleta ou sincronização em andamento |
 | Violeta | Ocioso, aguardando o próximo ciclo após conexão confirmada |
+| Magenta | Em uso pelo MCP, com chamadas/processos simultâneos contabilizados |
 | Vermelho | Sem conexão confirmada, daemon parado ou heartbeat expirado |
+
+Prioridade de indicação: desconexão → MCP → sincronização → conectado → ocioso.
+Quando MCP e sincronização concorrem, o triângulo fica magenta e recebe um arco
+ciano; o texto mantém as duas atividades visíveis. Uma desconexão permanece
+vermelha, com a contagem MCP local em segundo plano. Chamadas curtas deixam
+um sinal de conclusão por quatro segundos para evitar piscadas. Cada instância
+MCP escreve seu próprio contador; terminar uma chamada não apaga outra ativa.
+Heartbeats vencidos e processos encerrados são desconsiderados. O indicador
+depende da versão nova do servidor MCP: sessões já abertas devem reconectar.
 
 O painel mostra contagens locais, fila, workspaces, versão, última conexão,
 último ciclo e eventos seguros. `Sincronizar agora` solicita o próximo ciclo
@@ -53,7 +63,7 @@ Nenhum arquivo de configuração, endereço de infraestrutura, memória ou segre
 é usado como entrada do build. A distribuição contém apenas EXE, licença,
 NOTICE, instalador, documentação e checksums.
 
-O IPC usa `peer-status.json` e `peer-command.json` somente na pasta privada de
+O IPC usa `peer-status.json`, `peer-command.json` e `mcp-activity/` somente na pasta privada de
 dados. Há limite de tamanho, heartbeat, expiração de comando e escrita por
 substituição. Nenhuma porta local ou endpoint público adicional é aberto.
 O status não contém URL do hub, chaves, caminhos de memórias ou conteúdo.

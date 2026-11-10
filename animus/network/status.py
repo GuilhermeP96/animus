@@ -23,7 +23,7 @@ class PeerStatus:
         self.done = threading.Event()
         self.thread = None
         self.data = dict(schema=1, version=__version__, pid=os.getpid(),
-                         phase="starting", connected=False, last_success=None,
+                         phase="starting", connected=False, connection_status="unknown", last_success=None,
                          last_cycle=None, interval_seconds=interval, total_memories=None,
                          unsynced=None, workspaces=None, stats_status="unavailable", events=[])
 
@@ -40,7 +40,8 @@ class PeerStatus:
             self.data["events"] = ([dict(code=code, at=utc_now())] + self.data["events"])[:10]
 
     def connection(self, success: bool):
-        self.update(connected=success, **({"last_success": utc_now()} if success else {}))
+        self.update(connected=success, connection_status="connected" if success else "disconnected",
+                    **({"last_success": utc_now()} if success else {}))
         if not success:
             self.event("hub_unavailable")
 
@@ -77,7 +78,7 @@ class PeerStatus:
         self.done.set()
         if self.thread:
             self.thread.join(timeout=4)
-        self.update(phase="stopped", connected=False)
+        self.update(phase="stopped", connected=False, connection_status="disconnected")
         self.event("stopped")
         self.write()
 

@@ -20,6 +20,7 @@ from typing import Any
 
 from ..config import AnimusConfig
 from ..indexer.engine import IndexEngine
+from .activity import MCPActivity
 from ..collector.antigravity import AntigravityCollector
 from ..collector.claude import ClaudeCollector
 from ..collector.copilot import CopilotCollector
@@ -452,6 +453,7 @@ class AnimusMCPServer:
         self.config = AnimusConfig.load()
         self.config.ensure_dirs()
         self.engine = IndexEngine(self.config.db_path)
+        self.activity = MCPActivity(self.config.data_dir)
         # All collectors run on every collect cycle so the MCP tool sees
         # the same union the daemon/CLI does — anything else would silently
         # hide Claude Code or Antigravity memories from in-IDE callers.
@@ -546,7 +548,8 @@ class AnimusMCPServer:
             }
 
         try:
-            result = tool_handler(args)
+            with self.activity.track():
+                result = tool_handler(args)
             return {"content": [{"type": "text", "text": result}]}
         except Exception as e:
             return {
@@ -1208,7 +1211,11 @@ def main():
         stream=sys.stderr,  # Logs go to stderr, protocol on stdout
     )
     server = AnimusMCPServer()
-    server.run()
+    try:
+        server.run()
+    finally:
+        server.activity.close()
+        server.engine.close()
 
 
 if __name__ == "__main__":

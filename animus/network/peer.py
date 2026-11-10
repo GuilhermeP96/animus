@@ -290,7 +290,7 @@ class AnimusPeer:
                     self.status.event("cycle_complete")
                     await self._maybe_self_update()
                 except Exception as e:
-                    self.status.update(phase="idle", connected=False)
+                    self.status.update(phase="idle", connected=False, connection_status="disconnected")
                     self.status.event("cycle_error")
                     logger.error("Daemon cycle error: %s", e)
                 # A local click can request the next normal cycle. No credentials,
