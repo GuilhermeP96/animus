@@ -8,6 +8,12 @@ Execute os testes relevantes com `python -m pytest tests/<arquivo>` em um
 ambiente isolado. Não use dados reais, colete históricos nem conecte um hub
 pessoal ou corporativo para testar uma contribuição.
 
+Para a suíte completa, use `python scripts/ci/validate.py` no ambiente de
+desenvolvimento preparado. O executor isola perfis, dados de provedores e
+fixtures; no Windows, verifica ACLs reais nos testes nativos. Skips de plataforma
+e de privilégio para symlinks são explícitos. Consulte
+[a qualificação Windows](docs/WINDOWS-SUITE-VALIDATION.md).
+
 Novas contribuições devem ser de sua autoria ou ter origem e licença
 compatíveis documentadas. Elas são recebidas sob AGPL-3.0-only, preservando
 os direitos dos respectivos autores; contribuir não transfere copyright.

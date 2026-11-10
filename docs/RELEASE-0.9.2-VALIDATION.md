@@ -101,6 +101,8 @@ isolated fixture database/configuration, and deployed data was compared
 separately. No Authenticode signature is claimed. The complete Windows Python
 suite did not qualify (Unix permission expectations and its deadline); the
 desktop delta, installed package and actual Windows MCP consumer did pass.
+The subsequent source-suite correction and Windows qualification are documented
+in [Windows suite and local peer qualification](WINDOWS-SUITE-VALIDATION.md).
 Existing open MCP sessions may keep previously imported code until reconnect.
 
 Immediately after restart, bounded cold statistics briefly returned the typed
