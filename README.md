@@ -4,6 +4,17 @@
 
 > **Animus** é uma rede de sincronização de memórias do GitHub Copilot, Claude Code e Google Antigravity / Antigravity IDE. Coleta, indexa e sincroniza o contexto das suas interações com IA entre todas as suas máquinas. O nome e parte da estética são uma referência cultural à franquia *Assassin's Creed*, mas este projeto não é afiliado, endossado ou patrocinado pela Ubisoft — ver [Aviso](#-aviso-marcas-e-afiliação).
 
+## Desktop Windows
+
+O [Animus Desktop](https://github.com/GuilhermeP96/animus/releases/latest) traz
+um painel local e triângulo animado na bandeja, com indicadores de conexão,
+sincronização e uso concorrente por MCP. O daemon roda com `pythonw`, sem
+terminal, e a janela recolhe para a bandeja ao fechar.
+
+Os ícones incluem resoluções nativas de 16 a 256 px e ajustam o desenho ao DPI.
+Consulte o [guia de instalação e estados](desktop/README.md). O app compilado
+usa o runtime privado do peer existente; configurações e memórias ficam no host.
+
 ## Conceito
 
 | AC Lore | Animus System |

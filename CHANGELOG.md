@@ -4,6 +4,24 @@ All notable changes to **Animus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-11-10 — High-definition Windows icons
+
+- Ten native icon resolutions (16–256 px), 32-bit alpha and optical weights for
+  small sizes replace the single 64 px icon and its faint downscaled outlines.
+- DPI-aware tray rendering uses supersampling and the effective Windows small
+  icon size. The window/taskbar receives a full multi-resolution icon.
+- Stable application identity and a new versioned executable avoid replacing
+  published 0.9.0 artifacts or restarting Windows Explorer to refresh icons.
+- MCP/sync/disconnection priority and private peer configuration are preserved.
+
+## [0.9.0] — 2026-11-10 — Native desktop and concurrent MCP activity
+
+- Compiled Windows GUI, animated triangle tray, local dashboard and shortcuts.
+- Console-free native daemon with `pythonw.exe`; Linux stays headless/systemd.
+- MCP activity counters per instance, nested/concurrent calls, heartbeat expiry
+  and a short completion hold; connection alerts retain priority.
+- Local IPC exposes safe status only, without credentials, endpoints or memories.
+
 ## [0.8.10] — 2026-10-01 — Cloudflare edge protection
 
 - Optional Cloudflare Access service credentials accompany synchronization,

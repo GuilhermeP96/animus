@@ -1,4 +1,8 @@
-# Animus Desktop 0.9.0
+# Animus Desktop 0.9.1
+
+O ícone do aplicativo contém dez resoluções nativas de 16 a 256 px, com alpha
+32 bits e espessuras ajustadas para tamanhos pequenos. A bandeja renderiza na
+resolução efetiva do Windows/DPI, sem reduzir um traço fino de 64 px para 16 px.
 
 Aplicativo Windows compilado, sem console, com painel local e ícone triangular
 animado na bandeja. Clique no ícone para abrir; fechar a janela recolhe o painel.

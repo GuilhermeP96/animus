@@ -19,13 +19,15 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyTitle("Animus")]
 [assembly: System.Reflection.AssemblyProduct("Animus Peer Desktop")]
 [assembly: System.Reflection.AssemblyCompany("Guilherme Pinheiro / Datano")]
-[assembly: System.Reflection.AssemblyVersion("0.9.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.9.1.0")]
 
 namespace AnimusDesktop {
     static class Program {
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)] static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
         [STAThread] static void Main(string[] args) {
             SetProcessDPIAware();
+            SetCurrentProcessExplicitAppUserModelID("Datano.Animus.Peer");
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             string data = Environment.GetEnvironmentVariable("ANIMUS_DATA_DIR");
@@ -38,8 +40,11 @@ namespace AnimusDesktop {
                 else if (args[i]=="--quit") quit=true;
                 else if (args[i]=="--capture" && i+1<args.Length) capture=args[++i];
                 else if (args[i]=="--export-icon" && i+1<args.Length) {
-                    using (Icon icon=Brand.IconFor("connected",0,64))
-                    using (FileStream f=File.Create(args[++i])) icon.Save(f);
+                    File.WriteAllBytes(args[++i],Brand.IconFile());
+                    return;
+                }
+                else if (args[i]=="--export-preview" && i+1<args.Length) {
+                    Brand.Preview(args[++i]);
                     return;
                 }
             }
@@ -95,28 +100,81 @@ namespace AnimusDesktop {
                 using (SolidBrush light=new SolidBrush(Color.White)) g.FillEllipse(light,a.X+(b.X-a.X)*t-s*.04f,a.Y+(b.Y-a.Y)*t-s*.04f,s*.08f,s*.08f);
             }
         }
-        public static Icon IconFor(string state,int frame,int size) {
-            using (Bitmap bitmap=new Bitmap(size,size)) {
-                using (Graphics g=Graphics.FromImage(bitmap)) {
-                    g.Clear(Color.Transparent);
-                    Triangle(g,new RectangleF(1,1,size-2,size-2),ColorFor(state),frame,state=="syncing" || state=="mcp");
+        // Icons have their own optical weights. A 64px hairline scaled to 16px
+        // loses contrast; draw each target size with a minimum 1.85px stroke.
+        public static Bitmap Mark(int size,Color color,int frame,bool moving,bool mcpDot,bool syncArc) {
+            int scale=size<=48?8:4;
+            using(Bitmap high=new Bitmap(size*scale,size*scale,System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+                using(Graphics g=Graphics.FromImage(high)) {
+                    g.Clear(Color.Transparent);g.ScaleTransform(scale,scale);
+                    g.SmoothingMode=SmoothingMode.AntiAlias;g.PixelOffsetMode=PixelOffsetMode.HighQuality;
+                    PointF[] p={new PointF(size*.5f,size*.13f),new PointF(size*.89f,size*.84f),new PointF(size*.11f,size*.84f)};
+                    using(SolidBrush fill=new SolidBrush(Color.FromArgb(45,color)))g.FillPolygon(fill,p);
+                    using(Pen pen=new Pen(color,Math.Max(1.85f,size*.075f))){pen.LineJoin=LineJoin.Round;g.DrawPolygon(pen,p);}
+                    if(size<=24) {
+                        PointF[] core={new PointF(size*.5f,size*.46f),new PointF(size*.64f,size*.70f),new PointF(size*.36f,size*.70f)};
+                        using(SolidBrush b=new SolidBrush(color))g.FillPolygon(b,core);
+                    } else {
+                        PointF[] core={new PointF(size*.5f,size*.38f),new PointF(size*.69f,size*.72f),new PointF(size*.31f,size*.72f)};
+                        using(Pen pen=new Pen(Color.FromArgb(235,color),Math.Max(1.25f,size*.038f))){pen.LineJoin=LineJoin.Round;g.DrawPolygon(pen,core);}
+                    }
+                    if(moving) {
+                        double t=(frame*.07)%3;int segment=(int)t;float f=(float)(t-segment);
+                        PointF a=p[segment],b=p[(segment+1)%3];float r=Math.Max(1.2f,size*.055f);
+                        using(SolidBrush light=new SolidBrush(Color.White))g.FillEllipse(light,a.X+(b.X-a.X)*f-r,a.Y+(b.Y-a.Y)*f-r,r*2,r*2);
+                    } else {
+                        using(Pen pulse=new Pen(Color.FromArgb((int)(35+30*Math.Sin(frame*.35)),color),Math.Max(.6f,size*.018f)))g.DrawPolygon(pulse,p);
+                    }
+                    if(mcpDot)using(SolidBrush dot=new SolidBrush(ColorFor("mcp")))g.FillEllipse(dot,size*.73f,0,size*.25f,size*.25f);
+                    if(syncArc)using(Pen arc=new Pen(Cyan,Math.Max(1.1f,size*.055f)))g.DrawArc(arc,size*.04f,size*.04f,size*.92f,size*.92f,frame*12,70);
                 }
-                IntPtr handle=bitmap.GetHicon();
-                try {using (Icon borrowed=Icon.FromHandle(handle)) return (Icon)borrowed.Clone();}
-                finally {DestroyIcon(handle);}
+                Bitmap result=new Bitmap(size,size,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using(Graphics g=Graphics.FromImage(result)) {
+                    g.CompositingMode=CompositingMode.SourceCopy;g.CompositingQuality=CompositingQuality.HighQuality;
+                    g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.PixelOffsetMode=PixelOffsetMode.HighQuality;
+                    g.DrawImage(high,new Rectangle(0,0,size,size),0,0,high.Width,high.Height,GraphicsUnit.Pixel);
+                }
+                return result;
             }
         }
+        static Icon NativeIcon(Bitmap bitmap) {
+            IntPtr handle=bitmap.GetHicon();
+            try{using(Icon borrowed=Icon.FromHandle(handle))return (Icon)borrowed.Clone();}
+            finally{DestroyIcon(handle);}
+        }
+        public static Icon IconFor(string state,int frame,int size) {
+            using(Bitmap bitmap=Mark(size,ColorFor(state),frame,state=="syncing" || state=="mcp",false,false))return NativeIcon(bitmap);
+        }
         public static Icon ActivityIcon(Snapshot s,int frame) {
-            using(Icon basic=IconFor(s.State,frame,32))
-            using(Bitmap bitmap=basic.ToBitmap()) {
-                using(Graphics g=Graphics.FromImage(bitmap)) {
-                    g.SmoothingMode=SmoothingMode.AntiAlias;
-                    if(s.State!="mcp" && s.ActiveCalls>0)using(SolidBrush dot=new SolidBrush(ColorFor("mcp")))g.FillEllipse(dot,24,1,7,7);
-                    if(s.State=="mcp" && s.PeerState=="syncing")using(Pen arc=new Pen(Cyan,2))g.DrawArc(arc,1,1,29,29,frame*12,70);
+            int size=Math.Max(16,Math.Min(64,SystemInformation.SmallIconSize.Width));
+            using(Bitmap bitmap=Mark(size,ColorFor(s.State),frame,s.State=="syncing" || s.State=="mcp",s.State!="mcp" && s.ActiveCalls>0,s.State=="mcp" && s.PeerState=="syncing"))return NativeIcon(bitmap);
+        }
+        public static byte[] IconFile() {
+            int[] sizes={16,20,24,32,40,48,64,96,128,256};List<byte[]> frames=new List<byte[]>();
+            foreach(int size in sizes)using(Bitmap bitmap=Mark(size,Cyan,0,false,false,false))using(MemoryStream png=new MemoryStream()) {
+                bitmap.Save(png,System.Drawing.Imaging.ImageFormat.Png);frames.Add(png.ToArray());
+            }
+            using(MemoryStream output=new MemoryStream())using(BinaryWriter writer=new BinaryWriter(output)) {
+                writer.Write((ushort)0);writer.Write((ushort)1);writer.Write((ushort)sizes.Length);
+                int offset=6+16*sizes.Length;
+                for(int i=0;i<sizes.Length;i++) {
+                    writer.Write((byte)(sizes[i]==256?0:sizes[i]));writer.Write((byte)(sizes[i]==256?0:sizes[i]));
+                    writer.Write((byte)0);writer.Write((byte)0);writer.Write((ushort)1);writer.Write((ushort)32);
+                    writer.Write(frames[i].Length);writer.Write(offset);offset+=frames[i].Length;
                 }
-                IntPtr handle=bitmap.GetHicon();
-                try{using(Icon borrowed=Icon.FromHandle(handle))return (Icon)borrowed.Clone();}
-                finally{DestroyIcon(handle);}
+                foreach(byte[] bytes in frames)writer.Write(bytes);
+                writer.Flush();return output.ToArray();
+            }
+        }
+        public static Icon ApplicationIcon(){using(MemoryStream data=new MemoryStream(IconFile()))return new Icon(data);}
+        public static void Preview(string path) {
+            using(Bitmap atlas=new Bitmap(680,230))using(Graphics g=Graphics.FromImage(atlas)) {
+                g.Clear(Bg);string[] states={"connected","syncing","idle","mcp","disconnected"};int[] sizes={16,24,32,48};
+                using(Font font=new Font("Segoe UI",10))using(SolidBrush text=new SolidBrush(Text))for(int row=0;row<states.Length;row++) {
+                    g.DrawString(LabelFor(states[row]),font,text,12,12+row*43);
+                    for(int col=0;col<sizes.Length;col++)using(Bitmap icon=Mark(sizes[col],ColorFor(states[row]),8,states[row]=="mcp" || states[row]=="syncing",false,false))g.DrawImageUnscaled(icon,210+col*110,6+row*43);
+                }
+                atlas.Save(path,System.Drawing.Imaging.ImageFormat.Png);
             }
         }
     }
@@ -246,7 +304,7 @@ namespace AnimusDesktop {
             app=context;Text="Animus · Memória em movimento";BackColor=Brand.Bg;ForeColor=Brand.Text;
             Font=new Font("Segoe UI",10);ClientSize=new Size(1020,700);MinimumSize=new Size(960,720);
             StartPosition=FormStartPosition.CenterScreen;DoubleBuffered=true;
-            Icon=Brand.IconFor("syncing",0,64);MaximizeBox=false;
+            Icon=Brand.ApplicationIcon();MaximizeBox=false;
             AddLabel("A N I M U S",30,35,215,40,25,Brand.Text);
             AddLabel("MEMORY SYNCHRONIZATION",32,82,210,20,8,Brand.Muted);
             AddLabel("◈   Visão geral",32,162,204,35,12,Brand.Cyan);
@@ -297,7 +355,7 @@ namespace AnimusDesktop {
                 value.State=="idle"?"● Conectado ao hub · em segundo plano":"● Peer em execução · sincronização protegida";
             values[0].Text=value.Number("total_memories");values[1].Text=value.Number("unsynced");values[2].Text=value.Number("workspaces");
             lastSync.Text="Última conexão: "+LocalTime("last_success");lastCycle.Text="Último ciclo: "+LocalTime("last_cycle");
-            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.0";feedback.Text=app.Feedback;
+            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.1";feedback.Text=app.Feedback;
             activity.BeginUpdate();activity.Items.Clear();
             object raw;
             if(value.Values.TryGetValue("events",out raw) && raw is IEnumerable) {
