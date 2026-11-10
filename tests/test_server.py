@@ -1,6 +1,7 @@
 """Tests for animus.server.app (FastAPI endpoints)."""
 
 import time
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -417,6 +418,7 @@ class TestRemediationReadiness:
         assert response.status_code == 503
         assert response.json() == {'status': 'unhealthy', 'database': 'unavailable'}
 
+    @pytest.mark.skipif(os.name != 'posix', reason='Operator-installed registry is a Linux hub deployment feature')
     def test_per_node_credentials_do_not_fall_back(self, client, hub_config, tmp_path):
         import json
         import secrets

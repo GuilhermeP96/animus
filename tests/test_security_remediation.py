@@ -2,6 +2,7 @@
 import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
 import secrets
 import sqlite3
@@ -61,6 +62,7 @@ def test_missing_secret_and_legacy_without_nonce_refused():
         crypto.create_auth_header('', 'fixture-node')
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Linux hub registry uses POSIX operator ownership; Windows is a native peer')
 def test_per_node_registry_is_authoritative(hub_config, tmp_path):
     key = secrets.token_urlsafe(48)
     registry = tmp_path / 'peer-keys.json'
@@ -75,6 +77,7 @@ def test_per_node_registry_is_authoritative(hub_config, tmp_path):
         peer_secret(hub_config, 'node-one')
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Linux hub registry uses POSIX operator ownership')
 def test_registry_rotation_invalidates_old_node_key(hub_config, tmp_path):
     registry = tmp_path / 'peer-keys.json'
     key = secrets.token_urlsafe(48)
@@ -114,6 +117,7 @@ def test_encrypted_rotation_requires_independent_identity_digest():
         seal('node-one', key, raw, '0' * 64, 'fixture-rotation', int(time.time()) + 60)
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Linux administrative registry generator requires POSIX ownership')
 def test_offline_rotation_artifacts_private_and_not_activated(tmp_path):
     spec = importlib.util.spec_from_file_location('prepare_rotation', Path(__file__).parents[1] / 'scripts/security/prepare-peer-rotation.py')
     module = importlib.util.module_from_spec(spec)

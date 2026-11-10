@@ -18,8 +18,11 @@ if ($VerifyParent) {
 }
 if ($Directory) { $acl = New-Object Security.AccessControl.DirectorySecurity }
 else { $acl = New-Object Security.AccessControl.FileSecurity }
+$before = Get-Acl -LiteralPath $LiteralPath
+if ($before.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $OwnerSid) {
+    throw 'Selected private path must already belong to the verified owner'
+}
 $acl.SetAccessRuleProtection($true, $false)
-$acl.SetOwner((New-Object Security.Principal.SecurityIdentifier($OwnerSid)))
 foreach ($sid in $allowed) {
     $identity = New-Object Security.Principal.SecurityIdentifier($sid)
     if ($Directory) {
@@ -28,8 +31,9 @@ foreach ($sid in $allowed) {
     } else { $rule = New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow') }
     $acl.AddAccessRule($rule)
 }
-# Persist only the modified owner/DACL sections. Set-Acl may request SACL
-# privileges even though this operation does not change audit policy.
+# Modify only the DACL. Rewriting even an unchanged owner requests WRITE_OWNER,
+# which an ordinary owning account need not have. Ownership is verified above
+# and again below; this helper never takes ownership or changes audit policy.
 if ($Directory) { [IO.Directory]::SetAccessControl($LiteralPath,$acl) }
 else { [IO.File]::SetAccessControl($LiteralPath,$acl) }
 $observed = Get-Acl -LiteralPath $LiteralPath
@@ -44,4 +48,4 @@ foreach ($sid in $allowed) {
     $matching = @($observed.Access | Where-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq $sid -and $_.FileSystemRights -eq [Security.AccessControl.FileSystemRights]::FullControl })
     if ($matching.Count -ne 1) { throw 'Required private ACL grant missing' }
 }
-if ($observed.Owner -ne $acl.Owner) { throw 'Private ACL owner verification failed' }
+if ($observed.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $OwnerSid) { throw 'Private ACL owner verification failed' }

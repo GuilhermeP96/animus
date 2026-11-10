@@ -32,6 +32,14 @@ class RecoveryError(Exception):
     pass
 
 
+def windows_powershell_env():
+    # A Python child of PowerShell 7 inherits its module search path. Windows
+    # PowerShell 5.1 must discover its own inbox Security module, not PS7 DLLs.
+    # This affects this child process only, without changing profiles/policy.
+    return {key: value for key, value in os.environ.items()
+            if key.casefold() != 'psmodulepath'}
+
+
 def safe_path(path: Path, exists=True) -> Path:
     path = Path(path).absolute()
     if path.resolve() != path or (exists and not path.is_file()):
@@ -50,7 +58,8 @@ def protect(path: Path, owner_sid: str | None = None, directory=False):
                    str(HERE / 'Protect-PrivateState.ps1'), '-LiteralPath', str(path), '-OwnerSid', owner_sid]
         if directory:
             command.append('-Directory')
-        result = subprocess.run(command, capture_output=True, timeout=30)
+        result = subprocess.run(command, capture_output=True, timeout=30,
+                                env=windows_powershell_env())
         if result.returncode:
             raise RecoveryError('Private Windows ACL could not be established')
     else:
@@ -64,7 +73,8 @@ def verify_parent(path: Path, owner_sid):
     if os.name == 'nt':
         result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File',
              str(HERE / 'Protect-PrivateState.ps1'), '-LiteralPath', str(path),
-             '-OwnerSid', owner_sid or '', '-VerifyParent'], capture_output=True, timeout=30)
+             '-OwnerSid', owner_sid or '', '-VerifyParent'], capture_output=True, timeout=30,
+             env=windows_powershell_env())
         if result.returncode:
             raise RecoveryError('Parent ACL permits unsafe mutation')
 

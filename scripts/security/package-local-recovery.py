@@ -22,7 +22,9 @@ def package(destination):
     for name, relative in paths.items():
         tracked = subprocess.check_output(['git', '-C', str(ROOT), 'show', revision + ':' + relative], stderr=subprocess.DEVNULL)
         source = ROOT / relative
-        if source.resolve() != source or source.read_bytes() != tracked:
+        # Git's Windows checkout may expand LF to CRLF. Package the committed
+        # bytes, allowing only that text newline transformation in the checkout.
+        if source.resolve() != source or source.read_bytes().replace(b'\r\n', b'\n') != tracked.replace(b'\r\n', b'\n'):
             raise ValueError('Package source must exactly match committed tracked blobs')
         entries[name] = tracked
     manifest = {'version': 1, 'source_commit': revision, 'expires_when': 'runtime_prepare_plus_60_to_3600_seconds',

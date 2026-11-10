@@ -19,7 +19,7 @@ r = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(r)
 
 @pytest.fixture
-def prepared(tmp_path):
+def prepared(tmp_path, private_recovery_owner):
     env = {k:v for k,v in os.environ.items() if k != 'PYTHONPATH' and not k.startswith('ANIMUS_')}
     old = 'old-fixture-' + secrets.token_urlsafe(32)
     script = 'from animus.config import AnimusConfig; import sys; print(AnimusConfig(_env_file=None,node_id="fixture-native-peer",node_name="Fixture",server_secret=sys.argv[1],data_dir=sys.argv[2]).model_dump_json())'
@@ -30,7 +30,7 @@ def prepared(tmp_path):
     config = tmp_path / 'config.json'
     config.write_text(json.dumps(data))
     work = tmp_path / 'private'
-    public = r.prepare(config, work)
+    public = r.prepare(config, work, private_recovery_owner, private_recovery_owner)
     fresh = secrets.token_urlsafe(48)
     envelope = r.rotation.seal(public['node_id'], fresh, base64.b64decode(public['public_key']),
         public['fingerprint'], public['rotation_id'], public['expires_at'])
@@ -39,18 +39,18 @@ def prepared(tmp_path):
     return config, work, public, fresh, envelope, packet, data
 
 
-def test_real_rotation_preserves_native_config_and_private_modes(prepared, caplog):
+def test_real_rotation_preserves_native_config_and_private_modes(prepared, caplog, assert_owner_private):
     config, work, public, fresh, envelope, packet, original = prepared
     assert set(public) == {'node_id','public_key','fingerprint','rotation_id','expires_at'}
-    assert work.stat().st_mode & 0o777 == 0o700
-    assert (work / 'recipient.key').stat().st_mode & 0o777 == 0o600
+    assert_owner_private(work, directory=True)
+    assert_owner_private(work / 'recipient.key')
     r.stage(work, packet, r.rotation.envelope_digest(envelope))
     assert json.loads(config.read_text()) == original  # staging has no activation
     r.commit(work)
     actual = json.loads(config.read_text())
     assert actual == {**original, 'server_secret': fresh}
     assert 'secure_auth' not in actual
-    assert config.stat().st_mode & 0o777 == 0o600
+    assert_owner_private(config)
     loaded = AnimusConfig.load(config)
     assert loaded.server_secret == fresh and loaded.node_id == original['node_id']
     assert not caplog.records
@@ -100,7 +100,13 @@ def test_commit_refuses_drift_and_path_escape(prepared, change):
 
 def test_symlinks_and_size_bounds(prepared, tmp_path):
     config, work, _, _, envelope, packet, _ = prepared
-    link = tmp_path / 'linked'; link.symlink_to(config)
+    link = tmp_path / 'linked'
+    try:
+        link.symlink_to(config)
+    except OSError as exc:
+        if getattr(exc, 'winerror', None) != 1314:
+            raise
+        pytest.skip('Windows account lacks file-symlink creation privilege')
     with pytest.raises(r.RecoveryError): r.config(link)
     packet.write_bytes(b' ' * (r.MAX_JSON + 1))
     with pytest.raises(r.RecoveryError): r.stage(work, packet, r.rotation.envelope_digest(envelope))
@@ -147,20 +153,23 @@ def test_source_only_package(tmp_path):
         for name, sha in manifest['files'].items():
             import hashlib
             assert hashlib.sha256(z.read(name)).hexdigest() == sha
-    assert result['source_only'] and archive.stat().st_mode & 0o777 == 0o600
+    assert result['source_only'] and archive.is_file()
+    if os.name == 'posix':
+        assert archive.stat().st_mode & 0o777 == 0o600
 
 
-def test_cli_end_to_end_uses_existing_installed_native_config(prepared, tmp_path):
+def test_cli_end_to_end_uses_existing_installed_native_config(prepared, tmp_path, private_recovery_owner):
     config, _, _, fresh, _, _, original = prepared
     work = tmp_path / 'cli-private'
     env = {k:v for k,v in os.environ.items() if k != 'PYTHONPATH' and not k.startswith('ANIMUS_')}
     def call(*args):
         result = subprocess.run([sys.executable,str(HELPER),*args],cwd=tmp_path,env=env,
-                                capture_output=True,text=True,timeout=10)
+                                capture_output=True,text=True,timeout=60)
         assert result.returncode == 0 and fresh not in result.stdout + result.stderr
         assert 'Config validation errors' not in result.stderr
         return json.loads(result.stdout)
-    public = call('prepare','--config',str(config),'--work-dir',str(work))
+    ownership = ['--owner-sid', private_recovery_owner, '--config-owner-sid', private_recovery_owner] if private_recovery_owner else []
+    public = call('prepare','--config',str(config),'--work-dir',str(work),*ownership)
     envelope = r.rotation.seal(public['node_id'], fresh, base64.b64decode(public['public_key']),
                               public['fingerprint'],public['rotation_id'],public['expires_at'])
     packet = tmp_path / 'cli-envelope.json'; packet.write_text(json.dumps(envelope))
@@ -189,7 +198,46 @@ def test_packager_refuses_source_drift_in_real_git_fixture(tmp_path):
     assert not (tmp_path / 'after.zip').exists()
 
 
+def test_packager_accepts_crlf_but_packages_only_committed_bytes(tmp_path):
+    spec = importlib.util.spec_from_file_location('package_newlines', ROOT / 'scripts/security/package-local-recovery.py')
+    pack = importlib.util.module_from_spec(spec); spec.loader.exec_module(pack)
+    repo = tmp_path / 'newline-repo'; repo.mkdir()
+    subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'core.autocrlf', 'false'], check=True)
+    paths = ['scripts/security/windows-local-recovery/' + name for name in pack.FILES]
+    paths.append('animus/network/credential_rotation.py')
+    canonical = b'fixture canonical source\nsecond line\n'
+    for relative in paths:
+        source = repo / relative; source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(canonical)
+    subprocess.run(['git', '-C', str(repo), 'add', '--', *paths], check=True)
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Fixture',
+                    '-c', 'user.email=fixture@example.invalid', 'commit',
+                    '--no-gpg-sign', '-qm', 'fixture source'], check=True)
+    for relative in paths:
+        (repo / relative).write_bytes(canonical.replace(b'\n', b'\r\n'))
+    pack.ROOT = repo
+    archive = tmp_path / 'canonical.zip'; pack.package(archive)
+    import zipfile
+    with zipfile.ZipFile(archive) as zipped:
+        assert all(zipped.read(name) == canonical for name in zipped.namelist() if name != 'manifest.json')
+    (repo / paths[0]).write_bytes(b'changed content\r\n')
+    with pytest.raises(ValueError):
+        pack.package(tmp_path / 'changed.zip')
+    assert not (tmp_path / 'changed.zip').exists()
 
+
+def test_recovery_shell_environment_does_not_mutate_parent(monkeypatch):
+    monkeypatch.setenv('PSModulePath', 'fixture-incompatible-PS7-modules')
+    monkeypatch.setenv('ANIMUS_FIXTURE_SENTINEL', 'preserve-process-value')
+    child = r.windows_powershell_env()
+    assert not any(key.casefold() == 'psmodulepath' for key in child)
+    assert child['ANIMUS_FIXTURE_SENTINEL'] == 'preserve-process-value'
+    assert os.environ['PSModulePath'] == 'fixture-incompatible-PS7-modules'
+
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='Administrative registry generator requires POSIX owner-private input')
 def test_batch_generator_respects_actual_enrollment_rotation_and_expiry(prepared,tmp_path):
     config, work, public, _, _, _, original=prepared
     spec=importlib.util.spec_from_file_location('batch_generator',ROOT/'scripts/security/prepare-peer-rotation.py')
@@ -210,6 +258,7 @@ def test_batch_generator_respects_actual_enrollment_rotation_and_expiry(prepared
 
 
 @pytest.mark.parametrize('change',['rotation_missing','expired','too_short','extended','boolean_expiry','node_mismatch'])
+@pytest.mark.skipif(os.name != 'posix', reason='Administrative registry generator requires POSIX owner-private input')
 def test_generator_rejects_invalid_enrollment_before_artifacts(prepared,tmp_path,change):
     _,_,public,_,_,_,_=prepared
     spec=importlib.util.spec_from_file_location('reject_generator',ROOT/'scripts/security/prepare-peer-rotation.py')

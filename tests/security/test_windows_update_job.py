@@ -34,11 +34,21 @@ def test_wrong_package_identity_version_refused(tmp_path,name,version):
     with pytest.raises(ValueError): verified_local_wheel(package,'99.0.0')
 
 
-def test_wheel_links_and_ambiguous_metadata_refused(tmp_path):
-    good=wheel(tmp_path/'good.whl'); link=tmp_path/'link.whl'; link.symlink_to(good)
-    with pytest.raises(ValueError): verified_local_wheel(link,'99.0.0')
+def test_ambiguous_wheel_metadata_refused(tmp_path):
+    good=wheel(tmp_path/'good.whl')
     with zipfile.ZipFile(good,'a') as z: z.writestr('other.dist-info/METADATA','Name: animus\nVersion:99.0.0')
     with pytest.raises(ValueError): verified_local_wheel(good,'99.0.0')
+
+
+def test_wheel_links_refused(tmp_path):
+    good=wheel(tmp_path/'good.whl'); link=tmp_path/'link.whl'
+    try:
+        link.symlink_to(good)
+    except OSError as exc:
+        if getattr(exc, 'winerror', None) != 1314:
+            raise
+        pytest.skip('Windows account lacks file-symlink creation privilege')
+    with pytest.raises(ValueError): verified_local_wheel(link,'99.0.0')
 
 
 def test_external_update_path_and_node_drift_refused(tmp_path):

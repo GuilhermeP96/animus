@@ -81,7 +81,9 @@ def test_actual_exclusive_lock_is_bounded_and_safe(populated_engine):
         start = time.monotonic()
         with pytest.raises(StatsUnavailable) as failure:
             populated_engine.get_stats()
-        assert time.monotonic() - start < 1
+        # sqlite busy_timeout is per lock wait, not a whole-call deadline.
+        # Several Windows VFS lock waits must still fit the query's real budget.
+        assert time.monotonic() - start < index_module._STATS_QUERY_TIMEOUT_SECONDS
         assert failure.value.reason == 'database_busy'
         assert failure.value.payload()['total_memories'] is None
     finally:

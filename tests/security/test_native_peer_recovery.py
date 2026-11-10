@@ -34,6 +34,7 @@ def test_existing_native_interpreter_command_attribution():
         n.validate_process([sys.executable,'-m','animus.cli','daemon'],sys.executable,'/usr/bin/retired-python')
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX native-service ownership gate; Windows uses SID/DACL recovery')
 def test_owner_private_regular_files_required(tmp_path):
     good=tmp_path/'private.json'; good.write_text('fixture'); good.chmod(0o600)
     assert n.private(good)==good
@@ -48,11 +49,13 @@ def test_owner_private_regular_files_required(tmp_path):
     with pytest.raises(n.r.RecoveryError): n.private(directory,directory=True)
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX native-service input gate; Windows recovery checks input bounds separately')
 def test_oversized_native_private_input_refused(tmp_path):
     path=tmp_path/'oversized'; path.write_bytes(b' '*(n.LIMIT+1)); path.chmod(0o600)
     with pytest.raises(n.r.RecoveryError): n.private(path)
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX chmod preservation; Windows uses DACLs')
 def test_unix_save_hardens_only_datadir_and_config_preserving_other_data(tmp_path):
     from animus.config import AnimusConfig
     data_dir=tmp_path/'native-data'; data_dir.mkdir(mode=0o755)
@@ -68,6 +71,7 @@ def test_unix_save_hardens_only_datadir_and_config_preserving_other_data(tmp_pat
     assert not list(data_dir.glob('.config-*.tmp'))
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX configuration save path')
 def test_unix_save_refuses_config_symlink_without_mutating_target(tmp_path):
     from animus.config import AnimusConfig
     data_dir=tmp_path/'native-data'; data_dir.mkdir(mode=0o700)
