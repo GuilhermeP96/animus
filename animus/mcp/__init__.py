@@ -659,12 +659,23 @@ class AnimusMCPServer:
             workspace=args.get("workspace"),
             limit=args.get("limit", 10),
         )
+        workspace_fallback = False
+        if (not results and args.get("workspace")
+                and 'scoped miss, global fallback' in hub):
+            results = self.engine.search(
+                query,
+                mem_type=args.get("type"),
+                limit=args.get("limit", 10),
+            )
+            workspace_fallback = bool(results)
 
         if not results:
             return f"No memories found for: {query}. Hub: {hub}"
 
         output = [f"🦅 Eagle Vision — {len(results)} memories found for '{query}':\n"]
         output.append(f'Hub retrieval: {hub}\n')
+        if workspace_fallback:
+            output.append('Workspace retrieval: global fallback after exact workspace miss\n')
         for i, r in enumerate(results, 1):
             metadata = json.loads(r.get("metadata") or "{}")
             location = ""

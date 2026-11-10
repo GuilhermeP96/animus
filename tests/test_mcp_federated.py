@@ -44,6 +44,17 @@ def test_scoped_hub_miss_retries_once_without_workspace(server):
     assert call.call_args_list[1].kwargs['workspace']==''
 
 
+def test_search_uses_global_results_after_scoped_hub_miss(server):
+    memory=Memory(type=MemoryType.CODEX_CHAT,source_node='remote-peer',workspace='repo',
+                  title='Broad checkout decision',content='unique_parent_workspace_decision')
+    with patch('animus.network.peer.AnimusPeer.remote_search',new_callable=AsyncMock,
+               side_effect=[[],[memory.model_dump(mode='json')]]):
+        output=server._tool_search({'query':'unique_parent_workspace_decision',
+                                    'workspace':'datano-agents','remote':True,'limit':2})
+    assert 'Broad checkout decision' in output
+    assert 'global fallback after exact workspace miss' in output
+
+
 def test_hub_failure_is_explicit_not_a_false_no_history(server):
     with patch('animus.network.peer.AnimusPeer.remote_search',new_callable=AsyncMock,side_effect=RuntimeError('unavailable')):
         output=server._tool_recall({'context':'recovery','remote':True})
