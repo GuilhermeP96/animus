@@ -122,6 +122,22 @@ def test_invalid_native_fields_never_disclose_cli_values(prepared):
 def test_source_only_package(tmp_path):
     spec = importlib.util.spec_from_file_location('package_recovery', ROOT / 'scripts/security/package-local-recovery.py')
     pack = importlib.util.module_from_spec(spec); spec.loader.exec_module(pack)
+    # CI validates a git-archive snapshot without .git. Exercise the packager's
+    # real Git provenance requirement in an owned fixture, never skip it or
+    # pretend an environment-provided SHA authenticates arbitrary source bytes.
+    repo = tmp_path / 'package-source'; repo.mkdir()
+    subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+    paths = ['scripts/security/windows-local-recovery/' + name for name in pack.FILES]
+    paths.append('animus/network/credential_rotation.py')
+    for relative in paths:
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / relative).read_bytes())
+    subprocess.run(['git', '-C', str(repo), 'add', '--', *paths], check=True)
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Fixture',
+                    '-c', 'user.email=fixture@example.invalid', 'commit',
+                    '--no-gpg-sign', '-qm', 'fixture source'], check=True)
+    pack.ROOT = repo
     archive = tmp_path / 'kit.zip'; result = pack.package(archive)
     import zipfile
     with zipfile.ZipFile(archive) as z:
