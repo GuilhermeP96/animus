@@ -8,6 +8,7 @@ import secrets
 import subprocess
 import sys
 import time
+import copy
 
 import pytest
 from animus.config import AnimusConfig
@@ -18,19 +19,53 @@ spec = importlib.util.spec_from_file_location('local_recovery', HELPER)
 r = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(r)
 
-@pytest.fixture
-def prepared(tmp_path, private_recovery_owner):
+def native_fixture_data(directory):
     env = {k:v for k,v in os.environ.items() if k != 'PYTHONPATH' and not k.startswith('ANIMUS_')}
     old = 'old-fixture-' + secrets.token_urlsafe(32)
     script = 'from animus.config import AnimusConfig; import sys; print(AnimusConfig(_env_file=None,node_id="fixture-native-peer",node_name="Fixture",server_secret=sys.argv[1],data_dir=sys.argv[2]).model_dump_json())'
-    fixture = subprocess.run([sys.executable,'-c',script,old,str(tmp_path / 'data')],cwd=tmp_path,
+    fixture = subprocess.run([sys.executable,'-c',script,old,str(directory / 'data')],cwd=directory,
                              env=env,capture_output=True,text=True,timeout=10)
     assert fixture.returncode == 0
-    data = json.loads(fixture.stdout)
-    config = tmp_path / 'config.json'
+    return json.loads(fixture.stdout)
+
+
+@pytest.fixture(scope='module')
+def windows_enrollment(tmp_path_factory, windows_owner_sid):
+    if os.name != 'nt':
+        return None
+    root = tmp_path_factory.mktemp('native-enrollment')
+    r.protect(root, windows_owner_sid, directory=True)
+    data = native_fixture_data(root)
+    config = root / 'config.json'; config.write_text(json.dumps(data))
+    work = root / 'private'
+    public = r.prepare(config, work, windows_owner_sid, windows_owner_sid)
+    return {'root': root, 'data': data, 'public': public,
+            'state': r.read_json(work / 'state.json'), 'key': (work / 'recipient.key').read_bytes()}
+
+
+@pytest.fixture
+def prepared(tmp_path, windows_owner_sid, windows_enrollment, request):
+    directory = tmp_path
+    if windows_enrollment:
+        # Copies inherit the already-verified private parent ACL. Protocol
+        # rejection cases need independent data, not repeated native enrollment.
+        directory = windows_enrollment['root'] / secrets.token_hex(12)
+        directory.mkdir()
+        data = copy.deepcopy(windows_enrollment['data'])
+        data['data_dir'] = str(directory / 'data')
+    else:
+        data = native_fixture_data(directory)
+    config = directory / 'config.json'
     config.write_text(json.dumps(data))
-    work = tmp_path / 'private'
-    public = r.prepare(config, work, private_recovery_owner, private_recovery_owner)
+    work = directory / 'private'
+    if windows_enrollment and not request.node.get_closest_marker('native_recovery'):
+        work.mkdir()
+        (work / 'recipient.key').write_bytes(windows_enrollment['key'])
+        state = {**windows_enrollment['state'], 'config_path': str(config)}
+        (work / 'state.json').write_text(json.dumps(state))
+        public = dict(windows_enrollment['public'])
+    else:
+        public = r.prepare(config, work, windows_owner_sid, windows_owner_sid)
     fresh = secrets.token_urlsafe(48)
     envelope = r.rotation.seal(public['node_id'], fresh, base64.b64decode(public['public_key']),
         public['fingerprint'], public['rotation_id'], public['expires_at'])
@@ -39,6 +74,7 @@ def prepared(tmp_path, private_recovery_owner):
     return config, work, public, fresh, envelope, packet, data
 
 
+@pytest.mark.native_recovery
 def test_real_rotation_preserves_native_config_and_private_modes(prepared, caplog, assert_owner_private):
     config, work, public, fresh, envelope, packet, original = prepared
     assert set(public) == {'node_id','public_key','fingerprint','rotation_id','expires_at'}
@@ -98,8 +134,14 @@ def test_commit_refuses_drift_and_path_escape(prepared, change):
     assert json.loads(config.read_text()) == original
 
 
-def test_symlinks_and_size_bounds(prepared, tmp_path):
-    config, work, _, _, envelope, packet, _ = prepared
+def test_oversized_recovery_packet_refused(prepared):
+    _, work, _, _, envelope, packet, _ = prepared
+    packet.write_bytes(b' ' * (r.MAX_JSON + 1))
+    with pytest.raises(r.RecoveryError): r.stage(work, packet, r.rotation.envelope_digest(envelope))
+
+
+def test_recovery_refuses_file_symlink(tmp_path):
+    config = tmp_path / 'config.json'; config.write_text('{}')
     link = tmp_path / 'linked'
     try:
         link.symlink_to(config)
@@ -107,9 +149,7 @@ def test_symlinks_and_size_bounds(prepared, tmp_path):
         if getattr(exc, 'winerror', None) != 1314:
             raise
         pytest.skip('Windows account lacks file-symlink creation privilege')
-    with pytest.raises(r.RecoveryError): r.config(link)
-    packet.write_bytes(b' ' * (r.MAX_JSON + 1))
-    with pytest.raises(r.RecoveryError): r.stage(work, packet, r.rotation.envelope_digest(envelope))
+    with pytest.raises(r.RecoveryError, match='non-link'): r.config(link)
 
 
 def test_invalid_native_fields_never_disclose_cli_values(prepared):
@@ -158,6 +198,7 @@ def test_source_only_package(tmp_path):
         assert archive.stat().st_mode & 0o777 == 0o600
 
 
+@pytest.mark.native_recovery
 def test_cli_end_to_end_uses_existing_installed_native_config(prepared, tmp_path, private_recovery_owner):
     config, _, _, fresh, _, _, original = prepared
     work = tmp_path / 'cli-private'
