@@ -1,0 +1,9 @@
+# Qualified security baseline, shared by the hub and native peer maintenance.
+# Install with: python -m pip install -c this-file animus-package.whl
+anyio>=4.14.2
+certifi>=2026.10.18
+cryptography>=50.0.0
+idna>=3.15
+pydantic-settings>=2.14.2
+python-multipart>=0.0.31
+starlette>=1.3.1

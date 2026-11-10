@@ -3,7 +3,7 @@ FROM ${PYTHON_BASE}
 
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
-    org.opencontainers.image.version="0.9.1" \
+    org.opencontainers.image.version="0.9.2" \
     maintainer="datano" \
     description="Animus Hub — AI Memory Synchronization Server"
 
@@ -27,7 +27,7 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: --require-hashes \
 # Python deps
 COPY pyproject.toml ./
 COPY . .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir -c scripts/docker/runtime-security.constraints.txt .
 RUN mkdir -p /opt/animus-packages \
     && pip wheel --no-cache-dir --no-deps --wheel-dir /opt/animus-packages .
 

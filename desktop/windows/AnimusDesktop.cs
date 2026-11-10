@@ -19,7 +19,7 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyTitle("Animus")]
 [assembly: System.Reflection.AssemblyProduct("Animus Peer Desktop")]
 [assembly: System.Reflection.AssemblyCompany("Guilherme Pinheiro / Datano")]
-[assembly: System.Reflection.AssemblyVersion("0.9.1.0")]
+[assembly: System.Reflection.AssemblyVersion("0.9.2.0")]
 
 namespace AnimusDesktop {
     static class Program {
@@ -293,11 +293,50 @@ namespace AnimusDesktop {
             } catch(Exception){Feedback="Instale o serviço do peer para iniciá-lo pela bandeja.";}
         }
         public void OpenFolder(){try{Process.Start(new ProcessStartInfo("explorer.exe", "\""+data+"\""){UseShellExecute=true});}catch(Exception){Feedback="Pasta local indisponível.";}}
+        public void OpenCredit(string url) {
+            // Fixed public destinations only. Never read a URL from IPC/config.
+            if(url!="https://datano.com.br/animus" && url!="https://github.com/GuilhermeP96/animus")return;
+            try {Process.Start(new ProcessStartInfo(url){UseShellExecute=true});}
+            catch(Exception){Feedback="Não foi possível abrir o navegador.";}
+        }
         protected override void ExitThreadCore(){timer.Stop();tray.Visible=false;tray.Dispose();if(current!=null)current.Dispose();form.Dispose();timer.Dispose();base.ExitThreadCore();}
+    }
+
+    class CreditLink : Button {
+        public readonly string Url;
+        string heading,caption; Image mark; bool hover;
+        public CreditLink(string title,string subtitle,string url,Image logo,Action<string> open) {
+            heading=title;caption=subtitle;Url=url;mark=logo;
+            FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;Cursor=Cursors.Hand;
+            BackColor=Brand.Surface;ForeColor=Brand.Text;TabStop=true;
+            AccessibleName=title+" — "+subtitle;AccessibleDescription=url;AccessibleRole=AccessibleRole.Link;
+            SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
+            MouseEnter+=(o,e)=>{hover=true;Invalidate();};MouseLeave+=(o,e)=>{hover=false;Invalidate();};
+            GotFocus+=(o,e)=>Invalidate();LostFocus+=(o,e)=>Invalidate();
+            Click+=(o,e)=>open(Url);
+        }
+        protected override void OnPaint(PaintEventArgs e) {
+            Graphics g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
+            Rectangle box=new Rectangle(0,0,Width-1,Height-1);
+            using(LinearGradientBrush background=new LinearGradientBrush(box,hover?Color.FromArgb(21,48,61):Color.FromArgb(18,30,42),Brand.Surface,20))g.FillRectangle(background,box);
+            using(Pen border=new Pen(hover||Focused?Brand.Cyan:Brand.Border,1))g.DrawRectangle(border,box);
+            using(SolidBrush halo=new SolidBrush(Color.FromArgb(20,Brand.Cyan)))g.FillEllipse(halo,7,10,38,38);
+            if(mark!=null) {
+                g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.DrawImage(mark,new Rectangle(10,13,32,32));
+            } else {
+                using(Font code=new Font("Consolas",12,FontStyle.Bold))using(SolidBrush ink=new SolidBrush(Brand.Text))g.DrawString("</>",code,ink,8,18);
+            }
+            using(Font title=new Font("Segoe UI",10,FontStyle.Bold))using(SolidBrush ink=new SolidBrush(hover?Color.White:Brand.Cyan))g.DrawString(heading,title,ink,52,9);
+            using(Font subtitle=new Font("Segoe UI",8))using(SolidBrush ink=new SolidBrush(Brand.Muted))g.DrawString(caption,subtitle,ink,52,31);
+            using(Pen arrow=new Pen(hover?Color.White:Brand.Muted,1.3f)) {
+                float x=Width-18,y=14;g.DrawLine(arrow,x-5,y+6,x+2,y-1);g.DrawLine(arrow,x-4,y-1,x+2,y-1);g.DrawLine(arrow,x+2,y-1,x+2,y+5);
+            }
+        }
     }
 
     class Dashboard : Form {
         TrayContext app; Snapshot snapshot=new Snapshot(); int frame;
+        Image datanoMark;
         Label state,description,version,lastSync,lastCycle,feedback,connection;
         Label[] values=new Label[3]; ListBox activity;
         public Dashboard(TrayContext context) {
@@ -308,9 +347,14 @@ namespace AnimusDesktop {
             AddLabel("A N I M U S",30,35,215,40,25,Brand.Text);
             AddLabel("MEMORY SYNCHRONIZATION",32,82,210,20,8,Brand.Muted);
             AddLabel("◈   Visão geral",32,162,204,35,12,Brand.Cyan);
-            AddLabel("Sua memória, conectada.",32,568,205,25,11,Brand.Text);
-            AddLabel("Guilherme Pinheiro / Datano",32,599,210,23,9,Brand.Gold);
-            AddLabel("OPEN SOURCE · AGPL-3.0",32,631,210,20,8,Brand.Muted);
+            AddLabel("Sua memória, conectada.",32,404,205,25,11,Brand.Text);
+            AddLabel("CRÉDITOS",32,448,210,20,8,Brand.Gold);
+            AddLabel("Guilherme Pinheiro",32,472,210,23,10,Brand.Text);
+            using(Stream logo=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AnimusDesktop.Datano.png"))
+            using(Image image=Image.FromStream(logo))datanoMark=new Bitmap(image);
+            Controls.Add(new CreditLink("Datano","Página do Animus","https://datano.com.br/animus",datanoMark,app.OpenCredit){Left=26,Top=510,Width=206,Height=58});
+            Controls.Add(new CreditLink("GitHub","Código e contribuições","https://github.com/GuilhermeP96/animus",null,app.OpenCredit){Left=26,Top=579,Width=206,Height=58});
+            AddLabel("OPEN SOURCE · AGPL-3.0",32,657,210,20,8,Brand.Muted);
             AddLabel("CENTRAL DO PEER",288,30,400,22,9,Brand.Gold);
             AddLabel("Memória em movimento.",286,62,680,45,27,Brand.Text);
             AddLabel("Uma visão do seu Animus, sem interromper o seu fluxo.",289,111,680,28,11,Brand.Muted);
@@ -355,7 +399,7 @@ namespace AnimusDesktop {
                 value.State=="idle"?"● Conectado ao hub · em segundo plano":"● Peer em execução · sincronização protegida";
             values[0].Text=value.Number("total_memories");values[1].Text=value.Number("unsynced");values[2].Text=value.Number("workspaces");
             lastSync.Text="Última conexão: "+LocalTime("last_success");lastCycle.Text="Último ciclo: "+LocalTime("last_cycle");
-            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.1";feedback.Text=app.Feedback;
+            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.2";feedback.Text=app.Feedback;
             activity.BeginUpdate();activity.Items.Clear();
             object raw;
             if(value.Values.TryGetValue("events",out raw) && raw is IEnumerable) {
@@ -392,6 +436,10 @@ namespace AnimusDesktop {
             using(Pen grid=new Pen(Color.FromArgb(18,Brand.Cyan)))for(int i=0;i<9;i++)g.DrawLine(grid,298+i*18,164,298+i*18,279);
             Brand.Triangle(g,new RectangleF(316,165,116,116),Brand.ColorFor(snapshot.State),frame,snapshot.State=="syncing" || snapshot.State=="mcp");
             if(snapshot.State=="mcp" && snapshot.PeerState=="syncing")using(Pen ring=new Pen(Brand.Cyan,2))g.DrawArc(ring,308,162,132,122,frame*12,80);
+        }
+        protected override void Dispose(bool disposing) {
+            base.Dispose(disposing);
+            if(disposing && datanoMark!=null){datanoMark.Dispose();datanoMark=null;}
         }
     }
 }

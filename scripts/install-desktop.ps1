@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$PackageDirectory,
     [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedSha256,
-    [string]$DataDirectory=(Join-Path $env:USERPROFILE '.animus')
+    [string]$DataDirectory=(Join-Path $env:USERPROFILE '.animus'),
+    [switch]$DesktopOnly
 )
 $ErrorActionPreference='Stop'
 # ASCII script, binary copies and explicit UTF-8 IPC. No credential changes.
@@ -25,7 +26,7 @@ $config=Join-Path $data 'config.json';$configHash=(Get-FileHash -LiteralPath $co
 $checkpoints=Join-Path $data ('desktop\checkpoints\'+[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')+'-'+[Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($checkpoints) | Out-Null
 [IO.File]::WriteAllText((Join-Path $checkpoints 'daemon-task.xml'),(Export-ScheduledTask -TaskName AnimusPeerDaemon),[Text.Encoding]::Unicode)
-$desktop=Join-Path $data 'desktop\0.9.1'
+$desktop=Join-Path $data 'desktop\0.9.2'
 [IO.Directory]::CreateDirectory($desktop) | Out-Null
 if((Get-Item -LiteralPath $desktop).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Desktop reparse refused'}
 $acl=Get-Acl -LiteralPath $desktop
@@ -48,10 +49,12 @@ if(Test-Path -LiteralPath $exe){
 }else{Copy-Item -LiteralPath $source -Destination $exe}
 Copy-Item -LiteralPath (Join-Path $PackageDirectory 'LICENSE'),(Join-Path $PackageDirectory 'NOTICE') -Destination $desktop
 # Preserve task settings/triggers/principal; change only the native interpreter.
-Stop-ScheduledTask -TaskName AnimusPeerDaemon
-$action=New-ScheduledTaskAction -Execute $python -Argument $task.Actions[0].Arguments -WorkingDirectory $data
-Set-ScheduledTask -TaskName AnimusPeerDaemon -Action $action | Out-Null
-Start-ScheduledTask -TaskName AnimusPeerDaemon
+if(-not $DesktopOnly){
+    Stop-ScheduledTask -TaskName AnimusPeerDaemon
+    $action=New-ScheduledTaskAction -Execute $python -Argument $task.Actions[0].Arguments -WorkingDirectory $data
+    Set-ScheduledTask -TaskName AnimusPeerDaemon -Action $action | Out-Null
+    Start-ScheduledTask -TaskName AnimusPeerDaemon
+}
 $trayAction=New-ScheduledTaskAction -Execute $exe -Argument ('--background --data-dir "'+$data+'"') -WorkingDirectory $data
 $trigger=New-ScheduledTaskTrigger -AtLogOn -User $sid.Value
 $principal=New-ScheduledTaskPrincipal -UserId $sid.Value -LogonType Interactive -RunLevel Limited
@@ -64,4 +67,4 @@ foreach($base in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFol
 }
 Start-ScheduledTask -TaskName AnimusPeerTray
 if((Get-FileHash -LiteralPath $config).Hash -ne $configHash){throw 'Configuration changed during install'}
-[pscustomobject]@{version='0.9.1';config_preserved=$true;daemon_interpreter='pythonw.exe';tray_task='AnimusPeerTray';exe_sha256=(Get-FileHash -LiteralPath $exe).Hash} | ConvertTo-Json -Compress
+[pscustomobject]@{version='0.9.2';config_preserved=$true;desktop_only=[bool]$DesktopOnly;daemon_interpreter=[IO.Path]::GetFileName((Get-ScheduledTask -TaskName AnimusPeerDaemon).Actions[0].Execute);tray_task='AnimusPeerTray';exe_sha256=(Get-FileHash -LiteralPath $exe).Hash} | ConvertTo-Json -Compress

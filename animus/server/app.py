@@ -298,6 +298,15 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    from .security_headers import SECURITY_HEADERS
+
+    response = await call_next(request)
+    response.headers.update(SECURITY_HEADERS)
+    return response
+
+
 # ── Auth Dependency ──
 
 async def verify_peer(request: Request) -> str:

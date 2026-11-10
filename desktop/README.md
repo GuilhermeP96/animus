@@ -1,4 +1,9 @@
-# Animus Desktop 0.9.1
+# Animus Desktop 0.9.2
+
+Os créditos incluem a marca vetorial oficial da Datano, incorporada ao app,
+com links diretos para a página do Animus e seu repositório GitHub. Não há
+download de imagens em tempo de execução. `-DesktopOnly` no instalador permite
+atualizar só a interface de um peer existente, preservando sua tarefa de daemon.
 
 O ícone do aplicativo contém dez resoluções nativas de 16 a 256 px, com alpha
 32 bits e espessuras ajustadas para tamanhos pequenos. A bandeja renderiza na

@@ -7,7 +7,9 @@ import assert from 'node:assert/strict';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.TURNSTILE_PLAYWRIGHT_PACKAGE||'@playwright/test');
-const html=execFileSync(process.env.ANIMUS_TEST_PYTHON||'python3',['-c',"import sys;from jinja2 import Environment;print(Environment(autoescape=True).from_string(open(sys.argv[1]).read()).render(error=None,turnstile={'siteKey':'fixture-public'}))",root+'animus/server/templates/login.html'],{encoding:'utf8'});
+const pythonEnv={...process.env,PYTHONIOENCODING:'utf-8'};
+const html=execFileSync(process.env.ANIMUS_TEST_PYTHON||'python3',['-c',"import sys;from jinja2 import Environment;print(Environment(autoescape=True).from_string(open(sys.argv[1],encoding='utf-8').read()).render(error=None,turnstile={'siteKey':'fixture-public'}))",root+'animus/server/templates/login.html'],{encoding:'utf8',env:pythonEnv});
+const csp=execFileSync(process.env.ANIMUS_TEST_PYTHON||'python3',['-c','from animus.server.security_headers import CONTENT_SECURITY_POLICY;print(CONTENT_SECURITY_POLICY)'],{cwd:root,encoding:'utf8',env:pythonEnv}).trim();
 const assets={'/login-security.js':readFileSync(root+'animus/server/static/login-security.js','utf8')};
 const entry='/login',endpoint='/login',formSelector='form[data-turnstile-login]',userSelector='#username',passwordSelector='#password',tokenField='cf-turnstile-response',native=true;
 const base='http://127.0.0.1:4199';
@@ -35,7 +37,7 @@ try{
     return route.fulfill({status:rejected?403:200,contentType:'application/json',body:JSON.stringify(rejected?{error:'Seus dados foram preservados; tente novamente.',detail:'Seus dados foram preservados; tente novamente.',csrf:'fixture-fresh-csrf'}:{username:'fixture',role:'user',redirect:'/done'})});
    }
    if(url.pathname==='/done')return route.fulfill({contentType:'text/html',body:'<p>Authorized fixture</p>'});
-   return route.fulfill({contentType:'text/html',body:html});
+   return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':csp},body:html});
   });
   await page.goto(base+entry);const form=page.locator(formSelector);
   await form.locator(userSelector).fill('fixture');await form.locator(passwordSelector).fill('fixture-password-12');
