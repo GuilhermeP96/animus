@@ -547,4 +547,3 @@ O reparo de transcrições anteriores à versão 0.4.8 é opcional. Para um banc
 importado que precise desse reparo, faça backup e habilite
 `ANIMUS_REPAIR_LEGACY_TRANSCRIPTS=1` durante uma inicialização de manutenção.
 Remova a opção depois que o reparo terminar.
-
