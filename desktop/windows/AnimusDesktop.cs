@@ -19,7 +19,7 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyTitle("Animus")]
 [assembly: System.Reflection.AssemblyProduct("Animus Peer Desktop")]
 [assembly: System.Reflection.AssemblyCompany("Guilherme Pinheiro / Datano")]
-[assembly: System.Reflection.AssemblyVersion("0.9.4.0")]
+[assembly: System.Reflection.AssemblyVersion("0.9.5.0")]
 
 namespace AnimusDesktop {
     static class Program {
@@ -241,7 +241,7 @@ namespace AnimusDesktop {
     }
 
     class TrayContext : ApplicationContext {
-        NotifyIcon tray; Icon current; Dashboard form;
+        NotifyIcon tray; Icon current; Dashboard form; KnowledgeWindow knowledge;
         System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
         string data,capture; EventWaitHandle show,exit; int frame=0;
         public Snapshot Latest=new Snapshot(); public string Feedback="";
@@ -250,6 +250,7 @@ namespace AnimusDesktop {
             form=new Dashboard(this); form.FormClosing+=(o,e)=>{if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;form.Hide();}};
             ContextMenuStrip menu=new ContextMenuStrip();
             menu.Items.Add("Abrir Animus",null,(o,e)=>Open());
+            menu.Items.Add("Conhecimento Obsidian",null,(o,e)=>OpenKnowledge());
             menu.Items.Add("Sincronizar agora",null,(o,e)=>Sync());
             menu.Items.Add("Iniciar peer",null,(o,e)=>StartPeer());
             menu.Items.Add(new ToolStripSeparator());
@@ -293,13 +294,17 @@ namespace AnimusDesktop {
             } catch(Exception){Feedback="Instale o serviço do peer para iniciá-lo pela bandeja.";}
         }
         public void OpenFolder(){try{Process.Start(new ProcessStartInfo("explorer.exe", "\""+data+"\""){UseShellExecute=true});}catch(Exception){Feedback="Pasta local indisponível.";}}
+        public void OpenKnowledge() {
+            if(knowledge==null||knowledge.IsDisposed)knowledge=new KnowledgeWindow(data);
+            knowledge.Show();knowledge.BringToFront();knowledge.Activate();
+        }
         public void OpenCredit(string url) {
             // Fixed public destinations only. Never read a URL from IPC/config.
             if(url!="https://datano.com.br/animus" && url!="https://github.com/GuilhermeP96/animus")return;
             try {Process.Start(new ProcessStartInfo(url){UseShellExecute=true});}
             catch(Exception){Feedback="Não foi possível abrir o navegador.";}
         }
-        protected override void ExitThreadCore(){timer.Stop();tray.Visible=false;tray.Dispose();if(current!=null)current.Dispose();form.Dispose();timer.Dispose();base.ExitThreadCore();}
+        protected override void ExitThreadCore(){if(knowledge!=null&&!knowledge.IsDisposed&&!knowledge.ConfirmExit())return;timer.Stop();tray.Visible=false;tray.Dispose();if(current!=null)current.Dispose();if(knowledge!=null)knowledge.Dispose();form.Dispose();timer.Dispose();base.ExitThreadCore();}
     }
 
     class CreditLink : Button {
@@ -347,6 +352,7 @@ namespace AnimusDesktop {
             AddLabel("A N I M U S",30,35,215,40,25,Brand.Text);
             AddLabel("MEMORY SYNCHRONIZATION",32,82,210,20,8,Brand.Muted);
             AddLabel("◈   Visão geral",32,162,204,35,12,Brand.Cyan);
+            AddButton("Conhecimento Obsidian",30,216,206,(o,e)=>app.OpenKnowledge());
             AddLabel("Sua memória, conectada.",32,404,205,25,11,Brand.Text);
             AddLabel("CRÉDITOS",32,448,210,20,8,Brand.Gold);
             AddLabel("Guilherme Pinheiro",32,472,210,23,10,Brand.Text);
@@ -399,7 +405,7 @@ namespace AnimusDesktop {
                 value.State=="idle"?"● Conectado ao hub · em segundo plano":"● Peer em execução · sincronização protegida";
             values[0].Text=value.Number("total_memories");values[1].Text=value.Number("unsynced");values[2].Text=value.Number("workspaces");
             lastSync.Text="Última conexão: "+LocalTime("last_success");lastCycle.Text="Último ciclo: "+LocalTime("last_cycle");
-            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.4";feedback.Text=app.Feedback;
+            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.5";feedback.Text=app.Feedback;
             activity.BeginUpdate();activity.Items.Clear();
             object raw;
             if(value.Values.TryGetValue("events",out raw) && raw is IEnumerable) {

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <link rel="stylesheet" href="vendor/highlight.css">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="preview.css">
+  <title>Animus · Leitura</title>
+</head>
+<body>
+  <header id="tools" aria-label="Controles da leitura">
+    <span>LEITURA</span><button id="doc-out" title="Diminuir texto" aria-label="Diminuir texto">−</button>
+    <output id="doc-scale" aria-live="polite">100%</output><button id="doc-in" title="Ampliar texto" aria-label="Ampliar texto">+</button>
+    <button id="doc-reset">Restaurar</button><button id="doc-expand">Tela ampla</button><small id="summary" aria-live="polite"></small>
+  </header>
+  <main id="content" aria-label="Documento Markdown"></main>
+  <dialog id="expanded"><div class="dialog-heading"><strong id="expanded-title">Visualização ampliada</strong><button id="close-expanded">Fechar · Esc</button></div><div id="expanded-body"></div></dialog>
+  <script src="vendor/markdown-it.min.js"></script>
+  <script src="vendor/markdown-it-footnote.min.js"></script>
+  <script src="vendor/markdown-it-task-lists.min.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script src="vendor/highlight.min.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/katex/auto-render.min.js"></script>
+  <script type="module" src="preview.mjs"></script>
+</body>
+</html>

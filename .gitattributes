@@ -1,0 +1,3 @@
+# Preserve upstream archive bytes: the preview dependency lock verifies hashes.
+desktop/windows/preview/vendor/** -text -whitespace
+desktop/windows/vendor/** -text -whitespace

@@ -12,6 +12,10 @@ from ..collector.models import Memory, MemoryType
 def extract_searchable_text(memory: Memory) -> str:
     """Extract clean searchable text from a memory."""
     content = memory.content
+    if memory.type == MemoryType.OBSIDIAN_NOTE:
+        # The memory payload is also the sync payload. FTS5 can tokenize Markdown
+        # directly; flattening it here irreversibly loses diagrams, code and tables.
+        return content
 
     if memory.type in (MemoryType.COPILOT_DEBUG, MemoryType.COPILOT_CHAT):
         content = _clean_log_content(content)
@@ -26,7 +30,6 @@ def extract_searchable_text(memory: Memory) -> str:
         MemoryType.PROMPT_FILE,
         MemoryType.AGENT_FILE,
         MemoryType.CLAUDE_MEMORY,
-        MemoryType.OBSIDIAN_NOTE,
     ):
         content = _clean_markdown(content)
     elif memory.type == MemoryType.MCP_KNOWLEDGE:
