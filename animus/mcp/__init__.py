@@ -69,7 +69,7 @@ class AnimusMCPServer:
                         "type": "string",
                         "description": (
                             "Filter by memory type: copilot_chat, copilot_debug, copilot_cli_chat, claude_chat, "
-                            "claude_memory, antigravity_chat, antigravity_memory, "
+                            "claude_memory, codex_chat, antigravity_chat, antigravity_memory, "
                             "antigravity_knowledge, workspace_memory, mcp_knowledge, session_note, "
                             "user_note, repo_note, prompt_file, agent_file"
                         ),
@@ -852,8 +852,10 @@ class AnimusMCPServer:
         memories.extend(self.antigravity_collector.collect_all())
         memories.extend(self.copilot_cli_collector.collect_all())
         memories.extend(obsidian_collector.collect_all())
-        memories.extend(getattr(self, 'codex_collector', CodexCollector(self.config)).collect_all())
+        codex_collector = getattr(self, 'codex_collector', CodexCollector(self.config))
+        memories.extend(codex_collector.collect_all())
         new_count = self.engine.index_batch(memories)
+        codex_collector.acknowledge()
         for vault, active_ids in obsidian_collector.seen_by_vault.items():
             self.engine.mark_obsidian_missing(vault, self.config.node_id, active_ids)
         stats = self.engine.stats_view()

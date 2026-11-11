@@ -431,8 +431,10 @@ def collect(verbose: bool = False):
     memories.extend(copilot_cli_collector.collect_all())
     memories.extend(obsidian_collector.collect_all())
     from .collector.codex import CodexCollector
-    memories.extend(CodexCollector(config).collect_all())
+    codex_collector = CodexCollector(config)
+    memories.extend(codex_collector.collect_all())
     new_count = engine.index_batch(memories)
+    codex_collector.acknowledge()
     missing_count = sum(
         engine.mark_obsidian_missing(vault, config.node_id, active_ids)
         for vault, active_ids in obsidian_collector.seen_by_vault.items()

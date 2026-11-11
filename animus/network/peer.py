@@ -74,6 +74,7 @@ class AnimusPeer:
         memories.extend(self.obsidian_collector.collect_all())
         memories.extend(self.codex_collector.collect_all())
         new_count = self.engine.index_batch(memories)
+        self.codex_collector.acknowledge()
         from ..knowledge_feedback import export_new_candidates
         exported = export_new_candidates(self.config, self.engine, memories)
         if exported:
