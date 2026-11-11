@@ -26,7 +26,7 @@ MAX_SOURCES = 20
 
 def workspace_path(value: str) -> str:
     value = str(value)
-    if re.match(r'^(?:[a-zA-Z]:[\\/]|\\\\)', value):
+    if re.match(r'^(?:[a-zA-Z]:[\\/]|[\\/]{2})', value):
         value = value.replace('/', '\\')
         if value.startswith('\\\\?\\UNC\\'):
             value = '\\\\' + value[8:]
