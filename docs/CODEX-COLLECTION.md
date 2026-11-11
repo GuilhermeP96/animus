@@ -47,6 +47,10 @@ They use the existing `codex_chat` wire type for hub compatibility, identified b
 They are split at paragraph boundaries; oversized paragraphs are excluded rather
 than truncated. Recognized secrets reject the whole summary before splitting.
 
+Hub pull marks incoming records as already synchronized. Remote note revisions
+therefore do not re-enter the upload queue or override a colliding local vault's
+authority.
+
 Checkpoints contain offsets and source metadata, not conversation bodies. They
 are stored atomically in the Animus data directory, separately from configuration
 and Codex state. Peer, CLI and MCP acknowledge checkpoints **after** successful

@@ -65,6 +65,30 @@ class TestSyncToHub:
 
 class TestPullFromHub:
     @pytest.mark.asyncio
+    async def test_remote_note_revisions_stay_synced_and_preserve_local_authority(self, peer):
+        peer.config.hub_url = 'https://hub.invalid'
+        note = Memory(type=MemoryType.OBSIDIAN_NOTE, source_node='remote-node',
+                      source_path='obsidian://fixture/note', content='Original remote note')
+        response = MagicMock(status_code=200)
+        with patch('animus.network.peer.httpx.AsyncClient') as client:
+            client.return_value.__aenter__.return_value.post = AsyncMock(return_value=response)
+            for text in ('Original remote note', 'Updated remote note'):
+                note.content = text
+                response.json.return_value = {'memories': [note.model_dump(mode='json')]}
+                assert await peer.pull_from_hub() == 1
+                assert peer.engine.get_unsynced() == []
+                assert peer.engine.conn.execute('SELECT content FROM memories WHERE id=?',
+                                                (note.id,)).fetchone()[0] == text
+            # A local vault is authoritative over a colliding remote projection.
+            local = note.model_copy(deep=True)
+            local.source_node = peer.config.node_id
+            local.content = 'Retained local edit'
+            assert peer.engine.index_memory(local)
+            assert await peer.pull_from_hub() == 0
+            assert peer.engine.conn.execute('SELECT content FROM memories WHERE id=?',
+                                            (note.id,)).fetchone()[0] == local.content
+
+    @pytest.mark.asyncio
     async def test_no_hub_returns_zero(self, peer):
         peer.config.hub_url = ""
         result = await peer.pull_from_hub()

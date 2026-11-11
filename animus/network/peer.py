@@ -178,7 +178,9 @@ class AnimusPeer:
                     self.status.event("pull_ok")
                     data = resp.json()
                     memories, _skipped = SyncProtocol.memories_from_push(data)
-                    new_count = self.engine.index_batch(memories)
+                    # These records already exist on the hub. Preserve remote
+                    # update authority and do not enqueue them for upload again.
+                    new_count = self.engine.index_batch(memories, synced=True)
                     logger.info("Pulled %d memories, %d new", len(memories), new_count)
                     return new_count
                 self.status.connection(False)
