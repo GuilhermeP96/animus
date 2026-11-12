@@ -19,9 +19,29 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyTitle("Animus")]
 [assembly: System.Reflection.AssemblyProduct("Animus Peer Desktop")]
 [assembly: System.Reflection.AssemblyCompany("Guilherme Pinheiro / Datano")]
-[assembly: System.Reflection.AssemblyVersion("0.9.5.0")]
+[assembly: System.Reflection.AssemblyVersion("0.9.5.1")]
 
 namespace AnimusDesktop {
+    // Keep native captions aligned with each form, without changing Windows settings.
+    class BrandedForm : Form {
+        [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window,int attribute,ref int value,int size);
+        void ApplyCaption() {
+            if(!IsHandleCreated)return;
+            try {
+                bool contrast=SystemInformation.HighContrast;
+                int dark=!contrast&&BackColor.GetBrightness()<.5f?1:0;
+                if(DwmSetWindowAttribute(Handle,20,ref dark,4)!=0)DwmSetWindowAttribute(Handle,19,ref dark,4);
+                int caption=contrast?-1:ColorTranslator.ToWin32(BackColor);
+                int text=contrast?-1:ColorTranslator.ToWin32(ForeColor);
+                int border=contrast?-1:ColorTranslator.ToWin32(Brand.Border);
+                DwmSetWindowAttribute(Handle,35,ref caption,4);DwmSetWindowAttribute(Handle,36,ref text,4);DwmSetWindowAttribute(Handle,34,ref border,4);
+            }catch(DllNotFoundException){}catch(EntryPointNotFoundException){}
+        }
+        protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);ApplyCaption();}
+        protected override void OnBackColorChanged(EventArgs e){base.OnBackColorChanged(e);ApplyCaption();}
+        protected override void OnForeColorChanged(EventArgs e){base.OnForeColorChanged(e);ApplyCaption();}
+        protected override void WndProc(ref Message message){base.WndProc(ref message);if(message.Msg==0x1A||message.Msg==0x31A||message.Msg==0x31E||message.Msg==6)ApplyCaption();}
+    }
     static class Program {
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
         [DllImport("shell32.dll", CharSet=CharSet.Unicode)] static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
@@ -304,7 +324,7 @@ namespace AnimusDesktop {
             try {Process.Start(new ProcessStartInfo(url){UseShellExecute=true});}
             catch(Exception){Feedback="Não foi possível abrir o navegador.";}
         }
-        protected override void ExitThreadCore(){if(knowledge!=null&&!knowledge.IsDisposed&&!knowledge.ConfirmExit())return;timer.Stop();tray.Visible=false;tray.Dispose();if(current!=null)current.Dispose();if(knowledge!=null)knowledge.Dispose();form.Dispose();timer.Dispose();base.ExitThreadCore();}
+        protected override void ExitThreadCore(){if(knowledge!=null&&!knowledge.IsDisposed&&!knowledge.ConfirmExit())return;timer.Stop();tray.Visible=false;tray.Dispose();if(current!=null)current.Dispose();if(knowledge!=null)knowledge.Dispose();KnowledgeReaderWindow.CloseAll();form.Dispose();timer.Dispose();base.ExitThreadCore();}
     }
 
     class CreditLink : Button {
@@ -339,7 +359,7 @@ namespace AnimusDesktop {
         }
     }
 
-    class Dashboard : Form {
+    class Dashboard : BrandedForm {
         TrayContext app; Snapshot snapshot=new Snapshot(); int frame;
         Image datanoMark;
         Label state,description,version,lastSync,lastCycle,feedback,connection;
@@ -405,7 +425,7 @@ namespace AnimusDesktop {
                 value.State=="idle"?"● Conectado ao hub · em segundo plano":"● Peer em execução · sincronização protegida";
             values[0].Text=value.Number("total_memories");values[1].Text=value.Number("unsynced");values[2].Text=value.Number("workspaces");
             lastSync.Text="Última conexão: "+LocalTime("last_success");lastCycle.Text="Último ciclo: "+LocalTime("last_cycle");
-            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.5";feedback.Text=app.Feedback;
+            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.5.1";feedback.Text=app.Feedback;
             activity.BeginUpdate();activity.Items.Clear();
             object raw;
             if(value.Values.TryGetValue("events",out raw) && raw is IEnumerable) {

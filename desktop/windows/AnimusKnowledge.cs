@@ -38,7 +38,44 @@ namespace AnimusDesktop {
         }
     }
 
-    class KnowledgeWindow : Form {
+    class KnowledgeReaderWindow : BrandedForm {
+        static readonly List<KnowledgeReaderWindow> windows=new List<KnowledgeReaderWindow>();
+        readonly string data;
+        readonly MarkdownPreview preview;
+        readonly Label heading;
+        bool busy;
+        public KnowledgeReaderWindow(string directory,string text,string vault,string path,string title,bool draft) {
+            data=directory;BackColor=Brand.Bg;ForeColor=Brand.Text;Font=new Font("Segoe UI",10);
+            Text="Animus · "+(String.IsNullOrEmpty(title)?"Leitura Markdown":title);
+            Size=new Size(1160,840);MinimumSize=new Size(640,420);StartPosition=FormStartPosition.CenterScreen;
+            FormBorderStyle=FormBorderStyle.Sizable;MaximizeBox=true;Icon=Brand.ApplicationIcon();
+            preview=new MarkdownPreview(data){Dock=DockStyle.Fill};Controls.Add(preview);
+            heading=new Label{Dock=DockStyle.Top,Height=34,Padding=new Padding(12,8,12,4),BackColor=Brand.Surface,ForeColor=Brand.Muted,AutoEllipsis=true};Controls.Add(heading);
+            heading.Text=draft?"Somente leitura · prévia do rascunho ainda não salvo":"Somente leitura · "+path;
+            KnowledgeWindow.AttachImages(preview,data);
+            preview.NoteRequested+=(v,p,reference,anchor)=>{
+                if(busy)return;busy=true;heading.Text="Carregando a fonte canônica…";
+                Dictionary<string,object> request=new Dictionary<string,object>{{"op","resolve"},{"vault",v},{"path",p},{"reference",reference}};
+                Task<Dictionary<string,object>> task=Task.Factory.StartNew(()=>KnowledgeBridge.Run(data,request));
+                task.ContinueWith(t=>{
+                    if(IsDisposed)return;
+                    try{BeginInvoke((MethodInvoker)delegate{
+                        busy=false;
+                        if(t.IsFaulted){heading.Text="Não foi possível abrir a nota. A leitura atual foi preservada.";return;}
+                        Dictionary<string,object> result=t.Result;
+                        if(!Object.Equals(result["ok"],true)){heading.Text="Referência indisponível ou ambígua. A leitura atual foi preservada.";return;}
+                        Dictionary<string,object> note=result["data"] as Dictionary<string,object>;
+                        string nextPath=Convert.ToString(note["path"]);Text="Animus · "+Convert.ToString(note["title"]);heading.Text="Somente leitura · "+nextPath;
+                        preview.SetDocument(Convert.ToString(note["body"]),Convert.ToString(note["vault"]),nextPath,anchor);
+                    });}catch(InvalidOperationException){}
+                });
+            };
+            preview.SetDocument(text,vault,path);windows.Add(this);FormClosed+=(o,e)=>windows.Remove(this);
+        }
+        public static void CloseAll(){foreach(KnowledgeReaderWindow window in windows.ToArray())window.Dispose();windows.Clear();}
+    }
+
+    class KnowledgeWindow : BrandedForm {
         readonly string data;
         ComboBox vault,statusFilter,state,sensitivity;
         TextBox query,title,project,body;
@@ -86,7 +123,8 @@ namespace AnimusDesktop {
             data=directory;Text="Animus · Conhecimento Obsidian";BackColor=Brand.Bg;ForeColor=Brand.Text;
             Font=new Font("Segoe UI",10);ClientSize=new Size(1180,800);MinimumSize=new Size(960,640);
             AutoScroll=true;AutoScrollMinSize=new Size(1180,800);KeyPreview=true;
-            MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;Icon=Brand.ApplicationIcon();
+            MaximizeBox=true;FormBorderStyle=FormBorderStyle.Sizable;SizeGripStyle=SizeGripStyle.Show;
+            StartPosition=FormStartPosition.CenterScreen;Icon=Brand.ApplicationIcon();
             LabelAt("A N I M U S  /  CONHECIMENTO",24,20,850,34,Brand.Text,21);
             LabelAt("O mesmo vault. Sua curadoria, conectada ao Animus.",26,60,1050,24,Brand.Muted,10);
             LabelAt("VAULT",26,99,150,18,Brand.Gold,8);
@@ -119,15 +157,12 @@ namespace AnimusDesktop {
                 Font=previewCode,AccessibleName="Texto Markdown da nota"};edit.Controls.Add(body);
             preview=new MarkdownPreview(data) {Dock=DockStyle.Fill};read.Controls.Add(preview);
             AttachPreview(preview,true);
-            preview.ExpandRequested+=()=>{
-                Form wide=new Form {Text="Animus · Leitura ampliada",BackColor=Brand.Bg,StartPosition=FormStartPosition.CenterParent,Size=new Size(1160,840),MinimumSize=new Size(700,500),Icon=Brand.ApplicationIcon()};
-                MarkdownPreview full=new MarkdownPreview(data) {Dock=DockStyle.Fill};wide.Controls.Add(full);AttachPreview(full,false);
-                full.SetDocument(body.Text,current==null?Convert.ToString(vault.SelectedItem):Get(current,"vault"),current==null?"":Get(current,"path"));wide.Show(this);
-            };
+            preview.ExpandRequested+=OpenReader;
             tabs.SelectedIndexChanged+=(o,e)=>{if(tabs.SelectedIndex==1)RenderPreview();};
             save=ButtonAt("Salvar no vault",420,730,170,(o,e)=>SaveNote());
             ButtonAt("Recarregar nota",602,730,170,(o,e)=>ReloadNote());
             ButtonAt("Sincronizar",784,730,150,(o,e)=>SyncNow());
+            Button reader=ButtonAt("Abrir só leitura ↗",946,730,206,(o,e)=>OpenReader());
             sync=LabelAt("",420,695,732,24,Brand.Muted,9);
             feedback=LabelAt("",420,772,732,22,Brand.Muted,9);
             title.TextChanged+=Changed;project.TextChanged+=Changed;body.TextChanged+=Changed;
@@ -140,7 +175,8 @@ namespace AnimusDesktop {
             FormClosing+=(o,e)=>{if(!ConfirmDiscard())e.Cancel=true;};
             KeyDown+=(o,e)=>{
                 if(busy)return;
-                if(e.Control&&e.KeyCode==Keys.S){e.SuppressKeyPress=true;SaveNote();}
+                if(e.Control&&e.Shift&&e.KeyCode==Keys.R){e.SuppressKeyPress=true;OpenReader();}
+                else if(e.Control&&e.KeyCode==Keys.S){e.SuppressKeyPress=true;SaveNote();}
                 else if(e.Control&&e.KeyCode==Keys.F){e.SuppressKeyPress=true;query.Focus();}
                 else if(e.Control&&e.KeyCode==Keys.N){e.SuppressKeyPress=true;NewNote();}
                 else if(e.KeyCode==Keys.F5){e.SuppressKeyPress=true;Search(false);}
@@ -148,6 +184,28 @@ namespace AnimusDesktop {
             Shown+=(o,e)=>LoadVaults();
             poll.Interval=7000;poll.Tick+=(o,e)=>{if(!busy&&current!=null&&!isNew)PollState();};poll.Start();
             SetEditable(false);
+            // A scrollable minimum canvas keeps controls usable on small screens;
+            // anchors inside it grow the reading/editor area on larger windows.
+            Panel canvas=new Panel {Size=new Size(1180,800),BackColor=Brand.Bg};
+            Control[] controls=new Control[Controls.Count];Controls.CopyTo(controls,0);
+            foreach(Control c in controls){
+                if(c.Left>=420&&c.Width>=700)c.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
+                if(c.Left>=694&&c.Top<150)c.Anchor=AnchorStyles.Top|AnchorStyles.Right;
+                if(c.Left>=766&&(c.Top==228||c.Top==249))c.Anchor=AnchorStyles.Top|AnchorStyles.Right;
+                if(c.Top>=695)c.Anchor=AnchorStyles.Bottom|AnchorStyles.Left|(c.Width>=700?AnchorStyles.Right:AnchorStyles.None);
+            }
+            query.Anchor=project.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
+            notes.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left;
+            tabs.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;
+            reader.Anchor=AnchorStyles.Bottom|AnchorStyles.Right;
+            Controls.Clear();canvas.Controls.AddRange(controls);Controls.Add(canvas);
+            ClientSizeChanged+=(o,e)=>canvas.Size=new Size(Math.Max(1180,ClientSize.Width),Math.Max(800,ClientSize.Height));
+            canvas.Size=new Size(Math.Max(1180,ClientSize.Width),Math.Max(800,ClientSize.Height));
+        }
+        void OpenReader(){
+            if(body.TextLength==0){feedback.Text="Selecione uma nota para abrir a leitura.";return;}
+            new KnowledgeReaderWindow(data,body.Text,current==null?Convert.ToString(vault.SelectedItem):Get(current,"vault"),
+                current==null?"":Get(current,"path"),title.Text,dirty||isNew).Show();
         }
         void AttachPreview(MarkdownPreview target,bool editor) {
             target.NoteRequested+=(v,p,reference,anchor)=>{
@@ -155,11 +213,14 @@ namespace AnimusDesktop {
                 Dictionary<string,object> r=Request("resolve");r["vault"]=v;r["path"]=p;r["reference"]=reference;
                 Call(r,note=>{if(editor)LoadNote(note);target.SetDocument(Get(note,"body"),Get(note,"vault"),Get(note,"path"),anchor);});
             };
+            AttachImages(target,data);
+        }
+        public static void AttachImages(MarkdownPreview target,string directory) {
             target.ImageRequested+=(doc,id,v,p,reference)=>{
                 Task.Factory.StartNew(()=>{
                     imagePool.Wait();string url="";
-                    try{if(!IsDisposed){Dictionary<string,object> r=Request("attachment");r["vault"]=v;r["path"]=p;r["reference"]=reference;Dictionary<string,object> result=KnowledgeBridge.Run(data,r);if(Flag(result,"ok"))url=Get(result["data"] as Dictionary<string,object>,"data_url");}}catch{}finally{imagePool.Release();}
-                    if(!IsDisposed&&!target.IsDisposed)try{BeginInvoke((MethodInvoker)delegate {if(!target.IsDisposed)target.ImageResult(doc,id,url);});}catch(InvalidOperationException){}
+                    try{if(!target.IsDisposed){Dictionary<string,object> r=Request("attachment");r["vault"]=v;r["path"]=p;r["reference"]=reference;Dictionary<string,object> result=KnowledgeBridge.Run(directory,r);if(Flag(result,"ok"))url=Get(result["data"] as Dictionary<string,object>,"data_url");}}catch{}finally{imagePool.Release();}
+                    if(!target.IsDisposed)try{target.BeginInvoke((MethodInvoker)delegate {if(!target.IsDisposed)target.ImageResult(doc,id,url);});}catch(InvalidOperationException){}
                 });
             };
         }

@@ -30,6 +30,18 @@ A leitura pode abrir em uma janela ampla. Diagramas podem ser exportados em SVG;
 tabelas oferecem rolagem, ampliação e cópia como CSV, e blocos de código têm
 cópia e quebra de linhas. Esses controles alteram a visualização, não a nota.
 
+Desde o Desktop 0.9.5.1, a janela Conhecimento pode ser redimensionada e
+maximizada: a lista e a área de edição/leitura crescem com o espaço disponível.
+Em telas menores, a rolagem mantém os controles acessíveis. A barra de título
+nativa acompanha as cores da janela, respeitando o alto contraste do Windows.
+
+O botão **Abrir só leitura** (Ctrl+Shift+R) e **Tela ampla** na prévia abrem uma
+janela independente, redimensionável e sem controles de edição. Ela permanece
+aberta ao fechar ou minimizar Conhecimento. Wikilinks, imagens e os controles
+dos diagramas continuam funcionando nessa janela. Uma prévia de texto ainda
+não salvo é identificada como rascunho; abrir a leitura não salva nem descarta
+o editor. Fechar a bandeja encerra também essas janelas.
+
 Wikilinks navegam pelas fontes canônicas; referências ambíguas são rejeitadas.
 Imagens locais são resolvidas somente dentro do vault, com limites de formato
 e tamanho. Imagens e outros recursos externos não são carregados automaticamente.
