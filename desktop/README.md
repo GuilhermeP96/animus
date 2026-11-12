@@ -1,4 +1,4 @@
-# Animus Desktop 0.9.5.2
+# Animus Desktop 0.9.5.3
 
 O painel **Conhecimento Obsidian** oferece busca, leitura e edição Markdown,
 classificação por projeto e curadoria de status no vault canônico do peer.

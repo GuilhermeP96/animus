@@ -78,6 +78,7 @@ namespace AnimusDesktop {
 
     class DarkButton : Button {
         bool hover,pressed;
+        public bool SelectedStyle;
         public DarkButton() {
             FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;UseVisualStyleBackColor=false;
             SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
@@ -88,10 +89,10 @@ namespace AnimusDesktop {
         protected override void OnMouseUp(MouseEventArgs e){pressed=false;Invalidate();base.OnMouseUp(e);}
         protected override void OnEnabledChanged(EventArgs e){Invalidate();base.OnEnabledChanged(e);}
         protected override void OnPaint(PaintEventArgs e) {
-            Color background=!Enabled?Color.FromArgb(14,21,29):pressed?Color.FromArgb(24,54,69):hover?Color.FromArgb(23,43,57):Brand.Surface;
+            Color background=!Enabled?Color.FromArgb(14,21,29):pressed?Color.FromArgb(24,54,69):SelectedStyle?Color.FromArgb(20,59,76):hover?Color.FromArgb(23,43,57):Brand.Surface;
             Color foreground=Enabled?Brand.Text:Color.FromArgb(116,137,158);
             using(SolidBrush brush=new SolidBrush(background))e.Graphics.FillRectangle(brush,ClientRectangle);
-            using(Pen pen=new Pen(Focused&&Enabled?Brand.Cyan:Brand.Border))e.Graphics.DrawRectangle(pen,0,0,Width-1,Height-1);
+            using(Pen pen=new Pen((Focused&&Enabled)||SelectedStyle?Brand.Cyan:Brand.Border))e.Graphics.DrawRectangle(pen,0,0,Width-1,Height-1);
             TextRenderer.DrawText(e.Graphics,Text,Font,ClientRectangle,foreground,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
             if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,new Rectangle(4,4,Width-8,Height-8),foreground,background);
         }
@@ -115,20 +116,34 @@ namespace AnimusDesktop {
         }
     }
 
-    class DarkTabControl : TabControl {
-        [DllImport("uxtheme.dll",CharSet=CharSet.Unicode)] static extern int SetWindowTheme(IntPtr handle,string application,string idList);
+    class DarkTabControl : UserControl {
+        readonly TableLayoutPanel header=new TableLayoutPanel();
+        readonly Panel content=new Panel();
+        readonly List<Control> pages=new List<Control>();
+        readonly List<DarkButton> buttons=new List<DarkButton>();
+        int selected=-1;
+        public event EventHandler SelectedIndexChanged;
         public DarkTabControl() {
-            DrawMode=TabDrawMode.OwnerDrawFixed;Appearance=TabAppearance.FlatButtons;
-            SizeMode=TabSizeMode.Fixed;ItemSize=new Size(150,30);Padding=new Point(12,4);BackColor=Brand.Bg;ForeColor=Brand.Text;
+            BackColor=Brand.Bg;ForeColor=Brand.Text;
+            content.Dock=DockStyle.Fill;content.BackColor=Brand.Surface;content.Padding=new Padding(2);
+            header.Dock=DockStyle.Top;header.Height=36;header.BackColor=Brand.Bg;header.ColumnCount=3;header.RowCount=1;
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333f));header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333f));header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.334f));
+            Controls.Add(content);Controls.Add(header);
         }
-        protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);try{SetWindowTheme(Handle,"","");}catch(DllNotFoundException){}}
-        protected override void OnDrawItem(DrawItemEventArgs e) {
-            Rectangle bounds=GetTabRect(e.Index);bool selected=SelectedIndex==e.Index;
-            Color background=selected?Color.FromArgb(21,42,55):Brand.Surface;
-            using(SolidBrush brush=new SolidBrush(background))e.Graphics.FillRectangle(brush,bounds);
-            using(Pen pen=new Pen(selected?Brand.Cyan:Brand.Border))e.Graphics.DrawRectangle(pen,bounds.X,bounds.Y,bounds.Width-1,bounds.Height-1);
-            TextRenderer.DrawText(e.Graphics,TabPages[e.Index].Text,Font,bounds,selected?Brand.Text:Brand.Muted,
-                TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+        public void AddPage(string title,Control page) {
+            int index=pages.Count;page.Dock=DockStyle.Fill;page.BackColor=Brand.Surface;page.Visible=false;content.Controls.Add(page);pages.Add(page);
+            DarkButton button=new DarkButton {Text=title,Dock=DockStyle.Fill,Margin=new Padding(index==0?0:4,0,0,4),AccessibleName=title,AccessibleRole=AccessibleRole.PageTab};
+            button.Click+=(o,e)=>SelectedIndex=index;buttons.Add(button);header.Controls.Add(button,index,0);
+            if(selected<0)SelectedIndex=0;
+        }
+        public int SelectedIndex {
+            get{return selected;}
+            set{
+                if(value<0||value>=pages.Count||value==selected)return;
+                selected=value;
+                for(int i=0;i<pages.Count;i++){pages[i].Visible=i==selected;buttons[i].SelectedStyle=i==selected;buttons[i].Invalidate();}
+                pages[selected].BringToFront();if(SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);
+            }
         }
     }
 
@@ -209,10 +224,10 @@ namespace AnimusDesktop {
             LabelAt("SENSIBILIDADE",966,228,190,18,Brand.Gold,8);sensitivity=Choice("Sensibilidade",966,249,186,new string[]{"publico","interno","restrito"});sensitivity.SelectedIndex=1;
             origin=LabelAt("Fonte: selecione uma nota.",420,287,732,32,Brand.Muted,9);
             tabs=new DarkTabControl {Left=420,Top=329,Width=732,Height=357,AccessibleName="Texto, leitura e grafo do vault"};
-            TabPage edit=new TabPage("Editar Markdown") {BackColor=Brand.Bg};
-            TabPage read=new TabPage("Leitura") {BackColor=Brand.Bg};
-            TabPage graph=new TabPage("Grafo do vault") {BackColor=Brand.Bg};
-            tabs.TabPages.Add(edit);tabs.TabPages.Add(read);tabs.TabPages.Add(graph);Controls.Add(tabs);
+            Panel edit=new Panel {BackColor=Brand.Surface};
+            Panel read=new Panel {BackColor=Brand.Surface};
+            Panel graph=new Panel {BackColor=Brand.Surface};
+            tabs.AddPage("Editar Markdown",edit);tabs.AddPage("Leitura",read);tabs.AddPage("Grafo do vault",graph);Controls.Add(tabs);
             body=new TextBox {Dock=DockStyle.Fill,Multiline=true,AcceptsReturn=true,AcceptsTab=true,ScrollBars=ScrollBars.Both,
                 WordWrap=false,MaxLength=512*1024,BackColor=Brand.Surface,ForeColor=Brand.Text,BorderStyle=BorderStyle.None,
                 Font=previewCode,AccessibleName="Texto Markdown da nota"};edit.Controls.Add(body);
@@ -222,7 +237,7 @@ namespace AnimusDesktop {
             graphPreview=new MarkdownPreview(data) {Dock=DockStyle.Fill};graph.Controls.Add(graphPreview);
             graphPreview.ExpandRequested+=OpenGraphReader;
             tabs.SelectedIndexChanged+=(o,e)=>{if(tabs.SelectedIndex==1)RenderPreview();else if(tabs.SelectedIndex==2)RenderGraphPreview();};
-            tabs.SelectedTab=read;
+            tabs.SelectedIndex=1;
             save=ButtonAt("Salvar no vault",420,730,170,(o,e)=>SaveNote());
             ButtonAt("Recarregar nota",602,730,170,(o,e)=>ReloadNote());
             ButtonAt("Sincronizar",784,730,150,(o,e)=>SyncNow());
@@ -423,12 +438,15 @@ namespace AnimusDesktop {
             if(vault.SelectedItem==null)return;
             Dictionary<string,object> r=VaultRequest("list");r["query"]=query.Text;r["status"]=statusFilter.SelectedIndex==0?"":Convert.ToString(statusFilter.SelectedItem);r["offset"]=0;r["limit"]=2000;
             Call(r,result=>{
-                loading=true;string selected=current==null?"":Get(current,"path");notes.Nodes.Clear();
-                List<Dictionary<string,object>> visible=new List<Dictionary<string,object>>();IEnumerable rows=result["notes"] as IEnumerable;
-                if(rows!=null)foreach(object item in rows) {
-                    Dictionary<string,object> note=item as Dictionary<string,object>;if(note==null)continue;
-                    visible.Add(note);AddTreeNote(note);
-                }
+                loading=true;string selected=current==null?"":Get(current,"path");List<Dictionary<string,object>> visible=new List<Dictionary<string,object>>();
+                notes.BeginUpdate();
+                try{
+                    notes.Nodes.Clear();IEnumerable rows=result["notes"] as IEnumerable;
+                    if(rows!=null)foreach(object item in rows) {
+                        Dictionary<string,object> note=item as Dictionary<string,object>;if(note==null)continue;
+                        visible.Add(note);AddTreeNote(note);
+                    }
+                }finally{notes.EndUpdate();}
                 RestoreTreeSelection(selected);
                 count.Text=Get(result,"total")+" notas"+(Flag(result,"has_more")?" · "+visible.Count+" carregadas":"")+(Flag(result,"truncated")?" · varredura limitada":"");
                 try{RenderGraph(visible);}catch(Exception){graphDocument="# Grafo do vault\n\nNão foi possível montar esta visualização. Refine a busca e tente novamente.";RenderGraphPreview();feedback.Text="A árvore foi carregada, mas o grafo deste recorte não pôde ser montado.";}
