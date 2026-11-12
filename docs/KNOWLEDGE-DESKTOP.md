@@ -8,11 +8,15 @@ outro vault, outro banco ou uma cópia editável paralela.
 ## Jornada
 
 1. Abra **Conhecimento Obsidian** na bandeja ou no painel principal.
-2. Escolha o vault, busque por texto/projeto e filtre por status.
+2. Escolha o vault, busque por texto/projeto e filtre por status. A navegação
+   acompanha as pastas do vault em uma árvore que pode ser expandida ou recolhida.
 3. Selecione uma nota para ler ou editar Markdown, título, projeto, status e
    sensibilidade. A aba Leitura renderiza Markdown/GFM com tabelas, listas de
    tarefas, notas de rodapé, callouts, código destacado e fórmulas matemáticas.
    Mermaid é renderizado localmente; HTML ativo e scripts da nota não são executados.
+   A aba **Leitura** é a visão inicial. A aba **Grafo do vault** projeta os
+   wikilinks das notas retornadas pela busca; para manter a interface responsiva,
+   a visualização mostra até 120 nós e orienta a refinar a busca quando necessário.
 4. Salve no vault. O Animus registra backup e auditoria, indexa a mesma nota e
    solicita o ciclo normal do daemon.
 5. A interface distingue arquivo ainda não indexado, edição pendente de envio e
@@ -22,6 +26,11 @@ Atalhos: Ctrl+F para buscar, Ctrl+S para salvar, Ctrl+N para nova nota e F5 para
 atualizar a lista. Em telas menores o painel oferece rolagem, preservando o acesso
 aos controles. Texto ainda não salvo permanece no editor durante consultas e só
 é descartado após confirmação.
+
+Os botões **Expandir tudo** e **Recolher** controlam somente a apresentação da
+árvore. A hierarquia, o grafo e seus filtros não movem, renomeiam ou reescrevem
+arquivos. A navegação carrega até 2.000 notas por consulta; vaults maiores
+continuam pesquisáveis por texto, projeto e status.
 
 Diagramas Mermaid e imagens têm controles de zoom, pan por arraste, ajuste à
 tela, tamanho original e visualização ampliada. Ctrl + roda aplica zoom no
@@ -34,6 +43,9 @@ Desde o Desktop 0.9.5.1, a janela Conhecimento pode ser redimensionada e
 maximizada: a lista e a área de edição/leitura crescem com o espaço disponível.
 Em telas menores, a rolagem mantém os controles acessíveis. A barra de título
 nativa acompanha as cores da janela, respeitando o alto contraste do Windows.
+Os controles da área de conhecimento usam a mesma paleta escura, inclusive
+árvore, listas suspensas, botões e abas, com estados de foco e desabilitado
+legíveis.
 
 O botão **Abrir só leitura** (Ctrl+Shift+R) e **Tela ampla** na prévia abrem uma
 janela independente, redimensionável e sem controles de edição. Ela permanece

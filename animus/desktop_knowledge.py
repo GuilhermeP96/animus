@@ -20,7 +20,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import unquote
 
-from .collector.obsidian import ObsidianCollector, memory_from_note, note_id, parse_frontmatter
+from .collector.obsidian import (
+    ObsidianCollector,
+    extract_links,
+    memory_from_note,
+    note_id,
+    parse_frontmatter,
+)
 from .config import AnimusConfig
 from .indexer.engine import IndexEngine
 from .obsidian import ObsidianManager, _atomic_write, _sensitive_findings, sanitize_title
@@ -29,6 +35,7 @@ MAX_NOTE_BYTES = 512 * 1024
 MAX_REQUEST_BYTES = 4 * 1024**2
 MAX_SCAN_BYTES = 24 * 1024**2
 MAX_FILES = 5000
+MAX_NAV_NOTES = 2000
 STATUSES = ("candidato", "curado", "verificado", "depreciado")
 SENSITIVITIES = ("publico", "interno", "restrito")
 IMAGE_TYPES = {
@@ -364,11 +371,12 @@ class KnowledgeService:
             else "unindexed",
         }
 
-    def list_notes(self, vault_name, query="", status="", offset=0):
+    def list_notes(self, vault_name, query="", status="", offset=0, limit=50):
         vault = self._vault(vault_name)
         if not isinstance(query, str) or len(query) > 200 or status not in ("", *STATUSES):
             raise ValueError("invalid filter")
         offset = max(0, min(int(offset), MAX_FILES))
+        limit = max(1, min(int(limit), MAX_NAV_NOTES))
         rows, scanned, used, truncated = [], 0, 0, False
         chain = {".animus", ".animus/exported", ".animus/exported/Conhecimento"}
         for directory, dirs, files in os.walk(vault.path, followlinks=False):
@@ -413,15 +421,22 @@ class KnowledgeService:
                         "projeto": project,
                         "status": current_status,
                         "warning": bool(warning),
+                        # The desktop graph is a bounded projection of canonical
+                        # Obsidian links, not a second index or copied vault.
+                        "links": [
+                            link
+                            for link in extract_links(body)
+                            if len(link) <= 160
+                        ][:4],
                     }
                 )
             if truncated:
                 break
         return {
-            "notes": rows[offset : offset + 50],
+            "notes": rows[offset : offset + limit],
             "total": len(rows),
             "offset": offset,
-            "has_more": len(rows) > offset + 50,
+            "has_more": len(rows) > offset + limit,
             "truncated": truncated,
         }
 
@@ -656,6 +671,7 @@ class KnowledgeService:
                 request.get("query", ""),
                 request.get("status", ""),
                 request.get("offset", 0),
+                request.get("limit", 50),
             )
         if operation == "read":
             return self.read(request.get("vault"), request.get("path"))

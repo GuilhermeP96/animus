@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -75,20 +76,77 @@ namespace AnimusDesktop {
         public static void CloseAll(){foreach(KnowledgeReaderWindow window in windows.ToArray())window.Dispose();windows.Clear();}
     }
 
+    class DarkButton : Button {
+        bool hover,pressed;
+        public DarkButton() {
+            FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;UseVisualStyleBackColor=false;
+            SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
+        }
+        protected override void OnMouseEnter(EventArgs e){hover=true;Invalidate();base.OnMouseEnter(e);}
+        protected override void OnMouseLeave(EventArgs e){hover=false;pressed=false;Invalidate();base.OnMouseLeave(e);}
+        protected override void OnMouseDown(MouseEventArgs e){pressed=true;Invalidate();base.OnMouseDown(e);}
+        protected override void OnMouseUp(MouseEventArgs e){pressed=false;Invalidate();base.OnMouseUp(e);}
+        protected override void OnEnabledChanged(EventArgs e){Invalidate();base.OnEnabledChanged(e);}
+        protected override void OnPaint(PaintEventArgs e) {
+            Color background=!Enabled?Color.FromArgb(14,21,29):pressed?Color.FromArgb(24,54,69):hover?Color.FromArgb(23,43,57):Brand.Surface;
+            Color foreground=Enabled?Brand.Text:Color.FromArgb(116,137,158);
+            using(SolidBrush brush=new SolidBrush(background))e.Graphics.FillRectangle(brush,ClientRectangle);
+            using(Pen pen=new Pen(Focused&&Enabled?Brand.Cyan:Brand.Border))e.Graphics.DrawRectangle(pen,0,0,Width-1,Height-1);
+            TextRenderer.DrawText(e.Graphics,Text,Font,ClientRectangle,foreground,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+            if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,new Rectangle(4,4,Width-8,Height-8),foreground,background);
+        }
+    }
+
+    class DarkComboBox : ComboBox {
+        [DllImport("uxtheme.dll",CharSet=CharSet.Unicode)] static extern int SetWindowTheme(IntPtr handle,string application,string idList);
+        public DarkComboBox() {
+            DrawMode=DrawMode.OwnerDrawFixed;FlatStyle=FlatStyle.Flat;ItemHeight=20;
+            BackColor=Brand.Surface;ForeColor=Brand.Text;
+        }
+        protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);try{SetWindowTheme(Handle,"","");}catch(DllNotFoundException){}}
+        protected override void OnDrawItem(DrawItemEventArgs e) {
+            if(e.Index<0)return;
+            bool selected=(e.State&DrawItemState.Selected)==DrawItemState.Selected;
+            Color background=selected?Color.FromArgb(20,73,96):Brand.Surface;
+            using(SolidBrush brush=new SolidBrush(background))e.Graphics.FillRectangle(brush,e.Bounds);
+            TextRenderer.DrawText(e.Graphics,GetItemText(Items[e.Index]),Font,e.Bounds,Brand.Text,
+                TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+            if((e.State&DrawItemState.Focus)==DrawItemState.Focus)e.DrawFocusRectangle();
+        }
+    }
+
+    class DarkTabControl : TabControl {
+        [DllImport("uxtheme.dll",CharSet=CharSet.Unicode)] static extern int SetWindowTheme(IntPtr handle,string application,string idList);
+        public DarkTabControl() {
+            DrawMode=TabDrawMode.OwnerDrawFixed;Appearance=TabAppearance.FlatButtons;
+            SizeMode=TabSizeMode.Fixed;ItemSize=new Size(150,30);Padding=new Point(12,4);BackColor=Brand.Bg;ForeColor=Brand.Text;
+        }
+        protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);try{SetWindowTheme(Handle,"","");}catch(DllNotFoundException){}}
+        protected override void OnDrawItem(DrawItemEventArgs e) {
+            Rectangle bounds=GetTabRect(e.Index);bool selected=SelectedIndex==e.Index;
+            Color background=selected?Color.FromArgb(21,42,55):Brand.Surface;
+            using(SolidBrush brush=new SolidBrush(background))e.Graphics.FillRectangle(brush,bounds);
+            using(Pen pen=new Pen(selected?Brand.Cyan:Brand.Border))e.Graphics.DrawRectangle(pen,bounds.X,bounds.Y,bounds.Width-1,bounds.Height-1);
+            TextRenderer.DrawText(e.Graphics,TabPages[e.Index].Text,Font,bounds,selected?Brand.Text:Brand.Muted,
+                TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+        }
+    }
+
     class KnowledgeWindow : BrandedForm {
         readonly string data;
         ComboBox vault,statusFilter,state,sensitivity;
         TextBox query,title,project,body;
-        MarkdownPreview preview;
+        MarkdownPreview preview,graphPreview;
         static readonly SemaphoreSlim imagePool=new SemaphoreSlim(2);
-        ListView notes;
+        TreeView notes;
+        DarkTabControl tabs;
         Label count,origin,feedback,sync;
-        Button save,next,previous;
+        Button save;
         readonly List<Control> actions=new List<Control>();
         Dictionary<string,object> current;
-        bool dirty,busy,loading,isNew,hasMore;
+        bool dirty,busy,loading,isNew;
         string lastVault="";
-        int offset;
+        string graphDocument="";
         System.Windows.Forms.Timer poll=new System.Windows.Forms.Timer();
         Font previewCode=new Font("Consolas",10);
         public bool HasUnsaved {get{return dirty;}}
@@ -106,16 +164,16 @@ namespace AnimusDesktop {
                 BackColor=Color.Transparent,Font=new Font("Segoe UI",size),AccessibleName=text};Controls.Add(l);return l;
         }
         Button ButtonAt(string text,int x,int y,int width,EventHandler handler) {
-            Button b=new Button {Text=text,Left=x,Top=y,Width=width,Height=34,FlatStyle=FlatStyle.Flat,
+            Button b=new DarkButton {Text=text,Left=x,Top=y,Width=width,Height=34,
                 BackColor=Brand.Surface,ForeColor=Brand.Cyan,AccessibleName=text};
-            b.FlatAppearance.BorderColor=Brand.Border;b.Click+=handler;Controls.Add(b);actions.Add(b);return b;
+            b.Click+=handler;Controls.Add(b);actions.Add(b);return b;
         }
         TextBox TextAt(string name,int x,int y,int width) {
             TextBox t=new TextBox {Left=x,Top=y,Width=width,BackColor=Brand.Surface,ForeColor=Brand.Text,
                 BorderStyle=BorderStyle.FixedSingle,AccessibleName=name};Controls.Add(t);return t;
         }
         ComboBox Choice(string name,int x,int y,int width,string[] choices) {
-            ComboBox c=new ComboBox {Left=x,Top=y,Width=width,DropDownStyle=ComboBoxStyle.DropDownList,
+            ComboBox c=new DarkComboBox {Left=x,Top=y,Width=width,DropDownStyle=ComboBoxStyle.DropDownList,
                 BackColor=Brand.Surface,ForeColor=Brand.Text,AccessibleName=name};c.Items.AddRange(choices);
             if(c.Items.Count>0)c.SelectedIndex=0;Controls.Add(c);return c;
         }
@@ -135,30 +193,36 @@ namespace AnimusDesktop {
             statusFilter=Choice("Filtrar status",694,120,140,new string[]{"Todos","candidato","curado","verificado","depreciado"});
             ButtonAt("Buscar",848,116,112,(o,e)=>Search(true));
             ButtonAt("Atualizar índice",972,116,180,(o,e)=>RefreshIndex());
-            notes=new ListView {Left=26,Top=171,Width=370,Height=515,View=View.Details,FullRowSelect=true,
-                HideSelection=false,MultiSelect=false,BackColor=Brand.Surface,ForeColor=Brand.Text,
-                BorderStyle=BorderStyle.FixedSingle,AccessibleName="Notas do vault"};
-            notes.Columns.Add("Nota",248);notes.Columns.Add("Status",108);Controls.Add(notes);
-            notes.SelectedIndexChanged+=(o,e)=>{if(!busy&&!loading&&notes.SelectedItems.Count==1)OpenSelected();};
+            notes=new TreeView {Left=26,Top=171,Width=370,Height=515,HideSelection=false,
+                BackColor=Brand.Surface,ForeColor=Brand.Text,LineColor=Brand.Border,ShowLines=true,
+                ShowPlusMinus=true,ShowRootLines=true,ShowNodeToolTips=true,ItemHeight=24,
+                BorderStyle=BorderStyle.FixedSingle,AccessibleName="Hierarquia de notas do vault"};
+            Controls.Add(notes);
+            notes.AfterSelect+=(o,e)=>{if(!busy&&!loading&&e.Node!=null&&e.Node.Tag is Dictionary<string,object>)OpenSelected();};
             count=LabelAt("Escolha um vault para começar.",26,695,370,25,Brand.Muted,9);
-            previous=ButtonAt("Anterior",26,730,100,(o,e)=>{offset=Math.Max(0,offset-50);Search(false);});
-            next=ButtonAt("Próxima",138,730,100,(o,e)=>{offset+=50;Search(false);});
-            ButtonAt("Nova nota",250,730,146,(o,e)=>NewNote());
+            ButtonAt("Expandir tudo",26,730,116,(o,e)=>notes.ExpandAll());
+            ButtonAt("Recolher",150,730,100,(o,e)=>notes.CollapseAll());
+            ButtonAt("Nova nota",258,730,138,(o,e)=>NewNote());
             LabelAt("TÍTULO",420,170,320,18,Brand.Gold,8);title=TextAt("Título da nota",420,191,732);title.MaxLength=180;
             LabelAt("PROJETO",420,228,300,18,Brand.Gold,8);project=TextAt("Projeto",420,249,330);project.MaxLength=180;
             LabelAt("STATUS",766,228,180,18,Brand.Gold,8);state=Choice("Status de curadoria",766,249,184,new string[]{"candidato","curado","verificado","depreciado"});
             LabelAt("SENSIBILIDADE",966,228,190,18,Brand.Gold,8);sensitivity=Choice("Sensibilidade",966,249,186,new string[]{"publico","interno","restrito"});sensitivity.SelectedIndex=1;
             origin=LabelAt("Fonte: selecione uma nota.",420,287,732,32,Brand.Muted,9);
-            TabControl tabs=new TabControl {Left=420,Top=329,Width=732,Height=357,AccessibleName="Texto e leitura da nota"};
+            tabs=new DarkTabControl {Left=420,Top=329,Width=732,Height=357,AccessibleName="Texto, leitura e grafo do vault"};
             TabPage edit=new TabPage("Editar Markdown") {BackColor=Brand.Bg};
-            TabPage read=new TabPage("Leitura") {BackColor=Brand.Bg};tabs.TabPages.Add(edit);tabs.TabPages.Add(read);Controls.Add(tabs);
+            TabPage read=new TabPage("Leitura") {BackColor=Brand.Bg};
+            TabPage graph=new TabPage("Grafo do vault") {BackColor=Brand.Bg};
+            tabs.TabPages.Add(edit);tabs.TabPages.Add(read);tabs.TabPages.Add(graph);Controls.Add(tabs);
             body=new TextBox {Dock=DockStyle.Fill,Multiline=true,AcceptsReturn=true,AcceptsTab=true,ScrollBars=ScrollBars.Both,
                 WordWrap=false,MaxLength=512*1024,BackColor=Brand.Surface,ForeColor=Brand.Text,BorderStyle=BorderStyle.None,
                 Font=previewCode,AccessibleName="Texto Markdown da nota"};edit.Controls.Add(body);
             preview=new MarkdownPreview(data) {Dock=DockStyle.Fill};read.Controls.Add(preview);
             AttachPreview(preview,true);
             preview.ExpandRequested+=OpenReader;
-            tabs.SelectedIndexChanged+=(o,e)=>{if(tabs.SelectedIndex==1)RenderPreview();};
+            graphPreview=new MarkdownPreview(data) {Dock=DockStyle.Fill};graph.Controls.Add(graphPreview);
+            graphPreview.ExpandRequested+=OpenGraphReader;
+            tabs.SelectedIndexChanged+=(o,e)=>{if(tabs.SelectedIndex==1)RenderPreview();else if(tabs.SelectedIndex==2)RenderGraphPreview();};
+            tabs.SelectedTab=read;
             save=ButtonAt("Salvar no vault",420,730,170,(o,e)=>SaveNote());
             ButtonAt("Recarregar nota",602,730,170,(o,e)=>ReloadNote());
             ButtonAt("Sincronizar",784,730,150,(o,e)=>SyncNow());
@@ -207,6 +271,10 @@ namespace AnimusDesktop {
             new KnowledgeReaderWindow(data,body.Text,current==null?Convert.ToString(vault.SelectedItem):Get(current,"vault"),
                 current==null?"":Get(current,"path"),title.Text,dirty||isNew).Show();
         }
+        void OpenGraphReader(){
+            if(String.IsNullOrEmpty(graphDocument)){feedback.Text="Busque notas para montar o grafo do vault.";return;}
+            new KnowledgeReaderWindow(data,graphDocument,Convert.ToString(vault.SelectedItem),"","Grafo do vault",false).Show();
+        }
         void AttachPreview(MarkdownPreview target,bool editor) {
             target.NoteRequested+=(v,p,reference,anchor)=>{
                 if(busy||(editor&&!ConfirmDiscard()))return;
@@ -239,7 +307,6 @@ namespace AnimusDesktop {
             foreach(Control c in actions)c.Enabled=true;
             vault.Enabled=query.Enabled=statusFilter.Enabled=notes.Enabled=true;
             SetEditable(isNew||Flag(current,"editable"));if(isNew)state.Enabled=sensitivity.Enabled=false;
-            previous.Enabled=offset>0;next.Enabled=hasMore;
         }
         void Call(Dictionary<string,object> request,Action<Dictionary<string,object>> success) {
             if(busy)return;busy=true;foreach(Control c in actions)c.Enabled=false;feedback.Text="Aguarde…";
@@ -267,23 +334,110 @@ namespace AnimusDesktop {
                 Search(true);
             });
         }
+        TreeNode Folder(TreeNodeCollection nodes,string label,string key) {
+            string name="folder:"+key;
+            if(nodes.ContainsKey(name))return nodes[name];
+            TreeNode folder=new TreeNode(label){Name=name,ForeColor=Brand.Cyan,ToolTipText=key};nodes.Add(folder);return folder;
+        }
+        void AddTreeNote(Dictionary<string,object> note) {
+            string path=Get(note,"path").Replace('\\','/');string[] parts=path.Split(new[]{'/'},StringSplitOptions.RemoveEmptyEntries);
+            TreeNodeCollection level=notes.Nodes;string prefix="";
+            if(parts.Length==1){TreeNode root=Folder(level,"Raiz","/");level=root.Nodes;}
+            else for(int i=0;i<parts.Length-1;i++){
+                prefix+=(prefix.Length==0?"":"/")+parts[i];TreeNode folder=Folder(level,parts[i],prefix);level=folder.Nodes;
+            }
+            string status=Get(note,"status","candidato");
+            TreeNode leaf=new TreeNode(Get(note,"title")+"  ·  "+status){Name="note:"+path,Tag=note,ToolTipText=path,
+                ForeColor=status=="verificado"?Color.FromArgb(92,224,177):status=="curado"?Color.FromArgb(119,190,255):status=="depreciado"?Color.FromArgb(143,151,160):Brand.Text};
+            level.Add(leaf);
+        }
+        TreeNode FindNote(TreeNodeCollection nodes,string path) {
+            string key="note:"+path;
+            foreach(TreeNode node in nodes){if(node.Name==key)return node;TreeNode found=FindNote(node.Nodes,path);if(found!=null)return found;}
+            return null;
+        }
+        void RestoreTreeSelection(string path) {
+            if(String.IsNullOrEmpty(path)){foreach(TreeNode node in notes.Nodes)node.Collapse();return;}
+            TreeNode selected=FindNote(notes.Nodes,path);if(selected==null)return;
+            selected.EnsureVisible();notes.SelectedNode=selected;
+        }
+        static string NormalizeGraphKey(string value) {
+            if(String.IsNullOrEmpty(value))return "";
+            try{value=Uri.UnescapeDataString(value);}catch(UriFormatException){}
+            value=value.Split('#')[0].Replace('\\','/').Trim();
+            if(value.EndsWith(".md",StringComparison.OrdinalIgnoreCase))value=value.Substring(0,value.Length-3);
+            List<string> parts=new List<string>();
+            foreach(string raw in value.Split(new[]{'/'},StringSplitOptions.RemoveEmptyEntries)){
+                if(raw==".")continue;if(raw==".."){if(parts.Count>0)parts.RemoveAt(parts.Count-1);continue;}parts.Add(raw);
+            }
+            return String.Join("/",parts.ToArray()).ToLowerInvariant();
+        }
+        static void RegisterAlias(Dictionary<string,int> aliases,string alias,int index) {
+            alias=NormalizeGraphKey(alias);if(alias.Length==0)return;
+            int existing;if(aliases.TryGetValue(alias,out existing)&&existing!=index)aliases[alias]=-1;else if(!aliases.ContainsKey(alias))aliases[alias]=index;
+        }
+        static int ResolveGraphLink(Dictionary<string,int> aliases,string current,string reference) {
+            string path=NormalizeGraphKey(current),link=NormalizeGraphKey(reference),parent="";int slash=path.LastIndexOf('/');if(slash>=0)parent=path.Substring(0,slash);
+            string[] candidates={NormalizeGraphKey((parent.Length==0?"":parent+"/")+link),link,link.Contains("/")?link:NormalizeGraphKey(link)};
+            foreach(string candidate in candidates){int value;if(candidate.Length>0&&aliases.TryGetValue(candidate,out value)&&value>=0)return value;}
+            return -1;
+        }
+        static string MermaidLabel(string value) {
+            value=(value??"").Replace("\\","/").Replace("\"","'").Replace("[","(").Replace("]",")").Replace("\r"," ").Replace("\n"," ");
+            return value.Length>64?value.Substring(0,61)+"...":value;
+        }
+        void RenderGraph(List<Dictionary<string,object>> rows) {
+            StringBuilder markdown=new StringBuilder();markdown.AppendLine("# Grafo do vault").AppendLine();
+            if(rows.Count==0){markdown.AppendLine("Nenhuma nota corresponde aos filtros atuais.");graphDocument=markdown.ToString();RenderGraphPreview();return;}
+            Dictionary<string,int> aliases=new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
+            for(int i=0;i<rows.Count;i++){
+                string path=Get(rows[i],"path"),stem=Path.GetFileNameWithoutExtension(path.Replace('/','\\'));
+                RegisterAlias(aliases,path,i);RegisterAlias(aliases,stem,i);RegisterAlias(aliases,Get(rows[i],"title"),i);
+            }
+            List<Tuple<int,int>> edges=new List<Tuple<int,int>>();HashSet<string> seenEdges=new HashSet<string>();HashSet<int> included=new HashSet<int>();
+            for(int source=0;source<rows.Count&&edges.Count<240;source++){
+                object rawLinks;if(!rows[source].TryGetValue("links",out rawLinks))continue;IEnumerable links=rawLinks as IEnumerable;if(links==null)continue;
+                foreach(object raw in links){
+                    int target=ResolveGraphLink(aliases,Get(rows[source],"path"),Convert.ToString(raw));if(target<0||target==source)continue;
+                    int additional=(included.Contains(source)?0:1)+(included.Contains(target)?0:1);if(included.Count+additional>120)continue;
+                    string edge=source+">"+target;if(!seenEdges.Add(edge))continue;
+                    included.Add(source);included.Add(target);edges.Add(Tuple.Create(source,target));if(edges.Count>=240)break;
+                }
+            }
+            for(int i=0;i<rows.Count&&included.Count<Math.Min(40,rows.Count)&&included.Count<120;i++)included.Add(i);
+            List<int> order=new List<int>(included);order.Sort();Dictionary<int,int> ids=new Dictionary<int,int>();
+            markdown.AppendLine("Visão derivada dos wikilinks canônicos. Use a busca para reduzir o recorte quando o vault for grande.").AppendLine();
+            markdown.AppendLine("```mermaid").AppendLine("flowchart LR");
+            for(int i=0;i<order.Count;i++){int source=order[i];ids[source]=i;markdown.Append("n").Append(i).Append("[\"").Append(MermaidLabel(Get(rows[source],"title"))).AppendLine("\"]");}
+            foreach(Tuple<int,int> edge in edges)if(ids.ContainsKey(edge.Item1)&&ids.ContainsKey(edge.Item2))markdown.Append("n").Append(ids[edge.Item1]).Append(" --> n").Append(ids[edge.Item2]).AppendLine();
+            markdown.AppendLine("classDef candidato fill:#2b2414,stroke:#c8a84e,color:#e8f0f8");
+            markdown.AppendLine("classDef curado fill:#102d45,stroke:#77beff,color:#e8f0f8");
+            markdown.AppendLine("classDef verificado fill:#103c31,stroke:#5ce0b1,color:#e8f0f8");
+            markdown.AppendLine("classDef depreciado fill:#202830,stroke:#8f97a0,color:#b9c5d1");
+            for(int i=0;i<order.Count;i++){string status=Get(rows[order[i]],"status","candidato");if(status!="curado"&&status!="verificado"&&status!="depreciado")status="candidato";markdown.Append("class n").Append(i).Append(' ').Append(status).AppendLine();}
+            markdown.AppendLine("```").AppendLine().Append("Exibindo ").Append(order.Count).Append(" de ").Append(rows.Count).Append(" notas e ").Append(edges.Count).AppendLine(" vínculos no recorte atual.");
+            graphDocument=markdown.ToString();RenderGraphPreview();
+        }
+        void RenderGraphPreview(){graphPreview.SetDocument(graphDocument,Convert.ToString(vault.SelectedItem),"");}
         void Search(bool reset) {
             if(vault.SelectedItem==null)return;
-            if(reset)offset=0;
-            Dictionary<string,object> r=VaultRequest("list");r["query"]=query.Text;r["status"]=statusFilter.SelectedIndex==0?"":Convert.ToString(statusFilter.SelectedItem);r["offset"]=offset;
+            Dictionary<string,object> r=VaultRequest("list");r["query"]=query.Text;r["status"]=statusFilter.SelectedIndex==0?"":Convert.ToString(statusFilter.SelectedItem);r["offset"]=0;r["limit"]=2000;
             Call(r,result=>{
-                loading=true;notes.Items.Clear();IEnumerable rows=result["notes"] as IEnumerable;
+                loading=true;string selected=current==null?"":Get(current,"path");notes.Nodes.Clear();
+                List<Dictionary<string,object>> visible=new List<Dictionary<string,object>>();IEnumerable rows=result["notes"] as IEnumerable;
                 if(rows!=null)foreach(object item in rows) {
                     Dictionary<string,object> note=item as Dictionary<string,object>;if(note==null)continue;
-                    ListViewItem row=new ListViewItem(Get(note,"title"));row.SubItems.Add(Get(note,"status"));row.Tag=note;notes.Items.Add(row);
+                    visible.Add(note);AddTreeNote(note);
                 }
-                loading=false;count.Text=Get(result,"total")+" notas · página "+(offset/50+1)+(Flag(result,"truncated")?" · leitura limitada":"");
-                hasMore=Flag(result,"has_more");previous.Enabled=offset>0;next.Enabled=hasMore;
+                RestoreTreeSelection(selected);
+                count.Text=Get(result,"total")+" notas"+(Flag(result,"has_more")?" · "+visible.Count+" carregadas":"")+(Flag(result,"truncated")?" · varredura limitada":"");
+                try{RenderGraph(visible);}catch(Exception){graphDocument="# Grafo do vault\n\nNão foi possível montar esta visualização. Refine a busca e tente novamente.";RenderGraphPreview();feedback.Text="A árvore foi carregada, mas o grafo deste recorte não pôde ser montado.";}
+                loading=false;
             });
         }
         void OpenSelected() {
             if(!ConfirmDiscard())return;
-            Dictionary<string,object> note=notes.SelectedItems[0].Tag as Dictionary<string,object>;
+            Dictionary<string,object> note=notes.SelectedNode==null?null:notes.SelectedNode.Tag as Dictionary<string,object>;if(note==null)return;
             Dictionary<string,object> r=Request("read");r["vault"]=Get(note,"vault");r["path"]=Get(note,"path");Call(r,LoadNote);
         }
         void LoadNote(Dictionary<string,object> note) {
@@ -342,7 +496,7 @@ namespace AnimusDesktop {
             preview.SetDocument(body.Text,current==null?Convert.ToString(vault.SelectedItem):Get(current,"vault"),current==null?"":Get(current,"path"));
         }
         protected override void Dispose(bool disposing) {
-            if(disposing){poll.Stop();poll.Dispose();previewCode.Dispose();}
+            if(disposing){poll.Stop();poll.Dispose();previewCode.Dispose();if(graphPreview!=null)graphPreview.Dispose();}
             base.Dispose(disposing);
         }
     }

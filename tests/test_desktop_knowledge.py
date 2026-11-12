@@ -243,6 +243,24 @@ def test_pagination_and_visible_scan_budget(knowledge, monkeypatch):
     assert s.list_notes("canonical")["truncated"]
 
 
+def test_navigation_can_load_hierarchy_and_bounded_graph_links(knowledge):
+    s, vault = knowledge
+    write(vault, "Area/Source.md", body="See [[Target]] and [nested](../Target.md).")
+    write(vault, "Target.md", body="Canonical target")
+    result = s.list_notes("canonical", limit=2000)
+    assert len(result["notes"]) == 2 and not result["has_more"]
+    source = next(note for note in result["notes"] if note["path"] == "Area/Source.md")
+    assert source["links"] == ["Target", "../Target.md"]
+
+
+def test_navigation_limit_is_bounded(knowledge):
+    s, vault = knowledge
+    for i in range(4):
+        write(vault, f"Group/Note{i}.md")
+    result = s.list_notes("canonical", limit=2)
+    assert len(result["notes"]) == 2 and result["has_more"] and result["total"] == 4
+
+
 def test_sync_uses_existing_authenticated_channel_and_marks_note_received(knowledge):
     s, _ = knowledge
     note = s.create("canonical", "Sync test", "Safe canonical body")["note"]
