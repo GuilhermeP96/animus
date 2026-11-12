@@ -9,4 +9,4 @@ that one; the updater uses this one to compare against the hub's declared
 ``latest``).
 """
 
-__version__ = "0.9.5"
+__version__ = "0.9.5.3"
