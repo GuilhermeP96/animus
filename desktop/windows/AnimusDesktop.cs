@@ -19,7 +19,7 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyTitle("Animus")]
 [assembly: System.Reflection.AssemblyProduct("Animus Peer Desktop")]
 [assembly: System.Reflection.AssemblyCompany("Guilherme Pinheiro / Datano")]
-[assembly: System.Reflection.AssemblyVersion("0.9.5.1")]
+[assembly: System.Reflection.AssemblyVersion("0.9.5.2")]
 
 namespace AnimusDesktop {
     // Keep native captions aligned with each form, without changing Windows settings.
@@ -425,7 +425,7 @@ namespace AnimusDesktop {
                 value.State=="idle"?"● Conectado ao hub · em segundo plano":"● Peer em execução · sincronização protegida";
             values[0].Text=value.Number("total_memories");values[1].Text=value.Number("unsynced");values[2].Text=value.Number("workspaces");
             lastSync.Text="Última conexão: "+LocalTime("last_success");lastCycle.Text="Último ciclo: "+LocalTime("last_cycle");
-            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.5.1";feedback.Text=app.Feedback;
+            version.Text="Peer "+value.Get("version","—")+" · Desktop 0.9.5.2";feedback.Text=app.Feedback;
             activity.BeginUpdate();activity.Items.Clear();
             object raw;
             if(value.Values.TryGetValue("events",out raw) && raw is IEnumerable) {

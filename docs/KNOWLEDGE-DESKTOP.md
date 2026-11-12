@@ -45,7 +45,8 @@ Em telas menores, a rolagem mantém os controles acessíveis. A barra de título
 nativa acompanha as cores da janela, respeitando o alto contraste do Windows.
 Os controles da área de conhecimento usam a mesma paleta escura, inclusive
 árvore, listas suspensas, botões e abas, com estados de foco e desabilitado
-legíveis.
+legíveis. A árvore hierárquica, o grafo e a leitura inicial integram o Desktop
+0.9.5.2.
 
 O botão **Abrir só leitura** (Ctrl+Shift+R) e **Tela ampla** na prévia abrem uma
 janela independente, redimensionável e sem controles de edição. Ela permanece
