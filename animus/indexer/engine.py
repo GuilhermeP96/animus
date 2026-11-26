@@ -22,6 +22,27 @@ logger = logging.getLogger("animus.indexer")
 _FTS_QUERY_TIMEOUT_SECONDS = 5
 # Progress handler callback interval (SQLite VM instructions between checks).
 _PROGRESS_HANDLER_INTERVAL = 10_000
+
+# The sqlite result-code constants and sqlite_errorcode only exist on
+# Python 3.11+. The declared floor is 3.10, where the numeric codes and the
+# exception message carry the same signal.
+_SQLITE_BUSY = getattr(sqlite3, 'SQLITE_BUSY', 5)
+_SQLITE_LOCKED = getattr(sqlite3, 'SQLITE_LOCKED', 6)
+_SQLITE_INTERRUPT = getattr(sqlite3, 'SQLITE_INTERRUPT', 9)
+
+
+def _sqlite_error_code(exc):
+    code = getattr(exc, 'sqlite_errorcode', None)
+    if code is not None:
+        return code
+    message = str(exc).lower()
+    if 'interrupt' in message:
+        return _SQLITE_INTERRUPT
+    if 'locked' in message:
+        return _SQLITE_LOCKED
+    if 'busy' in message:
+        return _SQLITE_BUSY
+    return None
 _STATS_TTL_SECONDS = 30.0
 _STATS_QUERY_TIMEOUT_SECONDS = 2.0
 _STATS_BUSY_TIMEOUT_SECONDS = 0.25
@@ -551,9 +572,9 @@ class IndexEngine:
                     finally:
                         connection.set_progress_handler(None, 0)
             except (sqlite3.Error, OSError) as exc:
-                code = getattr(exc, 'sqlite_errorcode', None)
-                reason = ('query_timeout' if code == sqlite3.SQLITE_INTERRUPT else
-                          'database_busy' if code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) else
+                code = _sqlite_error_code(exc)
+                reason = ('query_timeout' if code == _SQLITE_INTERRUPT else
+                          'database_busy' if code in (_SQLITE_BUSY, _SQLITE_LOCKED) else
                           'database_unavailable')
                 return self._stats_failure(reason)
             self._stats_cache = {
