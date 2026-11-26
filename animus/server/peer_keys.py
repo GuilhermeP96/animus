@@ -43,14 +43,21 @@ def _read_registry(path: str, inode: int, modified: int, size: int) -> dict[str,
 def peer_secret(config: AnimusConfig, node_id: str) -> str:
     """Configured registry is authoritative: unknown nodes never fall back."""
     if config.server_peer_keys_file is not None:
-        path = Path(config.server_peer_keys_file)
-        info = path.lstat()
-        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid not in {0, os.getuid()}:
-            raise ValueError('Peer registry must remain a private operator-owned regular file')
-        keys = _read_registry(str(path), info.st_ino, info.st_mtime_ns, info.st_size)
-        return keys.get(node_id, '')
+        return _configured_peer_keys(Path(config.server_peer_keys_file)).get(node_id, '')
     secret = config.server_secret
     return secret if secret and not secret_is_revoked(secret) else ''
+
+
+def _configured_peer_keys(path: Path) -> dict[str, str]:
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid not in {0, os.getuid()}:
+        raise ValueError('Peer registry must remain a private operator-owned regular file')
+    return _read_registry(str(path), info.st_ino, info.st_mtime_ns, info.st_size)
+
+
+def provisioned_peer_ids(path: Path) -> list[str]:
+    """Return enabled identities for the admin picker, without their keys."""
+    return sorted(_configured_peer_keys(path))
 
 
 def insecure_local_test(config: AnimusConfig) -> bool:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from starlette.concurrency import run_in_threadpool
-from .peer_keys import peer_secret
+from .peer_keys import peer_secret, provisioned_peer_ids
 from ..indexer.engine import StatsUnavailable
 
 import io
@@ -859,6 +859,14 @@ async def peers_page(
     # Public hub URL preferred (falls back to request host)
     hub_url = config.hub_url or f"https://{request.url.netloc}"
     repo_url = "https://github.com/GuilhermeP96/animus"
+    registry = config.server_peer_keys_file
+    node_ids = []
+    registry_unavailable = False
+    if registry is not None:
+        try:
+            node_ids = await run_in_threadpool(provisioned_peer_ids, Path(registry))
+        except (OSError, ValueError, TypeError):
+            registry_unavailable = True
 
     return templates.TemplateResponse(request, "peers.html", {
         "session": session,
@@ -867,7 +875,9 @@ async def peers_page(
         "historical_peers": historical,
         "hub_url": hub_url,
         "repo_url": repo_url,
-        "per_node_keys": config.server_peer_keys_file is not None,
+        "per_node_keys": registry is not None,
+        "provisioned_node_ids": node_ids,
+        "registry_unavailable": registry_unavailable,
     })
 
 
@@ -995,6 +1005,7 @@ def _installer_response(
 
 
 @router.get("/admin/api/peers/installer.zip", name="admin_installer_zip")
+@router.head("/admin/api/peers/installer.zip", include_in_schema=False)
 async def installer_zip(
     request: Request,
     node_name: str | None = None,
@@ -1011,6 +1022,9 @@ async def installer_zip(
     known = _connected_peers.get(nid, {})
     raw_name = node_name or known.get("node_name") or known.get("hostname")
     nname = _safe_peer_value(raw_name, f"peer-{nid}")
+    if request.method == "HEAD":
+        _provisioned_peer_secret(get_config(), nid)
+        return JSONResponse(None, status_code=204, headers={"Cache-Control": "no-store"})
     return _installer_response(request, nid, nname, str(known.get("os_name") or ""))
 
 

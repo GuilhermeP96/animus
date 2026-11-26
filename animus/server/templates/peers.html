@@ -17,9 +17,8 @@
     <div class="card-body">
         <p style="margin-top: 0; color: var(--animus-text-dim); font-size: 13px;">
             {% if per_node_keys %}
-            This Hub uses an individual HMAC key for each peer. Ask the Hub operator to
-            provision the new peer first, then enter its exact Node ID to reveal the key
-            or download its installer.
+            Select a provisioned Node ID below, then download its ZIP or use PowerShell.
+            For a new machine whose ID is missing, ask the Hub operator to provision it first.
             {% else %}
             Auth uses a single shared HMAC secret. Reveal it below, copy, then run the
             installer on the new machine — it will prompt for the secret, register the
@@ -27,10 +26,23 @@
             {% endif %}
         </p>
         <div style="margin: 10px 0;">
-            <label for="kit-node-id">Node ID{% if not per_node_keys %} (optional for the ZIP){% endif %}</label>
+            {% if per_node_keys %}
+            <label for="kit-node-id">Node ID</label>
+            <select id="kit-node-id" onchange="clearRevealedSecret(); updatePowerShellCommand()">
+                <option value="">Select a provisioned Node ID</option>
+                {% for node_id in provisioned_node_ids %}
+                <option value="{{ node_id }}">{{ node_id }}</option>
+                {% endfor %}
+            </select>
+            {% if registry_unavailable %}
+            <p role="status">The peer key registry is unavailable. Contact the Hub operator.</p>
+            {% endif %}
+            {% else %}
+            <label for="kit-node-id">Node ID (optional for the ZIP)</label>
             <input id="kit-node-id" type="text" maxlength="128" autocomplete="off"
-                   placeholder="{{ 'Exact provisioned Node ID' if per_node_keys else 'Generated if empty' }}"
+                   placeholder="Generated if empty"
                    oninput="clearRevealedSecret()" />
+            {% endif %}
         </div>
 
         <!-- Step 1: secret -->
@@ -68,13 +80,15 @@
             <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-glow); margin-bottom: 6px;">
                 ③ Run on the Peer
             </div>
-            {% if not per_node_keys %}
             <div class="recruit-tabs" style="display: flex; gap: 4px; border-bottom: 1px solid #30363d; margin-bottom: 0;">
+                {% if not per_node_keys %}
                 <button class="recruit-tab active" data-tab="linux"   onclick="showRecruitTab('linux')">🐧 Linux / macOS</button>
+                {% endif %}
                 <button class="recruit-tab"        data-tab="windows" onclick="showRecruitTab('windows')">🪟 Windows (PowerShell)</button>
-                <button class="recruit-tab"        data-tab="zip"     onclick="showRecruitTab('zip')">📦 Self-install ZIP</button>
+                <button class="recruit-tab{% if per_node_keys %} active{% endif %}" data-tab="zip" onclick="showRecruitTab('zip')">📦 Self-install ZIP</button>
             </div>
 
+            {% if not per_node_keys %}
             <div class="recruit-pane active" data-pane="linux">
 <pre id="recruit-cmd-linux">curl -fsSL {{ repo_url }}/raw/master/scripts/install-peer.sh | bash</pre>
                 <button class="btn btn-sm" onclick="copyText(document.getElementById('recruit-cmd-linux').innerText)">📋 Copy</button>
@@ -82,16 +96,24 @@
                     Installs Python 3.11+/git, clones the repo, registers a systemd unit.
                 </span>
             </div>
+            {% endif %}
 
             <div class="recruit-pane" data-pane="windows" style="display:none;">
+                {% if per_node_keys %}
+                <p>Select the Node ID above. Run the commands in a new PowerShell window on
+                   the target peer. When prompted for the HMAC key, paste it from Reveal → Copy.</p>
+                <pre id="recruit-cmd-windows" data-installer="{{ repo_url | replace('github.com', 'raw.githubusercontent.com') }}/master/scripts/install-peer.ps1">Select a provisioned Node ID to see the commands.</pre>
+                <button id="copy-windows-command" class="btn btn-sm" disabled onclick="copyText(document.getElementById('recruit-cmd-windows').textContent, 'windows-cmd-msg')">📋 Copy PowerShell commands</button>
+                <span id="windows-cmd-msg" role="status"></span>
+                {% else %}
 <pre id="recruit-cmd-windows">irm {{ repo_url }}/raw/master/scripts/install-peer.ps1 | iex</pre>
                 <button class="btn btn-sm" onclick="copyText(document.getElementById('recruit-cmd-windows').innerText)">📋 Copy</button>
                 <span style="font-size: 11px; color: var(--animus-text-dim); margin-left: 8px;">
                     Run in PowerShell. Installs Python via winget if missing, registers a Scheduled Task at logon.
                 </span>
+                {% endif %}
             </div>
 
-            {% endif %}
             <div class="recruit-pane" data-pane="zip"{% if not per_node_keys %} style="display:none;"{% endif %}>
                 <p style="margin-top: 12px; font-size: 13px; color: var(--animus-text-dim);">
                     Generate a <strong>self-contained installer kit</strong> with the hub URL, HMAC
@@ -109,11 +131,11 @@
                     </div>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-                    <button class="btn" onclick="downloadInstallerZip()">📦 Generate Installer ZIP</button>
+                    <button class="btn" onclick="downloadInstallerZip()">📦 Download Installer ZIP</button>
                     <span id="kit-msg" role="status" style="font-size: 12px; color: var(--animus-text-dim);"></span>
                 </div>
                 <ol style="font-size: 13px; line-height: 1.8; margin-top: 14px;">
-                    <li>Click <strong>Generate Installer ZIP</strong> above (~few KB; secret is embedded)</li>
+                    <li>Click <strong>Download Installer ZIP</strong> above (contains the selected peer's key)</li>
                     <li>Extract anywhere on the target machine</li>
                     <li>Linux/macOS: <code>./install.sh</code> &nbsp; · &nbsp; Windows: double-click <code>install.bat</code></li>
                     <li>No prompts — the kit already knows hub URL, secret, and node id</li>
@@ -169,6 +191,29 @@ function clearRevealedSecret() {
     input.type = 'password';
     input.value = '';
     document.getElementById('recruit-secret-msg').textContent = '';
+    document.getElementById('kit-msg').textContent = '';
+}
+function updatePowerShellCommand() {
+    const output = document.getElementById('recruit-cmd-windows');
+    const id = document.getElementById('kit-node-id').value;
+    const quote = value => "'" + value.replaceAll("'", "''") + "'";
+    document.getElementById('copy-windows-command').disabled = !id;
+    document.getElementById('windows-cmd-msg').textContent = '';
+    output.textContent = id ? [
+        '& {',
+        '    if ($env:ANIMUS_SERVER_SECRET) { throw "Open PowerShell without a preloaded Animus key." }',
+        '    $env:ANIMUS_NODE_ID = ' + quote(id),
+        '    $env:ANIMUS_HUB_URL = ' + quote(document.getElementById('recruit-hub').value),
+        '    $installer = Join-Path $env:TEMP ("animus-install-peer-{0}.ps1" -f [guid]::NewGuid())',
+        '    try {',
+        '        Invoke-RestMethod ' + quote(output.dataset.installer) + ' -ErrorAction Stop |',
+        '            Set-Content -LiteralPath $installer -Encoding UTF8 -ErrorAction Stop',
+        '        & $installer',
+        '    } finally {',
+        '        Remove-Item -LiteralPath $installer -ErrorAction SilentlyContinue',
+        '    }',
+        '}'
+    ].join('\n') : 'Select a provisioned Node ID to see the commands.';
 }
 async function requireSuccessfulResponse(response) {
     if (response.ok) return;
@@ -209,12 +254,12 @@ function copyValue(id) {
     }
     copyText(realValue);
 }
-function copyText(text) {
+function copyText(text, statusId = 'recruit-secret-msg') {
     navigator.clipboard.writeText(text).then(() => {
-        const msg = document.getElementById('recruit-secret-msg');
+        const msg = document.getElementById(statusId);
         if (msg) { msg.textContent = '✓ Copied to clipboard'; setTimeout(() => msg.textContent = '', 2000); }
     }).catch(() => {
-        document.getElementById('recruit-secret-msg').textContent = '✗ Clipboard access denied. Copy the selected value manually.';
+        document.getElementById(statusId).textContent = '✗ Clipboard access denied. Select and copy the value manually.';
     });
 }
 function showRecruitTab(name) {
@@ -225,6 +270,13 @@ async function downloadInstallerZip() {
     const msg  = document.getElementById('kit-msg');
     const name = document.getElementById('kit-node-name').value.trim();
     const id   = document.getElementById('kit-node-id').value;
+    {% if per_node_keys %}
+    if (!id) {
+        msg.textContent = 'Select a provisioned Node ID above to download its ZIP.';
+        document.getElementById('kit-node-id').focus();
+        return;
+    }
+    {% endif %}
     msg.style.color = 'var(--animus-text-dim)';
     msg.textContent = 'Building kit…';
     try {
@@ -232,21 +284,25 @@ async function downloadInstallerZip() {
         if (name) params.set('node_name', name);
         if (id)   params.set('node_id', id);
         const url = '/admin/api/peers/installer.zip' + (params.toString() ? '?' + params.toString() : '');
-        const res = await fetch(url, {credentials: 'same-origin'});
-        await requireSuccessfulResponse(res);
-        const blob = await res.blob();
-        const dispo = res.headers.get('Content-Disposition') || '';
-        const m = dispo.match(/filename="([^"]+)"/);
-        const filename = m ? m[1] : 'animus-peer-installer.zip';
+        const res = await fetch(url, {method: 'HEAD', credentials: 'same-origin', cache: 'no-store'});
+        if (!res.ok) {
+            const errors = {
+                400: 'Select a valid Node ID.',
+                401: 'Your session expired. Sign in again.',
+                409: 'This Node ID has no enabled key. Ask the Hub operator to provision or enable it.',
+                503: 'The key registry is unavailable. Contact the Hub operator.'
+            };
+            throw new Error(errors[res.status] || 'Download unavailable (HTTP ' + res.status + ').');
+        }
+        if (id !== document.getElementById('kit-node-id').value) return;
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
+        a.href = url;
+        a.download = '';
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         msg.style.color = 'var(--animus-green, #3fb950)';
-        msg.textContent = '✓ ' + filename + ' downloaded — secret is inside, treat it like a password.';
+        msg.textContent = 'Download requested. Check your browser downloads.';
     } catch (e) {
         msg.style.color = 'var(--animus-red, #f85149)';
         msg.textContent = '✗ ' + e.message;

@@ -26,7 +26,7 @@ set -a
 source "$ENV_FILE"
 set +a
 
-if [[ -z "${ANIMUS_SERVER_SECRET:-}" || "${ANIMUS_SERVER_SECRET}" == "{{SECRET}}" ]]; then
+if [[ -z "${ANIMUS_SERVER_SECRET:-}" ]]; then
     echo "✗  peer.env has no ANIMUS_SERVER_SECRET — regenerate the installer ZIP from the hub." >&2
     exit 1
 fi
