@@ -867,18 +867,22 @@ async def peers_page(
         "historical_peers": historical,
         "hub_url": hub_url,
         "repo_url": repo_url,
+        "per_node_keys": config.server_peer_keys_file is not None,
     })
 
 
 @router.post("/admin/api/peers/secret", name="admin_reveal_secret")
-async def reveal_secret(session: AdminSession = Depends(require_admin)):
-    """Return the shared HMAC secret. Admin-only; intended to be shown
-    once in the UI after an explicit click."""
+async def reveal_secret(
+    node_id: str | None = None,
+    session: AdminSession = Depends(require_admin),
+):
+    """Reveal a credential after an explicit request from an administrator."""
     config = get_config()
-    if config.server_peer_keys_file is not None:
-        raise HTTPException(status_code=409, detail='Credentials are provisioned separately per node')
-    secret = peer_secret(config, 'admin-provisioning')
-    return {"secret": secret}
+    identity = _require_peer_id(node_id) if config.server_peer_keys_file is not None else "admin-provisioning"
+    return JSONResponse(
+        {"secret": _provisioned_peer_secret(config, identity)},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # ── Peer installer kit (self-contained ZIP) ──
@@ -903,20 +907,35 @@ def _safe_peer_value(value: str | None, fallback: str) -> str:
     return cleaned.strip(".-")[:80] or fallback
 
 
+def _require_peer_id(node_id: str | None) -> str:
+    if not node_id:
+        raise HTTPException(status_code=400, detail="Enter the exact Node ID provisioned by the Hub operator.")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", node_id):
+        raise HTTPException(status_code=400, detail="Invalid Node ID. Use the exact provisioned identifier.")
+    return node_id
+
+
+def _provisioned_peer_secret(config, node_id: str) -> str:
+    try:
+        secret = peer_secret(config, node_id)
+    except (OSError, ValueError, TypeError):
+        raise HTTPException(status_code=503, detail="Peer credential registry unavailable. Contact the Hub operator.") from None
+    if secret:
+        return secret
+    detail = (
+        "This Node ID has no enabled key. Ask the Hub operator to provision or enable it."
+        if config.server_peer_keys_file is not None
+        else "The Hub has no configured shared key. Contact the Hub operator."
+    )
+    raise HTTPException(status_code=409, detail=detail)
+
+
 def _installer_response(
     request: Request, node_id: str, node_name: str, os_name: str = ""
 ) -> StreamingResponse:
     """Render the idempotent install/update kit for one resolved peer."""
     config = get_config()
-    try:
-        secret = peer_secret(config, node_id)
-    except (OSError, ValueError, TypeError):
-        raise HTTPException(status_code=503, detail='Peer credential registry unavailable') from None
-    if not secret:
-        raise HTTPException(
-            status_code=409,
-            detail="Peer has no operator-provisioned credential.",
-        )
+    secret = _provisioned_peer_secret(config, node_id)
     if not _INSTALLER_KIT_DIR.is_dir():
         raise HTTPException(status_code=500, detail="installer_kit templates missing")
 
@@ -931,7 +950,7 @@ def _installer_response(
         "{{NODE_NAME}}": node_name,
         "{{OS_NAME}}": _safe_peer_value(os_name, "unknown"),
         "{{REPO_URL}}": "https://github.com/GuilhermeP96/animus.git",
-        "{{BRANCH}}": "licensing-managment",
+        "{{BRANCH}}": "master",
         "{{GENERATED_AT}}": generated_at,
     }
 
@@ -985,7 +1004,10 @@ async def installer_zip(
     """Build a customized peer installer ZIP with pre-baked hub URL, HMAC
     secret, node id and node name. Known IDs reuse their registered identity."""
     raw_id = node_id or str(uuid.uuid4())[:12]
-    nid = _safe_peer_value(raw_id, str(uuid.uuid4())[:12])
+    if get_config().server_peer_keys_file is not None:
+        nid = _require_peer_id(node_id)
+    else:
+        nid = _safe_peer_value(raw_id, str(uuid.uuid4())[:12])
     known = _connected_peers.get(nid, {})
     raw_name = node_name or known.get("node_name") or known.get("hostname")
     nname = _safe_peer_value(raw_name, f"peer-{nid}")

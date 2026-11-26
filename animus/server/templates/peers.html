@@ -16,25 +16,37 @@
     </div>
     <div class="card-body">
         <p style="margin-top: 0; color: var(--animus-text-dim); font-size: 13px;">
+            {% if per_node_keys %}
+            This Hub uses an individual HMAC key for each peer. Ask the Hub operator to
+            provision the new peer first, then enter its exact Node ID to reveal the key
+            or download its installer.
+            {% else %}
             Auth uses a single shared HMAC secret. Reveal it below, copy, then run the
             installer on the new machine — it will prompt for the secret, register the
             node and start the daemon automatically.
+            {% endif %}
         </p>
+        <div style="margin: 10px 0;">
+            <label for="kit-node-id">Node ID{% if not per_node_keys %} (optional for the ZIP){% endif %}</label>
+            <input id="kit-node-id" type="text" maxlength="128" autocomplete="off"
+                   placeholder="{{ 'Exact provisioned Node ID' if per_node_keys else 'Generated if empty' }}"
+                   oninput="clearRevealedSecret()" />
+        </div>
 
         <!-- Step 1: secret -->
         <div style="margin: 18px 0;">
             <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-glow); margin-bottom: 6px;">
-                ① Shared Secret
+                ① {{ 'Peer Key' if per_node_keys else 'Shared Secret' }}
             </div>
             <div style="display: flex; gap: 8px; align-items: stretch;">
                 <input id="recruit-secret" type="password" readonly
-                       value="••••••••••••••••••••••••••••••••"
+                       autocomplete="off"
                        style="flex: 1; padding: 8px 10px; background: #0d1117; border: 1px solid #30363d;
                               color: var(--animus-text-dim); font-family: monospace; font-size: 13px; border-radius: 4px;" />
                 <button class="btn" onclick="revealSecret()">👁  Reveal</button>
                 <button class="btn" onclick="copyValue('recruit-secret')">📋 Copy</button>
             </div>
-            <div id="recruit-secret-msg" style="font-size: 11px; color: var(--animus-text-dim); margin-top: 4px; min-height: 14px;"></div>
+            <div id="recruit-secret-msg" role="status" style="font-size: 11px; color: var(--animus-text-dim); margin-top: 4px; min-height: 14px;"></div>
         </div>
 
         <!-- Step 2: hub URL -->
@@ -56,6 +68,7 @@
             <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--animus-glow); margin-bottom: 6px;">
                 ③ Run on the Peer
             </div>
+            {% if not per_node_keys %}
             <div class="recruit-tabs" style="display: flex; gap: 4px; border-bottom: 1px solid #30363d; margin-bottom: 0;">
                 <button class="recruit-tab active" data-tab="linux"   onclick="showRecruitTab('linux')">🐧 Linux / macOS</button>
                 <button class="recruit-tab"        data-tab="windows" onclick="showRecruitTab('windows')">🪟 Windows (PowerShell)</button>
@@ -78,7 +91,8 @@
                 </span>
             </div>
 
-            <div class="recruit-pane" data-pane="zip" style="display:none;">
+            {% endif %}
+            <div class="recruit-pane" data-pane="zip"{% if not per_node_keys %} style="display:none;"{% endif %}>
                 <p style="margin-top: 12px; font-size: 13px; color: var(--animus-text-dim);">
                     Generate a <strong>self-contained installer kit</strong> with the hub URL, HMAC
                     secret and a <code>node_id</code> already baked in. Reusing a known ID makes the
@@ -93,16 +107,10 @@
                                style="width: 100%; padding: 6px 8px; background: #0d1117; border: 1px solid #30363d;
                                       color: var(--animus-text); font-family: monospace; font-size: 12px; border-radius: 4px;" />
                     </div>
-                    <div>
-                        <label style="font-size: 11px; color: var(--animus-text-dim); text-transform: uppercase; letter-spacing: 1px;">Node ID (optional — auto if empty)</label>
-                        <input id="kit-node-id" type="text" placeholder="auto-generated (12 chars)"
-                               style="width: 100%; padding: 6px 8px; background: #0d1117; border: 1px solid #30363d;
-                                      color: var(--animus-text); font-family: monospace; font-size: 12px; border-radius: 4px;" />
-                    </div>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
                     <button class="btn" onclick="downloadInstallerZip()">📦 Generate Installer ZIP</button>
-                    <span id="kit-msg" style="font-size: 12px; color: var(--animus-text-dim);"></span>
+                    <span id="kit-msg" role="status" style="font-size: 12px; color: var(--animus-text-dim);"></span>
                 </div>
                 <ol style="font-size: 13px; line-height: 1.8; margin-top: 14px;">
                     <li>Click <strong>Generate Installer ZIP</strong> above (~few KB; secret is embedded)</li>
@@ -121,9 +129,14 @@
         <div style="margin-top: 14px; padding: 10px 12px; background: rgba(0, 212, 255, 0.05);
                     border-left: 3px solid var(--animus-glow); border-radius: 4px;
                     font-size: 12px; color: var(--animus-text-dim);">
-            ⚠️  The secret is the <strong>only</strong> credential — anyone holding it can push memories
+            {% if per_node_keys %}
+            Treat the peer key and its installer ZIP like a password. Share them privately
+            with the intended peer operator.
+            {% else %}
+            ⚠️  Anyone holding the shared secret can push memories
             to the hub. Treat it like a password. To rotate, change <code>ANIMUS_SERVER_SECRET</code> in
             <code>.env</code>, restart the container, and re-run the installer on each peer.
+            {% endif %}
         </div>
     </div>
 </div>
@@ -149,29 +162,41 @@
 </style>
 
 <script>
+let revealAttempt = 0;
+function clearRevealedSecret() {
+    revealAttempt++;
+    const input = document.getElementById('recruit-secret');
+    input.type = 'password';
+    input.value = '';
+    document.getElementById('recruit-secret-msg').textContent = '';
+}
+async function requireSuccessfulResponse(response) {
+    if (response.ok) return;
+    const data = await response.json().catch(() => null);
+    throw new Error(typeof data?.detail === 'string' ? data.detail : 'Request failed (HTTP ' + response.status + ')');
+}
 async function revealSecret() {
     const input = document.getElementById('recruit-secret');
     const msg   = document.getElementById('recruit-secret-msg');
-    if (input.type === 'text' && input.value && !input.value.startsWith('•')) {
-        input.type = 'password';
-        msg.textContent = '';
+    if (input.type === 'text') {
+        clearRevealedSecret();
         return;
     }
+    const attempt = ++revealAttempt;
+    const id = document.getElementById('kit-node-id').value;
+    const query = id ? '?' + new URLSearchParams({node_id: id}) : '';
     msg.textContent = 'Loading…';
     try {
-        const res = await fetch('/admin/api/peers/secret', {method: 'POST', credentials: 'same-origin'});
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const res = await fetch('/admin/api/peers/secret' + query, {method: 'POST', credentials: 'same-origin'});
+        await requireSuccessfulResponse(res);
         const data = await res.json();
-        if (!data.secret) {
-            msg.textContent = '⚠ Hub has no ANIMUS_SERVER_SECRET set — auth is open.';
-            return;
-        }
+        if (attempt !== revealAttempt) return;
         input.type  = 'text';
         input.value = data.secret;
         input.style.color = 'var(--animus-text)';
         msg.textContent = 'Revealed — click Reveal again to hide.';
     } catch (e) {
-        msg.textContent = '✗ Failed to fetch secret: ' + e.message;
+        if (attempt === revealAttempt) msg.textContent = '✗ ' + e.message;
     }
 }
 function copyValue(id) {
@@ -188,6 +213,8 @@ function copyText(text) {
     navigator.clipboard.writeText(text).then(() => {
         const msg = document.getElementById('recruit-secret-msg');
         if (msg) { msg.textContent = '✓ Copied to clipboard'; setTimeout(() => msg.textContent = '', 2000); }
+    }).catch(() => {
+        document.getElementById('recruit-secret-msg').textContent = '✗ Clipboard access denied. Copy the selected value manually.';
     });
 }
 function showRecruitTab(name) {
@@ -197,7 +224,7 @@ function showRecruitTab(name) {
 async function downloadInstallerZip() {
     const msg  = document.getElementById('kit-msg');
     const name = document.getElementById('kit-node-name').value.trim();
-    const id   = document.getElementById('kit-node-id').value.trim();
+    const id   = document.getElementById('kit-node-id').value;
     msg.style.color = 'var(--animus-text-dim)';
     msg.textContent = 'Building kit…';
     try {
@@ -206,10 +233,7 @@ async function downloadInstallerZip() {
         if (id)   params.set('node_id', id);
         const url = '/admin/api/peers/installer.zip' + (params.toString() ? '?' + params.toString() : '');
         const res = await fetch(url, {credentials: 'same-origin'});
-        if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            throw new Error('HTTP ' + res.status + (text ? ' — ' + text : ''));
-        }
+        await requireSuccessfulResponse(res);
         const blob = await res.blob();
         const dispo = res.headers.get('Content-Disposition') || '';
         const m = dispo.match(/filename="([^"]+)"/);
